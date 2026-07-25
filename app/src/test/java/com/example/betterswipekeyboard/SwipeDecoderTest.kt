@@ -52,7 +52,7 @@ class SwipeDecoderTest {
                 add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps))
             }
             if (letters[w] in dwellOn) {
-                repeat(15) { add(to) } // ~240ms standing still on the key
+                repeat(25) { add(to) } // ~400ms standing still on the key
             }
         }
         return points

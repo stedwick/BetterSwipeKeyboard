@@ -5,7 +5,6 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.ln
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sqrt
 
 data class Vec2(val x: Float, val y: Float) {
@@ -47,7 +46,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     ): List<ScoredWord> {
         if (trail.size < 3 || keyWidth <= 0f) return emptyList()
 
-        val salience = computeSalience(trail)
+        val salience = computeSalience(trail, keyWidth)
         val salientKeys = salientKeySequence(trail, salience, keyCenters, keyWidth)
         val trailLength = polylineLength(trail.map { it.position })
         val start = trail.first().position
@@ -132,30 +131,41 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     // Salience: curvature + slowness per trail point
     // ------------------------------------------------------------------
 
-    private fun computeSalience(trail: List<TimedPoint>): FloatArray {
+    /**
+     * Curvature + slowness per trail point. Real fingers produce dense, noisy
+     * points, so both are measured over a fixed ARC LENGTH window (a fraction
+     * of a key width) rather than a fixed point count — jitter cancels out
+     * over the window and genuine turns remain.
+     */
+    private fun computeSalience(trail: List<TimedPoint>, keyWidth: Float): FloatArray {
         val n = trail.size
         val salience = FloatArray(n)
         if (n < 3) return salience
 
-        var totalLength = 0f
-        for (i in 1 until n) totalLength += trail[i].position.distanceTo(trail[i - 1].position)
+        val arc = FloatArray(n) // cumulative arc length
+        for (i in 1 until n) {
+            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
+        }
+        val totalLength = arc[n - 1]
         val duration = max(trail.last().tMillis - trail.first().tMillis, 1L).toFloat()
         val avgSpeed = totalLength / duration
+        val window = CURVATURE_WINDOW_KEYS * keyWidth
 
         for (i in 1 until n - 1) {
-            val prev = trail[max(0, i - 2)].position
-            val here = trail[i].position
-            val next = trail[min(n - 1, i + 2)].position
-            val v1 = here - prev
-            val v2 = next - here
+            var j = i
+            while (j > 0 && arc[i] - arc[j] < window) j--
+            var k = i
+            while (k < n - 1 && arc[k] - arc[i] < window) k++
+
+            val v1 = trail[i].position - trail[j].position
+            val v2 = trail[k].position - trail[i].position
             val curvature = angleBetween(v1, v2) / PI.toFloat()
 
-            val dt = max(trail[min(n - 1, i + 1)].tMillis - trail[max(0, i - 1)].tMillis, 1L)
-                .toFloat()
-            val speed = trail[min(n - 1, i + 1)].position
-                .distanceTo(trail[max(0, i - 1)].position) / dt
-            val slowness = (1f - speed / (avgSpeed * SLOWNESS_REFERENCE + 1e-6f))
-                .coerceIn(0f, 1f)
+            val dt = max(trail[k].tMillis - trail[j].tMillis, 1L).toFloat()
+            val speed = (arc[k] - arc[j]) / dt
+            // Slower than the swipe's average speed is deliberate; moving at
+            // average speed or faster is not. Baseline at average speed is 0.
+            val slowness = (1f - speed / (avgSpeed + 1e-6f)).coerceIn(0f, 1f)
 
             salience[i] = max(curvature, slowness)
         }
@@ -165,10 +175,15 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     }
 
     /**
-     * Keys under salient points, in trail order, consecutive dupes collapsed.
-     * Lingering on a key (a salient cluster lasting [DWELL_DOUBLE_MS] or more)
-     * counts as intending that letter TWICE — this is how "follow" earns its
-     * second L from a single pass over the L key.
+     * Keys under the trail's salient points, in trail order. Rather than every
+     * point above the salience threshold, contiguous salient regions are
+     * collapsed to their single peak point (non-maximum suppression) — a slow
+     * region otherwise paints "intended keys" over several neighboring keys.
+     *
+     * A region where the finger genuinely HESITATES (near-stationary for
+     * [DWELL_DOUBLE_MS] or more) emits its key TWICE — this is how "follow"
+     * earns its second L from a single pass over the L key. A merely slow
+     * pass keeps moving and does not double.
      */
     private fun salientKeySequence(
         trail: List<TimedPoint>,
@@ -176,30 +191,64 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
     ): List<Char> {
-        // Collect salient points near keys as clusters: key + start/end time.
-        data class Cluster(val key: Char, val start: Long, var end: Long)
-        val clusters = mutableListOf<Cluster>()
-        trail.forEachIndexed { i, point ->
-            if (salience[i] < SALIENCE_THRESHOLD) return@forEachIndexed
-            val nearest = keyCenters.minByOrNull { it.value.distanceTo(point.position) }
-                ?: return@forEachIndexed
-            if (nearest.value.distanceTo(point.position) > SALIENT_KEY_RADIUS * keyWidth) {
-                return@forEachIndexed
-            }
-            val last = clusters.lastOrNull()
-            if (last != null && last.key == nearest.key) {
-                last.end = point.tMillis
-            } else {
-                clusters += Cluster(nearest.key, point.tMillis, point.tMillis)
-            }
+        val n = trail.size
+        if (n == 0) return emptyList()
+
+        val arc = FloatArray(n)
+        for (i in 1 until n) {
+            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
         }
-        // Collapse clusters; lingering on a key emits it twice (e.g. "follow"
-        // earns its second L by hesitating on the L key).
+
+        data class Region(val peak: Int, val from: Int, val to: Int)
+
+        // Contiguous salient regions with hysteresis: a region starts above
+        // SALIENCE_THRESHOLD and only ends below REGION_EXIT_THRESHOLD, so a
+        // small jitter dip doesn't fragment one deliberate motion into two.
+        val regions = mutableListOf<Region>()
+        var i = 0
+        while (i < n) {
+            if (salience[i] < SALIENCE_THRESHOLD) {
+                i++
+                continue
+            }
+            var j = i
+            var peak = i
+            while (j + 1 < n &&
+                salience[j + 1] >= REGION_EXIT_THRESHOLD
+            ) {
+                j++
+                if (salience[j] > salience[peak]) peak = j
+            }
+            regions += Region(peak, i, j)
+            i = j + 1
+        }
+
         val result = mutableListOf<Char>()
-        for (cluster in clusters) {
-            val desired = if (cluster.end - cluster.start >= DWELL_DOUBLE_MS) 2 else 1
-            val alreadyThere = if (result.lastOrNull() == cluster.key) 1 else 0
-            repeat(desired - alreadyThere) { result += cluster.key }
+        for (region in regions) {
+            val position = trail[region.peak].position
+            val nearest = keyCenters.minByOrNull { it.value.distanceTo(position) } ?: continue
+            if (nearest.value.distanceTo(position) > SALIENT_KEY_RADIUS * keyWidth) continue
+
+            // A doubled letter requires the finger to hesitate on the key:
+            // at least DWELL_DOUBLE_MS spent near the peak point. A merely
+            // slow pass keeps moving and never lingers that long.
+            val peakPos = trail[region.peak].position
+            val radius = STATIONARY_RADIUS_KEYS * keyWidth
+            var dwell = 0L
+            var p = region.peak
+            while (p > region.from && trail[p - 1].position.distanceTo(peakPos) <= radius) {
+                dwell += trail[p].tMillis - trail[p - 1].tMillis
+                p--
+            }
+            p = region.peak
+            while (p < region.to && trail[p + 1].position.distanceTo(peakPos) <= radius) {
+                dwell += trail[p + 1].tMillis - trail[p].tMillis
+                p++
+            }
+            val desired = if (dwell >= DWELL_DOUBLE_MS) 2 else 1
+
+            val alreadyThere = if (result.lastOrNull() == nearest.key) 1 else 0
+            repeat(desired - alreadyThere) { result += nearest.key }
         }
         return result
     }
@@ -246,8 +295,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** Salience above which a trail point counts as deliberate. */
         const val SALIENCE_THRESHOLD = 0.45f
 
-        /** How long a salient cluster must last to count as a doubled letter. */
-        const val DWELL_DOUBLE_MS = 150L
+        /** A salient region ends only when salience falls below this. */
+        const val REGION_EXIT_THRESHOLD = 0.30f
+
+        /** How long the finger must linger on a key for a doubled letter. */
+        const val DWELL_DOUBLE_MS = 300L
 
         /** Swiping is not worth it for very short words; they are tapped. */
         const val MIN_WORD_LENGTH = 3
@@ -258,8 +310,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** A salient point counts as an intended key within this radius. */
         const val SALIENT_KEY_RADIUS = 0.7f
 
-        /** Speed below this fraction of 1.5× average counts as slow. */
-        const val SLOWNESS_REFERENCE = 1.5f
+        /** A region must stay within this radius to count as a hesitation. */
+        const val STATIONARY_RADIUS_KEYS = 0.25f
+
+        /** Curvature/speed are measured over this many key-widths of trail. */
+        const val CURVATURE_WINDOW_KEYS = 0.35f
 
         const val DISTANCE_WEIGHT = 1f
         const val LENGTH_WEIGHT = 0.3f
