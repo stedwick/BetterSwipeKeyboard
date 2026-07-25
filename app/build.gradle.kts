@@ -35,6 +35,10 @@ android {
     buildFeatures {
         compose = true
     }
+    sourceSets {
+        // Make the swipe dictionary asset available to local unit tests.
+        getByName("test") { resources.srcDir("src/main/assets") }
+    }
 }
 
 dependencies {

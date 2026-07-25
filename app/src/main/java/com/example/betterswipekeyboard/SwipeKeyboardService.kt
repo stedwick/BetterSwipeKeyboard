@@ -17,6 +17,8 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.example.betterswipekeyboard.swipe.Dictionary
+import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.ui.keyboard.KeyboardScreen
 
 /**
@@ -39,6 +41,7 @@ class SwipeKeyboardService : InputMethodService(),
         get() = savedStateRegistryController.savedStateRegistry
 
     private lateinit var viewModel: KeyboardViewModel
+    private lateinit var decoder: SwipeDecoder
     private val editor = InputConnectionEditor { currentInputConnection }
 
     override fun onCreate() {
@@ -46,6 +49,7 @@ class SwipeKeyboardService : InputMethodService(),
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
+        decoder = SwipeDecoder(Dictionary.load(assets.open("words_en.txt")))
     }
 
     override fun onCreateInputView(): View {
@@ -58,7 +62,11 @@ class SwipeKeyboardService : InputMethodService(),
         return ComposeView(this).apply {
             setContent {
                 val state by viewModel.state.collectAsState()
-                KeyboardScreen(state = state, onAction = ::onKeyboardAction)
+                KeyboardScreen(
+                    state = state,
+                    decoder = decoder,
+                    onAction = ::onKeyboardAction,
+                )
             }
         }
     }

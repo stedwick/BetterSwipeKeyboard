@@ -1,11 +1,9 @@
 package com.example.betterswipekeyboard.ui.keyboard
 
-import android.os.SystemClock
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,62 +18,237 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toSize
 import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.KeyboardState
 import com.example.betterswipekeyboard.ShiftMode
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
-import com.example.betterswipekeyboard.layout.KeyboardLayout
 import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
+import com.example.betterswipekeyboard.swipe.KeyboardGeometry
+import com.example.betterswipekeyboard.swipe.SwipeDecoder
+import com.example.betterswipekeyboard.swipe.TimedPoint
+import com.example.betterswipekeyboard.swipe.Vec2
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private val KeyboardBackground = Color(0xFF1C1C1E)
 private val KeyBackground = Color(0xFF3A3A3C)
 private val KeyBackgroundActive = Color(0xFF6E6E73)
 private val KeyText = Color(0xFFF2F2F7)
+private val TrailColor = Color(0xFF64D2FF)
+
+private const val LONG_PRESS_TIMEOUT_MS = 400L
+private const val BACKSPACE_REPEAT_MS = 50L
+private const val TRAIL_LINGER_MS = 200L
+
+/** Swipe decodes scoring above this are too unsure to commit. */
+private const val ACCEPT_THRESHOLD = 0.6f
 
 @Composable
 fun KeyboardScreen(
     state: KeyboardState,
+    decoder: SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
 ) {
     val layout = when (state.layout) {
         LayoutId.LETTERS -> QwertyLayout
         LayoutId.SYMBOLS -> SymbolsLayout
     }
-    Column(
+    val geometry = remember { KeyboardGeometry() }
+    geometry.activeLayout = layout.id
+
+    var boxOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
+    var pressedKey by remember { mutableStateOf<Key?>(null) }
+    var trailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(KeyboardBackground)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 3.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
+            // ALL pointer input is handled here at the container level (taps,
+            // long-presses and swipe trails) so a finger can travel across
+            // keys in a single gesture. Keys below are purely visual.
+            .pointerInput(layout.id) {
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val downKey = geometry.keyAt(down.position)
+                    pressedKey = downKey
+                    val trail = mutableListOf(
+                        TimedPoint(down.position.toVec2(), down.uptimeMillis),
+                    )
+
+                    // Phase 1: up = tap, travel beyond slop = swipe, timeout = long-press.
+                    val outcome = withTimeoutOrNull(LONG_PRESS_TIMEOUT_MS) {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: continue
+                            if (change.changedToUp()) return@withTimeoutOrNull GestureOutcome.TAP
+                            if ((change.position - down.position).getDistance() > touchSlop) {
+                                return@withTimeoutOrNull GestureOutcome.DRAG
+                            }
+                        }
+                        @Suppress("UNREACHABLE_CODE")
+                        error("unreachable")
+                    }
+
+                    var swipeCompleted = false
+                    when (outcome) {
+                        GestureOutcome.TAP ->
+                            downKey?.let { onAction(it.tapAction()) }
+
+                        GestureOutcome.DRAG ->
+                            if (layout.id == LayoutId.LETTERS && downKey?.isLetter() == true) {
+                                // Phase 2 (swipe): collect the trail until finger lifts.
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                        ?: break // pointer vanished
+                                    if (change.positionChange() != Offset.Zero) {
+                                        trail += TimedPoint(
+                                            change.position.toVec2(), change.uptimeMillis,
+                                        )
+                                        trailPoints = trail.map { it.position.toOffset() }
+                                        pressedKey = geometry.keyAt(change.position)
+                                        change.consume()
+                                    }
+                                    // Note: the release may arrive consumed (e.g. after
+                                    // move consumption), so check `pressed`, not
+                                    // `changedToUp()`.
+                                    if (!change.pressed) break
+                                }
+                                swipeCompleted = true
+                            } else {
+                                // Drag from a non-letter key is not a swipe; swallow it.
+                                awaitUp(down.id)
+                            }
+
+                        null -> when (downKey?.output) {
+                            // Phase 2 (long-press): repeat / caps-lock until finger lifts.
+                            is KeyOutput.Backspace -> {
+                                onAction(KeyboardAction.Backspace)
+                                var up = false
+                                while (!up) {
+                                    val event =
+                                        withTimeoutOrNull(BACKSPACE_REPEAT_MS) { awaitPointerEvent() }
+                                    if (event == null) {
+                                        // Timed out while still held: repeat.
+                                        onAction(KeyboardAction.Backspace)
+                                    } else {
+                                        val change = event.changes
+                                            .firstOrNull { it.id == down.id }
+                                        if (change != null && change.changedToUp()) up = true
+                                    }
+                                }
+                            }
+
+                            is KeyOutput.Shift -> {
+                                onAction(KeyboardAction.CapsLock)
+                                awaitUp(down.id)
+                            }
+
+                            else -> awaitUp(down.id)
+                        }
+                    }
+                    pressedKey = null
+
+                    if (swipeCompleted) {
+                        val results = decoder.decode(
+                            trail = trail.toList(),
+                            keyCenters = geometry.letterCenters(),
+                            keyWidth = geometry.keyWidth(),
+                            topN = 1,
+                        )
+                        val best = results.firstOrNull()
+                        if (best != null && best.score < ACCEPT_THRESHOLD) {
+                            onAction(KeyboardAction.CommitWord(best.word + " "))
+                        }
+                        // Let the trail linger briefly, then clear it.
+                        scope.launch {
+                            delay(TRAIL_LINGER_MS)
+                            trailPoints = emptyList()
+                        }
+                    }
+                }
+            },
     ) {
-        layout.rows.forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                row.forEach { key ->
-                    KeyView(
-                        key = key,
-                        state = state,
-                        onAction = onAction,
-                        modifier = Modifier.weight(key.weight),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 3.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            layout.rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    row.forEach { key ->
+                        KeyView(
+                            key = key,
+                            state = state,
+                            pressed = key == pressedKey,
+                            modifier = Modifier.weight(key.weight),
+                            onPositioned = { coordinates ->
+                                geometry.register(
+                                    layout.id,
+                                    key,
+                                    Rect(
+                                        coordinates.positionInWindow() - boxOffsetInWindow,
+                                        coordinates.size.toSize(),
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+        // Swipe trail overlay: recent points bright, older points fading out.
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val points = trailPoints
+            if (points.size >= 2) {
+                for (i in 1 until points.size) {
+                    val alpha = 0.15f + 0.75f * (i.toFloat() / points.size)
+                    drawLine(
+                        color = TrailColor.copy(alpha = alpha),
+                        start = points[i - 1],
+                        end = points[i],
+                        strokeWidth = trailStrokeWidth,
+                        cap = StrokeCap.Round,
                     )
                 }
             }
@@ -83,68 +256,50 @@ fun KeyboardScreen(
     }
 }
 
-/**
- * Renders a single key and owns ALL of its pointer handling. That isolation is
- * deliberate: a future swipe/glide detector hooks in here (observing a trail
- * across keys and emitting [KeyboardAction.CommitWord]) without touching the
- * rest of the pipeline.
- */
+private enum class GestureOutcome { TAP, DRAG }
+
+private suspend fun AwaitPointerEventScope.awaitUp(id: PointerId) {
+    while (true) {
+        val change = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: continue
+        if (change.changedToUp()) return
+    }
+}
+
+private fun Offset.toVec2() = Vec2(x, y)
+
+private fun Vec2.toOffset() = Offset(x, y)
+
+private fun Key.isLetter(): Boolean =
+    (output as? KeyOutput.Text)?.text?.singleOrNull()?.isLetter() == true
+
+private fun Key.tapAction(): KeyboardAction = when (val out = output) {
+    is KeyOutput.Text -> KeyboardAction.InsertText(out.text)
+    KeyOutput.Backspace -> KeyboardAction.Backspace
+    KeyOutput.Enter -> KeyboardAction.Enter
+    KeyOutput.Shift -> KeyboardAction.Shift
+    is KeyOutput.SwitchLayout -> KeyboardAction.SwitchLayout(out.layout)
+}
+
 @Composable
 private fun KeyView(
     key: Key,
     state: KeyboardState,
-    onAction: (KeyboardAction) -> Unit,
+    pressed: Boolean,
+    onPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-
-    val isBackspace = key.output is KeyOutput.Backspace
-    // Set when the long-press repeat loop fired, so the tap that follows the
-    // release does not delete one extra character.
-    var lastRepeatAt by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(isPressed) {
-        if (isPressed && isBackspace) {
-            delay(400)
-            while (true) {
-                onAction(KeyboardAction.Backspace)
-                lastRepeatAt = SystemClock.uptimeMillis()
-                delay(50)
-            }
-        }
-    }
-
     val isShiftActive = key.output is KeyOutput.Shift && state.shiftMode != ShiftMode.OFF
     val background = when {
-        isShiftActive -> KeyBackgroundActive
+        pressed || isShiftActive -> KeyBackgroundActive
         else -> KeyBackground
     }
 
     Box(
         modifier = modifier
+            .onGloballyPositioned(onPositioned)
             .height(52.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(if (isPressed) KeyBackgroundActive else background)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = {
-                    // Suppress the release-tap after a long-press repeat run.
-                    if (isBackspace &&
-                        SystemClock.uptimeMillis() - lastRepeatAt < 150
-                    ) {
-                        return@combinedClickable
-                    }
-                    onAction(key.tapAction(state))
-                },
-                onLongClick = {
-                    when (key.output) {
-                        is KeyOutput.Shift -> onAction(KeyboardAction.CapsLock)
-                        else -> Unit
-                    }
-                },
-            ),
+            .background(background),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -155,14 +310,6 @@ private fun KeyView(
             style = MaterialTheme.typography.bodyMedium,
         )
     }
-}
-
-private fun Key.tapAction(state: KeyboardState): KeyboardAction = when (val out = output) {
-    is KeyOutput.Text -> KeyboardAction.InsertText(out.text)
-    KeyOutput.Backspace -> KeyboardAction.Backspace
-    KeyOutput.Enter -> KeyboardAction.Enter
-    KeyOutput.Shift -> KeyboardAction.Shift
-    is KeyOutput.SwitchLayout -> KeyboardAction.SwitchLayout(out.layout)
 }
 
 private fun Key.displayLabel(state: KeyboardState): String {
