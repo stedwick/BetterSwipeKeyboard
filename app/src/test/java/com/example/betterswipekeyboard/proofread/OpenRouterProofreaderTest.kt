@@ -51,6 +51,10 @@ class ProofreadPromptTest {
         val json = JSONObject(ProofreadPrompt.buildRequestJson("test-model", "fix this pls"))
         assertEquals("test-model", json.getString("model"))
 
+        val provider = json.getJSONObject("provider")
+        assertEquals(true, provider.getBoolean("zdr"))
+        assertEquals("deny", provider.getString("data_collection"))
+
         val messages = json.getJSONArray("messages")
         // 1 system + 2 per example + 1 final user message
         assertEquals(1 + ProofreadPrompt.EXAMPLES.size * 2 + 1, messages.length())

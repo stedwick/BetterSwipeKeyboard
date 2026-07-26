@@ -50,6 +50,15 @@ object ProofreadPrompt {
         return JSONObject()
             .put("model", model)
             .put("messages", messages)
+            // Privacy: route only to zero-data-retention endpoints that do
+            // not train on user data. Narrows the provider pool; if none is
+            // available the request fails and the caller fails soft.
+            .put(
+                "provider",
+                JSONObject()
+                    .put("zdr", true)
+                    .put("data_collection", "deny"),
+            )
             .toString()
     }
 
