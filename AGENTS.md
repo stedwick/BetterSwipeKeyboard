@@ -173,6 +173,14 @@ selected as the active IME (the app's setup screen has buttons for both).
 - Compose UI is stateless where possible: `KeyboardScreen` receives a
   `KeyboardState` and emits `KeyboardAction`s; `KeyboardState` is the single
   source of truth for the keyboard UI.
+- Keep features as separate as possible so parallel branches merge cleanly:
+  prefer new files over growing shared ones (e.g. `PunctuationPopup.kt`,
+  `ClipboardPanel.kt`, `BottomInsets.kt`), and when a shared file must
+  change, make the edit small and additive. Favor (mostly) functional style
+  — pure functions and small immutable data types over stateful objects
+  (e.g. `parseCustomWords`, `bottomClearancePx`, `popupTopLeft`): pure code
+  is trivially unit-testable and its merge conflicts stay textual, not
+  behavioral.
 - Versions live in the version catalog `gradle/libs.versions.toml` —
   add dependencies there, not with hard-coded strings in build files.
 - No linter/formatter beyond stock lint is configured; match the style of
