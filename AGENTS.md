@@ -75,6 +75,14 @@ Data flow (deliberately layered, keep it this way):
 - `Dictionary`: frequency-ordered word list from
   `app/src/main/assets/words_en.txt` (`word<TAB>rank` lines, ~20k words,
   lower rank = more frequent), indexed by first letter.
+- Custom user words (names, jargon) merge in via
+  `Dictionary.withCustomWords` at rank 1 (top frequency, geometry still
+  dominates scoring); parsed from free-form input by `parseCustomWords`
+  (split on any non-letter run — apostrophes/hyphens are word breaks),
+  stored newline-joined in SharedPreferences by `CustomWordStore`. The
+  service rebuilds the decoder in `onStartInputView` when the stored string
+  changed; `KeyboardScreen` receives a `decoderProvider` so it reads the
+  current decoder at gesture time. Custom words affect swipe decoding only.
 - `KeyboardGeometry`: collects key bounds from the Compose UI
   (`onGloballyPositioned`) and answers hit-testing / key-center questions.
 

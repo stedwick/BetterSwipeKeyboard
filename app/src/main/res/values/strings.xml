@@ -12,4 +12,9 @@
     <string name="api_key_get">Get a key at openrouter.ai/keys (cloud proofreading sends sentence text to OpenRouter)</string>
     <string name="proofreader_title">Proofread with AI</string>
     <string name="proofreader_description">%1$s via OpenRouter — Your writing is processed in the cloud by Google with ZDR (zero data retention)</string>
+    <string name="custom_words_title">Custom swipe words</string>
+    <string name="custom_words_description">Words the swipe decoder should know (names, jargon, slang). Type or paste them separated by anything — spaces, commas, newlines all work. They are used for swipe typing only and never leave the device.</string>
+    <string name="custom_words_hint">e.g. kimi, naruto, philip</string>
+    <string name="save_words">Save words</string>
+    <string name="custom_words_saved">✓ %1$d custom words saved — active next time the keyboard opens</string>
 </resources>

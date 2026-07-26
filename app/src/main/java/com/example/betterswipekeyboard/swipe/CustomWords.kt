@@ -1,0 +1,51 @@
+package com.example.betterswipekeyboard.swipe
+
+/** Sanity cap on how many custom words are kept from one input. */
+const val MAX_CUSTOM_WORDS = 500
+
+/** Sanity cap on the length of a single custom word. */
+const val MAX_CUSTOM_WORD_LENGTH = 32
+
+/**
+ * Splits free-form user input into custom dictionary words.
+ *
+ * The input is split on ANY run of characters that are not Unicode letters,
+ * so spaces, commas, newlines, tabs, semicolons, digits and punctuation all
+ * act as word breaks.
+ *
+ * Two deliberate choices, kept simple on purpose:
+ *
+ * - Apostrophes and hyphens are word breaks (they are not letters):
+ *   "don't" -> "don", "t" and "mother-in-law" -> "mother", "in", "law".
+ *   The QWERTY layout has only letter keys, so apostrophes/hyphens could
+ *   never be swiped anyway; splitting is the only option that yields
+ *   swipable fragments, and it keeps the regex trivially simple.
+ * - Non-ASCII letters (é, ß, 中…) are KEPT here — this parser stays
+ *   keyboard-agnostic. The decoder already prunes any word containing a
+ *   character with no key (`word.any { it !in keyCenters }` in
+ *   [SwipeDecoder.decode]), so such words are stored harmlessly and simply
+ *   never match.
+ *
+ * Tokens are lowercased (locale-independent), empties dropped, tokens
+ * longer than [maxWordLength] dropped, only the first [maxWords] kept, and
+ * duplicates removed preserving first-occurrence order.
+ *
+ * Pure Kotlin with no Android dependencies so it is fully unit-testable.
+ */
+fun parseCustomWords(
+    input: String,
+    maxWords: Int = MAX_CUSTOM_WORDS,
+    maxWordLength: Int = MAX_CUSTOM_WORD_LENGTH,
+): List<String> {
+    val seen = LinkedHashSet<String>()
+    for (token in input.split(WORD_BREAK)) {
+        val word = token.lowercase()
+        if (word.isEmpty() || word.length > maxWordLength) continue
+        seen += word
+        if (seen.size >= maxWords) break
+    }
+    return seen.toList()
+}
+
+/** Any run of non-letter characters is a word break. */
+private val WORD_BREAK = Regex("[^\\p{L}]+")

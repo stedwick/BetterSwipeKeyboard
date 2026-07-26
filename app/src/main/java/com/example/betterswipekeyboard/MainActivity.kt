@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
+import com.example.betterswipekeyboard.swipe.parseCustomWords
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
 
 private val KeySavedGreen = Color(0xFF30D158)
@@ -53,10 +54,17 @@ class MainActivity : ComponentActivity() {
 fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val keyStore = remember { ApiKeyStore(context) }
+    val wordStore = remember { CustomWordStore(context) }
     var testText by remember { mutableStateOf("") }
     var apiKeyInput by remember { mutableStateOf("") }
     var savedKey by remember { mutableStateOf(keyStore.apiKey) }
     var inputVisible by remember { mutableStateOf(savedKey == null) }
+    // The box IS the source of truth: pre-filled with the stored words, one
+    // per line; saving replaces the whole set.
+    var customWordsInput by remember {
+        mutableStateOf(wordStore.load().joinToString("\n"))
+    }
+    var savedWordCount by remember { mutableStateOf<Int?>(null) }
 
     Column(
         modifier = modifier
@@ -146,6 +154,40 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             color = if (savedKey != null) KeySavedGreen else Color.Unspecified,
             style = MaterialTheme.typography.bodySmall,
         )
+
+        Text(
+            text = stringResource(R.string.custom_words_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            text = stringResource(R.string.custom_words_description),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = customWordsInput,
+            onValueChange = { customWordsInput = it },
+            label = { Text(stringResource(R.string.custom_words_hint)) },
+            minLines = 4,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = {
+                // Parse, normalize and show back what was actually understood.
+                val words = parseCustomWords(customWordsInput)
+                wordStore.save(words)
+                customWordsInput = words.joinToString("\n")
+                savedWordCount = words.size
+            },
+        ) {
+            Text(stringResource(R.string.save_words))
+        }
+        savedWordCount?.let { count ->
+            Text(
+                text = stringResource(R.string.custom_words_saved, count),
+                color = KeySavedGreen,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         OutlinedTextField(
             value = testText,

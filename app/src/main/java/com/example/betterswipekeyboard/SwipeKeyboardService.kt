@@ -54,7 +54,10 @@ class SwipeKeyboardService : InputMethodService(),
         get() = savedStateRegistryController.savedStateRegistry
 
     private lateinit var viewModel: KeyboardViewModel
+    private lateinit var baseDictionary: Dictionary
+    private lateinit var customWordStore: CustomWordStore
     private lateinit var decoder: SwipeDecoder
+    private var lastCustomWordsRaw: String? = null
     private lateinit var apiKeyStore: ApiKeyStore
     private lateinit var mlKitProofreader: MlKitProofreader
     private lateinit var openRouterProofreader: OpenRouterProofreader
@@ -71,11 +74,22 @@ class SwipeKeyboardService : InputMethodService(),
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
-        decoder = SwipeDecoder(Dictionary.load(assets.open("words_en.txt")))
+        baseDictionary = Dictionary.load(assets.open("words_en.txt"))
+        customWordStore = CustomWordStore(this)
+        rebuildDecoder()
         apiKeyStore = ApiKeyStore(this)
         mlKitProofreader = MlKitProofreader(this)
         openRouterProofreader = OpenRouterProofreader(apiKeyStore)
         lifecycleScope.launch { refreshProofreader() }
+    }
+
+    /**
+     * Rebuilds the swipe decoder from the base asset dictionary merged with
+     * the user's stored custom words (see [CustomWordStore]).
+     */
+    private fun rebuildDecoder() {
+        lastCustomWordsRaw = customWordStore.rawWords
+        decoder = SwipeDecoder(baseDictionary.withCustomWords(customWordStore.load()))
     }
 
     /**
@@ -114,7 +128,7 @@ class SwipeKeyboardService : InputMethodService(),
                 val state by viewModel.state.collectAsState()
                 KeyboardScreen(
                     state = state,
-                    decoder = decoder,
+                    decoderProvider = { decoder },
                     onAction = ::onKeyboardAction,
                     onSettingsClick = ::openMainApp,
                 )
@@ -130,6 +144,10 @@ class SwipeKeyboardService : InputMethodService(),
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Pick up custom words saved in MainActivity: rebuild the decoder
+        // only when the stored word string actually changed. Words saved
+        // while the keyboard is open go live on the next keyboard show.
+        if (customWordStore.rawWords != lastCustomWordsRaw) rebuildDecoder()
         // Keep the status bar fresh: the model may have finished downloading
         // or the API key may have changed since the last check.
         lifecycleScope.launch { refreshProofreader() }
@@ -139,7 +157,10 @@ class SwipeKeyboardService : InputMethodService(),
      * The default implementation hides the soft keyboard when a hardware
      * keyboard is attached (e.g. on emulators). We always want to show.
      */
-    override fun onEvaluateInputViewShown(): Boolean = true
+    override fun onEvaluateInputViewShown(): Boolean {
+        super.onEvaluateInputViewShown()
+        return true
+    }
 
     private fun onKeyboardAction(action: KeyboardAction) {
         when (val effect = viewModel.onAction(action)) {

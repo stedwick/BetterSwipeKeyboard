@@ -126,7 +126,7 @@ private const val MAX_COMMIT_SCORE = 1.75f
 @Composable
 fun KeyboardScreen(
     state: KeyboardState,
-    decoder: SwipeDecoder,
+    decoderProvider: () -> SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
     onSettingsClick: () -> Unit,
 ) {
@@ -271,7 +271,10 @@ fun KeyboardScreen(
                     pressedKey = null
 
                     if (swipeCompleted) {
-                        val results = decoder.decode(
+                        // Read the decoder at gesture time: the service may
+                        // have rebuilt it with new custom words since this
+                        // composition was created.
+                        val results = decoderProvider().decode(
                             trail = trail.toList(),
                             keyCenters = geometry.letterCenters(),
                             keyWidth = geometry.keyWidth(),
