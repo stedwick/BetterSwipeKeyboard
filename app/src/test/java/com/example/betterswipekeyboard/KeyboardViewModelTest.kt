@@ -52,6 +52,29 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `emoji layout switching produces no editor effect`() {
+        val vm = viewModel()
+        assertNull(vm.onAction(KeyboardAction.SwitchLayout(LayoutId.EMOJI)))
+        assertEquals(LayoutId.EMOJI, vm.state.value.layout)
+        assertNull(vm.onAction(KeyboardAction.SwitchLayout(LayoutId.LETTERS)))
+        assertEquals(LayoutId.LETTERS, vm.state.value.layout)
+    }
+
+    @Test
+    fun `emoji insert commits verbatim`() {
+        val vm = viewModel()
+        assertEquals(KeyboardEffect.CommitText("😀"), vm.onAction(KeyboardAction.InsertText("😀")))
+    }
+
+    @Test
+    fun `one shot shift does not mangle emoji and still clears`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        assertEquals(KeyboardEffect.CommitText("😀"), vm.onAction(KeyboardAction.InsertText("😀")))
+        assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
+    }
+
+    @Test
     fun `backspace and enter map to editor effects`() {
         val vm = viewModel()
         assertEquals(KeyboardEffect.DeleteBackward, vm.onAction(KeyboardAction.Backspace))
