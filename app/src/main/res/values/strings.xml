@@ -10,4 +10,5 @@
     <string name="change_key">Change</string>
     <string name="api_key_saved">✓ Key saved — the proofreader is ready</string>
     <string name="api_key_get">Get a key at openrouter.ai/keys (cloud proofreading sends sentence text to OpenRouter)</string>
+    <string name="proofreader_description">Proofread with AI: %1$s via OpenRouter — sentence text leaves your device</string>
 </resources>

@@ -104,7 +104,7 @@ class OpenRouterProofreader(
         http.connectionPool.evictAll()
     }
 
-    private companion object {
+    internal companion object {
         const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
         /** Very fast, very cheap (~$0.10/M input tokens) — ideal for proofreading. */

@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
 
 class MainActivity : ComponentActivity() {
@@ -77,7 +78,10 @@ fun SetupScreen(modifier: Modifier = Modifier) {
         }
 
         Text(
-            text = "AI proofreader (cloud)",
+            text = stringResource(
+                R.string.proofreader_description,
+                OpenRouterProofreader.MODEL,
+            ),
             style = MaterialTheme.typography.titleSmall,
         )
         if (inputVisible) {
