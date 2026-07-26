@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -380,15 +381,19 @@ fun KeyboardScreen(
             }
         }
 
-        // Punctuation popup for the period long-press.
+        // Punctuation popup for the period long-press: a compact floating
+        // panel of key tiles, clearly separated from the keys behind it.
         val choices = popupChoices
         if (choices != null) {
             Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 72.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(colors.keyBackground)
+                    .padding(bottom = 76.dp)
+                    .shadow(8.dp, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.keyboardBackground)
+                    .padding(4.dp)
                     .onGloballyPositioned {
                         popupBounds = Rect(
                             it.positionInWindow() - boxOffsetInWindow,
@@ -400,11 +405,12 @@ fun KeyboardScreen(
                     Box(
                         modifier = Modifier
                             .size(width = 44.dp, height = 48.dp)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(
                                 if (index == popupIndex) {
                                     colors.keyBackgroundActive
                                 } else {
-                                    Color.Transparent
+                                    colors.keyBackground
                                 },
                             ),
                         contentAlignment = Alignment.Center,
