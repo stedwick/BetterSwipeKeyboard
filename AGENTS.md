@@ -265,6 +265,12 @@ selected as the active IME (the app's setup screen has buttons for both).
   (e.g. `parseCustomWords`, `bottomClearancePx`, `popupTopLeft`): pure code
   is trivially unit-testable and its merge conflicts stay textual, not
   behavioral.
+- Merge gotcha learned the hard way: when a branch based on the old
+  monolithic `KeyboardScreen` merges into the panel architecture, deleting
+  the old shape can silently drop assignments the new shape still needs
+  (two `popupAnchor` assignments were almost lost this way — the popup
+  would never have shown). After such a merge, diff the result against
+  the expected panel shape and check every `popupAnchor` site.
 - Versions live in the version catalog `gradle/libs.versions.toml` —
   add dependencies there, not with hard-coded strings in build files.
 - No linter/formatter beyond stock lint is configured; match the style of
