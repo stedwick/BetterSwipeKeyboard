@@ -219,6 +219,13 @@ selected as the active IME (the app's setup screen has buttons for both).
   bottom clearance (`KeyboardBottomClearance`), or system nav buttons
   (hide-keyboard chevron, IME switcher) overlap the bottom row on some
   devices.
+- Compose modifier order decides what `imePadding()` pads: AFTER
+  `verticalScroll` it becomes part of the scrollable content (just extends
+  the scroll range); BEFORE it, it shrinks the viewport — which is what a
+  setup screen wants. And neither auto-scrolls a focused text field above
+  the IME: relocation on focus fires before the animated inset lands, so
+  trigger `bringIntoView` only once the `ime()` inset has settled (see
+  `MainActivity`).
 
 ## Environment quirks (adb/emulator workflow)
 
