@@ -70,6 +70,7 @@ fun EmojiPanel(
         // row, so the IME window never resizes when it appears. Tapping a
         // suggestion commits exactly like a grid tap.
         if (suggestions.isNotEmpty()) {
+            SectionLabel(text = "Suggestions", colors = colors)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -130,12 +131,9 @@ fun EmojiPanel(
         ) {
             EmojiCategories.forEach { category ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
+                    SectionLabel(
                         text = category.title,
-                        color = colors.keyText.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelSmall,
+                        colors = colors,
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
@@ -185,6 +183,22 @@ fun EmojiPanel(
             }
         }
     }
+}
+
+@Composable
+private fun SectionLabel(
+    text: String,
+    colors: KeyboardColors,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        color = colors.keyText.copy(alpha = 0.6f),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = modifier,
+    )
 }
 
 @Composable
