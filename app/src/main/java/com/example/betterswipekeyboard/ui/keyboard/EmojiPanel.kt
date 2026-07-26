@@ -92,6 +92,7 @@ fun EmojiPanel(
         }
 
         // Category bar: tap an icon to jump the grid to that section.
+        SectionLabel(text = "Categories", colors = colors)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
