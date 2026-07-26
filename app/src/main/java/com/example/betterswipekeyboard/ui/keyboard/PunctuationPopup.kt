@@ -30,9 +30,12 @@ import kotlin.math.roundToInt
 /**
  * Choices in the long-press popup on the period key, as a 3x3 grid ordered
  * top (least common) to bottom (most common): the popup is anchored just
- * above the period key, so the bottom row is the closest to the thumb.
+ * above the period key, so the bottom row is the closest to the thumb. The
+ * bottom row holds the most-expected alternates: "!" sits bottom-center,
+ * straight above the resting finger (zero lateral drag), "?" at the
+ * thumb-side corner.
  */
-internal val PUNCTUATION_POPUP = listOf("\"", ";", ":", "-", "'", ".", ",", "?", "!")
+internal val PUNCTUATION_POPUP = listOf("\"", ";", ":", "-", "'", ".", ",", "!", "?")
 internal const val PUNCTUATION_POPUP_COLUMNS = 3
 
 private val PopupTileSize = 48.dp

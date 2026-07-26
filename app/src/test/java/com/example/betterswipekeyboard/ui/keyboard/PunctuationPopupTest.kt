@@ -45,7 +45,7 @@ class PunctuationPopupTest {
     fun `grid hit-testing maps positions to indices`() {
         val bounds = Rect(0f, 0f, 150f, 150f) // 3x3 grid of 50px tiles
         assertEquals(0, popupIndexAt(Offset(25f, 25f), bounds)) // top-left
-        assertEquals(8, popupIndexAt(Offset(125f, 125f), bounds)) // bottom-right = "!"
+        assertEquals(8, popupIndexAt(Offset(125f, 125f), bounds)) // bottom-right
     }
 
     @Test
@@ -62,9 +62,14 @@ class PunctuationPopupTest {
 
     @Test
     fun `most common punctuation sits on the bottom row`() {
-        val bottomRow = PUNCTUATION_POPUP.chunked(PUNCTUATION_POPUP_COLUMNS).last()
-        assertTrue("!" in bottomRow)
-        assertTrue("?" in bottomRow)
-        assertTrue("," in bottomRow)
+        // Pin the full order: any merge that resurrects the old top-row
+        // "! ? ," arrangement must fail loudly here.
+        assertEquals(
+            listOf("\"", ";", ":", "-", "'", ".", ",", "!", "?"),
+            PUNCTUATION_POPUP,
+        )
+        val rows = PUNCTUATION_POPUP.chunked(PUNCTUATION_POPUP_COLUMNS)
+        // "!" bottom-center (straight above the finger), "?" thumb-side corner.
+        assertEquals(listOf(",", "!", "?"), rows.last())
     }
 }
