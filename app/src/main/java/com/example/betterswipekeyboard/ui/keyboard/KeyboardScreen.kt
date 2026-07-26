@@ -100,16 +100,20 @@ private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
 private val KeyboardBottomClearance = 12.dp
 
-/** Choices in the long-press popup on the period key. */
-private val PUNCTUATION_POPUP = listOf("!", "?", ",", ";", ":", "-", "\"", "'")
+/** Choices in the long-press popup on the period key, as a 3x3 grid. */
+private val PUNCTUATION_POPUP = listOf("!", "?", ",", ";", ":", "-", "\"", "'", ".")
+private const val PUNCTUATION_POPUP_COLUMNS = 3
 
-/** Hit-test a finger position against the punctuation popup (with slack). */
+/** Hit-test a finger position against the punctuation popup grid (with slack). */
 private fun popupIndexAt(position: Offset, bounds: Rect?): Int {
     val b = bounds ?: return -1
     if (position.y < b.top - 24f || position.y > b.bottom + 160f) return -1
     if (position.x < b.left || position.x > b.right) return -1
-    val index = ((position.x - b.left) / (b.width / PUNCTUATION_POPUP.size)).toInt()
-    return index.coerceIn(0, PUNCTUATION_POPUP.size - 1)
+    val column = ((position.x - b.left) / (b.width / PUNCTUATION_POPUP_COLUMNS)).toInt()
+        .coerceIn(0, PUNCTUATION_POPUP_COLUMNS - 1)
+    val rows = (PUNCTUATION_POPUP.size + PUNCTUATION_POPUP_COLUMNS - 1) / PUNCTUATION_POPUP_COLUMNS
+    val row = ((position.y - b.top) / (b.height / rows)).toInt().coerceIn(0, rows - 1)
+    return (row * PUNCTUATION_POPUP_COLUMNS + column).coerceIn(0, PUNCTUATION_POPUP.size - 1)
 }
 
 /**
@@ -381,15 +385,15 @@ fun KeyboardScreen(
             }
         }
 
-        // Punctuation popup for the period long-press: a compact floating
-        // panel of key tiles, clearly separated from the keys behind it.
+        // Punctuation popup for the period long-press: a compact 3x3 grid
+        // of key tiles anchored over the period key, within thumb reach.
         val choices = popupChoices
         if (choices != null) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            Column(
+                verticalArrangement = Arrangement.spacedBy(3.dp),
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 76.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 76.dp)
                     .shadow(8.dp, RoundedCornerShape(10.dp))
                     .clip(RoundedCornerShape(10.dp))
                     .background(colors.keyboardBackground)
@@ -401,21 +405,26 @@ fun KeyboardScreen(
                         )
                     },
             ) {
-                choices.forEachIndexed { index, label ->
-                    Box(
-                        modifier = Modifier
-                            .size(width = 44.dp, height = 48.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (index == popupIndex) {
-                                    colors.keyBackgroundActive
-                                } else {
-                                    colors.keyBackground
-                                },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        rowChoices.forEach { label ->
+                            val index = choices.indexOf(label)
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 48.dp, height = 48.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (index == popupIndex) {
+                                            colors.keyBackgroundActive
+                                        } else {
+                                            colors.keyBackground
+                                        },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                            }
+                        }
                     }
                 }
             }
