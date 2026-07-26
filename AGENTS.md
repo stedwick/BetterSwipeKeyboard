@@ -38,16 +38,25 @@ Data flow (deliberately layered, keep it this way):
 1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
    each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
    Microphone). `QwertyLayout` and `SymbolsLayout`.
-2. **All gestures produce semantic actions** (`KeyboardAction`): taps,
+2. **Panels are layout modes, not layouts**: `LayoutId.EMOJI` has no
+   `KeyboardLayout` — `KeyboardScreen` renders `EmojiPanel` instead of the
+   letter rows. Any panel (scrollable/tappable content) must live **outside**
+   the letter-gesture `pointerInput` container, which wraps only the
+   letter/symbol rows (utility row included outside); otherwise panel
+   scrolls/taps are swallowed as gestures.
+3. **All gestures produce semantic actions** (`KeyboardAction`): taps,
    long-presses and swipes are handled at the container level in
    `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and
    every user intent becomes a `KeyboardAction`.
-3. **`KeyboardViewModel` reduces actions** into a new `KeyboardState` plus an
+4. **`KeyboardViewModel` reduces actions** into a new `KeyboardState` plus an
    optional `KeyboardEffect` (CommitText / CommitWord / DeleteBackward /
    PerformEnter). Pure logic, no Android types beyond `ViewModel`.
-4. **Only `InputConnectionEditor` talks to the text field** — the service
+5. **Only `InputConnectionEditor` talks to the text field** — the service
    applies effects through it. InputConnection handling exists in exactly
-   one place.
+   one place. Backspace is grapheme-cluster-aware
+   (`precedingGraphemeLength`, `java.text.BreakIterator`): never delete a
+   single UTF-16 unit — emoji are surrogate pairs and deleting one unit
+   leaves a U+FFFD replacement char.
 
 ### Swipe decoding (`swipe/`)
 
