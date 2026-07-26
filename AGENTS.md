@@ -182,8 +182,9 @@ selected as the active IME (the app's setup screen has buttons for both).
   measures the real bottom inset via a `ViewCompat` listener
   (`max(navigationBars, tappableElement, mandatorySystemGestures)` →
   `ime/BottomInsets.kt` `bottomClearancePx`), passed to `KeyboardScreen` as
-  `bottomClearance`; a fixed 12dp (`KeyboardBottomClearance`) is added on top
-  purely as aesthetic breathing room. The listener MUST be registered on the
+  `bottomClearance`; a small fixed 4dp (`KeyboardBottomClearance`) is added
+  on top purely as an aesthetic gap (12dp left too much dead space above
+  the strip). The listener MUST be registered on the
   window's **decor view** (plus `ViewCompat.requestApplyInsets`): the IME
   window does not dispatch WindowInsets down to the input view, so a
   listener on the ComposeView never fires.

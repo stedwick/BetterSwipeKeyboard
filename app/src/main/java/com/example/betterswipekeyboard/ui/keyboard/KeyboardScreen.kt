@@ -99,7 +99,12 @@ private val ToggleOff = Color(0xFFFF453A)
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
-private val KeyboardBottomClearance = 12.dp
+
+// Small aesthetic gap between the bottom key row and the system IME strip.
+// The measured inset (bottomClearance) already covers the strip itself;
+// user feedback: 12dp left too much dead space, so keep this minimal but
+// non-zero.
+private val KeyboardBottomClearance = 4.dp
 
 /**
  * Best-guess commits above this score are too unsure. Below it we commit
@@ -148,8 +153,8 @@ fun KeyboardScreen(
             .fillMaxWidth()
             .background(colors.keyboardBackground)
             // bottomClearance is measured by the service from the real window
-            // insets (navigation bar / IME strip height); the constant adds
-            // breathing room so the system nav strip never overlaps keys.
+            // insets and already covers the nav/IME strip itself; only the
+            // small aesthetic gap is added on top.
             .padding(bottom = bottomClearance + KeyboardBottomClearance)
             .onGloballyPositioned {
                 boxOffsetInWindow = it.positionInWindow()
