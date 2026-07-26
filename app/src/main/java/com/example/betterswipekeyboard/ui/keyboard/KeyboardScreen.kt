@@ -534,6 +534,10 @@ private fun UtilityRow(
             modifier = Modifier.weight(1f),
         ) {
             UtilityKeyLabel("⚙", colors)
+        }
+    }
+}
+
 /** Matches the height of the four key rows, so the IME window doesn't jump. */
 private val VoicePanelHeight = 226.dp
 
