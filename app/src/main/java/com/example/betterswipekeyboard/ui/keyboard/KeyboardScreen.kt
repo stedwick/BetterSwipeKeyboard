@@ -108,6 +108,7 @@ fun KeyboardScreen(
     state: KeyboardState,
     decoder: SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val layout = when (state.layout) {
@@ -287,6 +288,13 @@ fun KeyboardScreen(
                     modifier = Modifier.weight(1f),
                 ) {
                     UtilityKeyLabel("🎤", colors)
+                }
+                UtilityKey(
+                    onClick = onSettingsClick,
+                    colors = colors,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    UtilityKeyLabel("⚙", colors)
                 }
             }
             layout.rows.forEach { row ->

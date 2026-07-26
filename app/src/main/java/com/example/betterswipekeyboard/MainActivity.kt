@@ -25,12 +25,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
+
+private val KeySavedGreen = Color(0xFF30D158)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,6 +143,7 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             } else {
                 stringResource(R.string.api_key_get)
             },
+            color = if (savedKey != null) KeySavedGreen else Color.Unspecified,
             style = MaterialTheme.typography.bodySmall,
         )
 

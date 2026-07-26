@@ -1,6 +1,7 @@
 package com.example.betterswipekeyboard
 
 import android.inputmethodservice.InputMethodService
+import android.content.Intent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
@@ -115,9 +116,16 @@ class SwipeKeyboardService : InputMethodService(),
                     state = state,
                     decoder = decoder,
                     onAction = ::onKeyboardAction,
+                    onSettingsClick = ::openMainApp,
                 )
             }
         }
+    }
+
+    private fun openMainApp() {
+        packageManager.getLaunchIntentForPackage(packageName)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ?.let(::startActivity)
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
