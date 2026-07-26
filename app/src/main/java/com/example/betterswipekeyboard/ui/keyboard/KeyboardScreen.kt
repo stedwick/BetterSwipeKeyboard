@@ -523,6 +523,17 @@ private fun KeyView(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        // Long-press hint in the corner of the period key.
+        if ((key.output as? KeyOutput.Text)?.text == ".") {
+            Text(
+                text = "!",
+                color = colors.keyText.copy(alpha = 0.4f),
+                fontSize = 10.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 4.dp, end = 6.dp),
+            )
+        }
     }
 }
 
