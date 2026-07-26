@@ -15,6 +15,16 @@ class InputConnectionEditor(
         connectionProvider()?.commitText(text, 1)
     }
 
+    /**
+     * Commits a swiped word, inserting a leading space when the text before
+     * the cursor doesn't already end in whitespace (and never at the very
+     * start of the field).
+     */
+    fun commitWord(word: String) {
+        val before = textBeforeCursor(maxChars = 1)
+        commitText(withLeadingSpace(before, word))
+    }
+
     fun backspace() {
         val ic = connectionProvider() ?: return
         // Deleting a selection removes the whole selection, not just one char.
@@ -49,5 +59,15 @@ class InputConnectionEditor(
         } finally {
             ic.endBatchEdit()
         }
+    }
+
+    companion object {
+        /** Pure, unit-tested: the word plus a leading space iff one is needed. */
+        fun withLeadingSpace(beforeCursor: String?, word: String): String =
+            if (beforeCursor.isNullOrEmpty() || beforeCursor.last().isWhitespace()) {
+                word
+            } else {
+                " $word"
+            }
     }
 }

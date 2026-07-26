@@ -36,6 +36,12 @@ sealed interface KeyboardAction {
 /** Side effects to apply to the current InputConnection. */
 sealed interface KeyboardEffect {
     data class CommitText(val text: String) : KeyboardEffect
+
+    /**
+     * A swiped word. Distinct from [CommitText] because the service adds a
+     * leading space when the field doesn't already end in whitespace.
+     */
+    data class CommitWord(val word: String) : KeyboardEffect
     data object DeleteBackward : KeyboardEffect
     data object PerformEnter : KeyboardEffect
 }

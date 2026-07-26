@@ -138,6 +138,10 @@ class SwipeKeyboardService : InputMethodService(),
                 editor.commitText(effect.text)
                 scheduleAutoProofread()
             }
+            is KeyboardEffect.CommitWord -> {
+                editor.commitWord(effect.word)
+                scheduleAutoProofread()
+            }
             KeyboardEffect.DeleteBackward -> {
                 editor.backspace()
                 scheduleAutoProofread()

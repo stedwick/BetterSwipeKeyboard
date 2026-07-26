@@ -59,9 +59,26 @@ class KeyboardViewModelTest {
     }
 
     @Test
-    fun `commit word is reserved funnel for swipe output`() {
+    fun `commit word flows through as word effect`() {
         val vm = viewModel()
-        assertEquals(KeyboardEffect.CommitText("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(KeyboardEffect.CommitWord("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+    }
+
+    @Test
+    fun `one shot shift capitalizes swiped word then turns off`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        assertEquals(KeyboardEffect.CommitWord("Hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
+        assertEquals(KeyboardEffect.CommitWord("world"), vm.onAction(KeyboardAction.CommitWord("world")))
+    }
+
+    @Test
+    fun `caps lock uppercases whole swiped word`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CapsLock)
+        assertEquals(KeyboardEffect.CommitWord("HELLO"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(ShiftMode.LOCKED, vm.state.value.shiftMode)
     }
 
     @Test

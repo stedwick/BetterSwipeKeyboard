@@ -29,8 +29,15 @@ class KeyboardViewModel : ViewModel() {
         }
 
         is KeyboardAction.CommitWord -> {
+            val caps = _state.value.shiftMode
             consumeOneShot()
-            KeyboardEffect.CommitText(action.word)
+            KeyboardEffect.CommitWord(
+                when (caps) {
+                    ShiftMode.ONE_SHOT -> action.word.replaceFirstChar { it.uppercase() }
+                    ShiftMode.LOCKED -> action.word.uppercase()
+                    ShiftMode.OFF -> action.word
+                },
+            )
         }
 
         KeyboardAction.Backspace -> KeyboardEffect.DeleteBackward

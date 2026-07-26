@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,11 +64,29 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-private val KeyboardBackground = Color(0xFF1C1C1E)
-private val KeyBackground = Color(0xFF3A3A3C)
-private val KeyBackgroundActive = Color(0xFF6E6E73)
-private val KeyText = Color(0xFFF2F2F7)
-private val TrailColor = Color(0xFF64D2FF)
+private data class KeyboardColors(
+    val keyboardBackground: Color,
+    val keyBackground: Color,
+    val keyBackgroundActive: Color,
+    val keyText: Color,
+    val trail: Color,
+)
+
+private val DarkKeyboardColors = KeyboardColors(
+    keyboardBackground = Color(0xFF1C1C1E),
+    keyBackground = Color(0xFF3A3A3C),
+    keyBackgroundActive = Color(0xFF6E6E73),
+    keyText = Color(0xFFF2F2F7),
+    trail = Color(0xFF64D2FF),
+)
+
+private val LightKeyboardColors = KeyboardColors(
+    keyboardBackground = Color(0xFFD1D5DB),
+    keyBackground = Color(0xFFFFFFFF),
+    keyBackgroundActive = Color(0xFFAEB3BC),
+    keyText = Color(0xFF1C1C1E),
+    trail = Color(0xFF0A84FF),
+)
 
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
@@ -82,6 +101,7 @@ fun KeyboardScreen(
     decoder: SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
 ) {
+    val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val layout = when (state.layout) {
         LayoutId.LETTERS -> QwertyLayout
         LayoutId.SYMBOLS -> SymbolsLayout
@@ -98,7 +118,7 @@ fun KeyboardScreen(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(KeyboardBackground)
+            .background(colors.keyboardBackground)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
             // ALL pointer input is handled here at the container level (taps,
@@ -197,7 +217,7 @@ fun KeyboardScreen(
                         )
                         val best = results.firstOrNull()
                         if (best != null && best.score < ACCEPT_THRESHOLD) {
-                            onAction(KeyboardAction.CommitWord(best.word + " "))
+                            onAction(KeyboardAction.CommitWord(best.word))
                         }
                         // Let the trail linger briefly, then clear it.
                         scope.launch {
@@ -223,29 +243,32 @@ fun KeyboardScreen(
                     onClick = { onAction(KeyboardAction.ToggleProofread) },
                     enabled = state.proofreader == ProofreaderStatus.AVAILABLE,
                     active = state.proofreadAuto,
+                    colors = colors,
                     modifier = Modifier.weight(2f),
                 ) {
                     if (state.proofreadInFlight) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp,
-                            color = KeyText,
+                            color = colors.keyText,
                         )
                     } else {
-                        UtilityKeyLabel("✨ AI proofreading")
+                        UtilityKeyLabel("✨ AI proofreading", colors)
                     }
                 }
                 UtilityKey(
                     onClick = { /* TODO: emoji panel */ },
+                    colors = colors,
                     modifier = Modifier.weight(1f),
                 ) {
-                    UtilityKeyLabel("😀")
+                    UtilityKeyLabel("😀", colors)
                 }
                 UtilityKey(
                     onClick = { /* TODO: voice input */ },
+                    colors = colors,
                     modifier = Modifier.weight(1f),
                 ) {
-                    UtilityKeyLabel("🎤")
+                    UtilityKeyLabel("🎤", colors)
                 }
             }
             layout.rows.forEach { row ->
@@ -258,6 +281,7 @@ fun KeyboardScreen(
                             key = key,
                             state = state,
                             pressed = key == pressedKey,
+                            colors = colors,
                             modifier = Modifier.weight(key.weight),
                             onPositioned = { coordinates ->
                                 geometry.register(
@@ -282,7 +306,7 @@ fun KeyboardScreen(
                 for (i in 1 until points.size) {
                     val alpha = 0.15f + 0.75f * (i.toFloat() / points.size)
                     drawLine(
-                        color = TrailColor.copy(alpha = alpha),
+                        color = colors.trail.copy(alpha = alpha),
                         start = points[i - 1],
                         end = points[i],
                         strokeWidth = trailStrokeWidth,
@@ -300,6 +324,7 @@ private enum class GestureOutcome { TAP, DRAG }
 @Composable
 private fun UtilityKey(
     onClick: () -> Unit,
+    colors: KeyboardColors,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     active: Boolean = false,
@@ -309,7 +334,7 @@ private fun UtilityKey(
         modifier = modifier
             .height(44.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(if (active) KeyBackgroundActive else KeyBackground)
+            .background(if (active) colors.keyBackgroundActive else colors.keyBackground)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -318,10 +343,10 @@ private fun UtilityKey(
 }
 
 @Composable
-private fun UtilityKeyLabel(text: String) {
+private fun UtilityKeyLabel(text: String, colors: KeyboardColors) {
     Text(
         text = text,
-        color = KeyText,
+        color = colors.keyText,
         fontSize = 15.sp,
         style = MaterialTheme.typography.bodyMedium,
     )
@@ -354,13 +379,14 @@ private fun KeyView(
     key: Key,
     state: KeyboardState,
     pressed: Boolean,
+    colors: KeyboardColors,
     onPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isShiftActive = key.output is KeyOutput.Shift && state.shiftMode != ShiftMode.OFF
     val background = when {
-        pressed || isShiftActive -> KeyBackgroundActive
-        else -> KeyBackground
+        pressed || isShiftActive -> colors.keyBackgroundActive
+        else -> colors.keyBackground
     }
 
     Box(
@@ -373,7 +399,7 @@ private fun KeyView(
     ) {
         Text(
             text = key.displayLabel(state),
-            color = KeyText,
+            color = colors.keyText,
             fontSize = if (key.output is KeyOutput.Text) 20.sp else 15.sp,
             fontWeight = if (isShiftActive) FontWeight.Bold else FontWeight.Normal,
             style = MaterialTheme.typography.bodyMedium,
