@@ -261,7 +261,7 @@ fun KeyboardScreen(
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            UtilityKeyLabel("✨ AI proofreading ", colors)
+                            UtilityKeyLabel("✨ AI ", colors)
                             UtilityKeyLabel(
                                 text = if (state.proofreadAuto) "on" else "off",
                                 colors = colors,
