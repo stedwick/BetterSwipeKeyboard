@@ -1,6 +1,14 @@
 package com.example.betterswipekeyboard.proofread
 
 /**
+ * The proofread window: the current fragment plus the previous sentence as
+ * context, exactly as they appear before the cursor. The whole window is
+ * the editable span — merging a continuation fragment into the previous
+ * sentence inherently edits the boundary between them.
+ */
+data class SentenceWindow(val text: String, val hasPreviousSentence: Boolean)
+
+/**
  * Extracts the sentence the cursor is currently in, from the text before the
  * cursor. Pure logic, unit-tested.
  */
@@ -19,4 +27,51 @@ object SentenceExtractor {
             .substringAfterLast('\n')
         return fragment.takeIf { it.isNotBlank() } ?: ""
     }
+
+    /**
+     * Returns the current fragment plus the previous sentence (context), as
+     * the exact substring of [textBeforeCursor] ending at the cursor, so
+     * callers can replace precisely this span. Needed because an auto
+     * proofread during a mid-thought pause can terminate a sentence the
+     * user later continues ("... the store." + "and bought ice cream.") —
+     * without the previous sentence the proofreader cannot merge them.
+     *
+     * The previous sentence is capped to its last [maxPreviousChars]
+     * (starting at a word boundary, so the editable span never begins
+     * mid-word). Returns an empty window when the cursor sits right after
+     * a sentence boundary — there is nothing new to proofread, and this
+     * also keeps already-final text from being re-proofread.
+     */
+    fun currentWindow(
+        textBeforeCursor: String,
+        maxPreviousChars: Int = MAX_PREVIOUS_SENTENCE_CHARS,
+    ): SentenceWindow {
+        val current = currentSentence(textBeforeCursor)
+        if (current.isEmpty()) return SentenceWindow("", hasPreviousSentence = false)
+
+        // Everything up to and including the boundary that started the
+        // current fragment. Strip that sentence-final punctuation (and any
+        // ellipsis/whitespace around it) so the previous sentence itself
+        // becomes visible to currentSentence — otherwise the trailing
+        // boundary always yields an empty fragment.
+        val rest = textBeforeCursor.dropLast(current.length).trimEnd()
+        val beforeBoundary = rest.dropLastWhile { it == '.' || it == '!' || it == '?' }.trimEnd()
+        if (beforeBoundary.isBlank()) {
+            return SentenceWindow(current, hasPreviousSentence = false)
+        }
+
+        val previous = currentSentence(beforeBoundary).let { sentence ->
+            if (sentence.length <= maxPreviousChars) {
+                sentence
+            } else {
+                sentence.takeLast(maxPreviousChars)
+                    .substringAfter(' ', missingDelimiterValue = sentence)
+            }
+        }
+        val start = beforeBoundary.length - previous.length
+        return SentenceWindow(textBeforeCursor.substring(start), hasPreviousSentence = true)
+    }
+
+    /** Cap on how much of the previous sentence goes into the prompt. */
+    private const val MAX_PREVIOUS_SENTENCE_CHARS = 250
 }

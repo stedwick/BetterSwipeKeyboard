@@ -115,6 +115,15 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `gesture start and end produce no effect and no state change`() {
+        val vm = viewModel()
+        val before = vm.state.value
+        assertNull(vm.onAction(KeyboardAction.GestureStarted))
+        assertNull(vm.onAction(KeyboardAction.GestureEnded))
+        assertEquals(before, vm.state.value)
+    }
+
+    @Test
     fun `proofreader status updates state`() {
         val vm = viewModel()
         assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderStatus.UNAVAILABLE,

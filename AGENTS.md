@@ -117,12 +117,25 @@ Data flow (deliberately layered, keep it this way):
   requests restricted to zero-data-retention providers).
 - `selectBackend`: on-device wins when available; cloud when an API key is
   configured; otherwise none.
-- Auto-proofread is debounced 1 s after the last text change
-  (`SwipeKeyboardService.scheduleAutoProofread`); `SentenceExtractor` pulls
-  the current sentence from text before the cursor, and the result is only
+- Auto-proofread is debounced 1 s after the last *user activity*, not just
+  the last text change (`SwipeKeyboardService.scheduleAutoProofread`):
+  `KeyboardScreen` emits `KeyboardAction.GestureStarted`/`GestureEnded`
+  around every gesture (a swipe produces no actions until finger-up), a
+  touch cancels the timer, and finger-up reschedules it only when the
+  dirty flag says text changed since the last proofread attempt (no
+  wasted API calls after no-op gestures).
+- `SentenceExtractor.currentWindow` pulls the current fragment *plus the
+  previous sentence* from text before the cursor, so a continuation
+  fragment ("and bought ...") can be merged back into a sentence an
+  earlier pass terminated during a mid-thought pause. The whole window is
+  the proofread input and the replacement span; the result is only
   applied if the user hasn't typed since (never clobber newer text).
   Proofread failures are logged and swallowed — the keyboard must never
   depend on the AI.
+- The merge behavior is taught only on the OpenRouter path (few-shot
+  examples in `ProofreadPrompt`). The ML Kit API takes plain text only —
+  no system prompt, no few-shot — so on-device merging is best-effort
+  model behavior and parity between backends is not guaranteed.
 - The OpenRouter API key is stored in plain SharedPreferences by
   `ApiKeyStore` (acceptable for a personal app; noted in code as
   not production-grade).

@@ -195,6 +195,7 @@ fun KeyboardScreen(
                                 val touchSlop = viewConfiguration.touchSlop
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
+                                    onAction(KeyboardAction.GestureStarted)
                                     val downKey = geometry.keyAt(down.position)
                                     pressedKey = downKey
                                     val trail = mutableListOf(
@@ -340,6 +341,7 @@ fun KeyboardScreen(
                                             trailPoints = emptyList()
                                         }
                                     }
+                                    onAction(KeyboardAction.GestureEnded)
                                 }
                             },
                     ) {

@@ -91,6 +91,11 @@ class KeyboardViewModel : ViewModel() {
             null
         }
 
+        // No state change: the service uses these solely to suspend and
+        // restart the auto-proofread inactivity timer around gestures.
+        KeyboardAction.GestureStarted -> null
+        KeyboardAction.GestureEnded -> null
+
         KeyboardAction.Noop -> null
     }
 
