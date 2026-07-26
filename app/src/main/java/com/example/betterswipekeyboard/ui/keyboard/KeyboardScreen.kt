@@ -88,6 +88,9 @@ private val LightKeyboardColors = KeyboardColors(
     trail = Color(0xFF0A84FF),
 )
 
+private val ToggleOn = Color(0xFF30D158)
+private val ToggleOff = Color(0xFFFF453A)
+
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
@@ -253,8 +256,14 @@ fun KeyboardScreen(
                             color = colors.keyText,
                         )
                     } else {
-                        val mark = if (state.proofreadAuto) "✓" else "✕"
-                        UtilityKeyLabel("✨ AI proofreading $mark", colors)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            UtilityKeyLabel("✨ AI proofreading ", colors)
+                            UtilityKeyLabel(
+                                text = if (state.proofreadAuto) "on" else "off",
+                                colors = colors,
+                                color = if (state.proofreadAuto) ToggleOn else ToggleOff,
+                            )
+                        }
                     }
                 }
                 UtilityKey(
@@ -344,10 +353,14 @@ private fun UtilityKey(
 }
 
 @Composable
-private fun UtilityKeyLabel(text: String, colors: KeyboardColors) {
+private fun UtilityKeyLabel(
+    text: String,
+    colors: KeyboardColors,
+    color: Color = colors.keyText,
+) {
     Text(
         text = text,
-        color = colors.keyText,
+        color = color,
         fontSize = 15.sp,
         style = MaterialTheme.typography.bodyMedium,
     )
