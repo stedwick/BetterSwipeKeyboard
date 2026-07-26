@@ -114,11 +114,12 @@ val EmojiCategories: List<EmojiCategory> = listOf(
 )
 
 /**
- * Item index in the flattened emoji grid where [categoryIndex] starts.
- * The grid emits one full-span header item per category followed by that
- * category's emoji items, so category N starts after the headers and
- * emojis of all preceding categories. EmojiPanel's item order must match
- * this accounting exactly, or category jumps land mid-section.
+ * Item index where [categoryIndex]'s section starts, counting only the
+ * category sections: the grid emits one full-span header item per
+ * category followed by that category's emoji items, so category N starts
+ * after the headers and emojis of all preceding categories. EmojiPanel
+ * prepends full-span leading items (suggestion block, Categories label,
+ * category bar) — use [categoryJumpIndex] for actual scroll targets.
  */
 fun categoryStartIndex(categories: List<EmojiCategory>, categoryIndex: Int): Int {
     var index = 0
@@ -127,3 +128,26 @@ fun categoryStartIndex(categories: List<EmojiCategory>, categoryIndex: Int): Int
     }
     return index
 }
+
+/** Leading full-span items always preceding the sections: "Categories" label + category bar. */
+private const val PANEL_FIXED_LEADING_ITEMS = 2
+
+/** Extra leading items while the suggestion row is visible: "Suggestions" label + row. */
+private const val PANEL_SUGGESTION_ITEMS = 2
+
+/**
+ * Scroll target for [categoryIndex]'s section header in EmojiPanel's
+ * single scroll surface. The panel puts full-span items ahead of the
+ * sections — always a "Categories" label and the category bar, plus the
+ * "Suggestions" label and row while suggestions exist — so jump targets
+ * shift with [hasSuggestions]. EmojiPanel's item order must match this
+ * accounting exactly, or category jumps land mid-list.
+ */
+fun categoryJumpIndex(
+    categories: List<EmojiCategory>,
+    hasSuggestions: Boolean,
+    categoryIndex: Int,
+): Int =
+    (if (hasSuggestions) PANEL_SUGGESTION_ITEMS else 0) +
+        PANEL_FIXED_LEADING_ITEMS +
+        categoryStartIndex(categories, categoryIndex)
