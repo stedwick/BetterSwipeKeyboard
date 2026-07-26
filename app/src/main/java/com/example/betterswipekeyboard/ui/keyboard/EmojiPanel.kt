@@ -37,9 +37,11 @@ private val EmojiPanelHeight = 226.dp
 private const val GRID_COLUMNS = 8
 
 /**
- * The emoji panel: category bar on top, a single scrollable grid of all
- * categories (Gboard-style jump-to-section, no per-category pages), and a
- * bottom bar with ABC (back to letters) and backspace.
+ * The emoji panel: an optional suggestion row (keyword-matched from the
+ * text before the cursor, hidden when there are no matches), a category
+ * bar, a single scrollable grid of all categories (Gboard-style
+ * jump-to-section, no per-category pages), and a bottom bar with ABC
+ * (back to letters) and backspace.
  *
  * Rendered as a sibling of the letter gesture container, never inside it:
  * the panel needs its own scroll/click handling and a swipe over the grid
@@ -51,6 +53,7 @@ fun EmojiPanel(
     colors: KeyboardColors,
     onAction: (KeyboardAction) -> Unit,
     modifier: Modifier = Modifier,
+    suggestions: List<String> = emptyList(),
 ) {
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -61,6 +64,33 @@ fun EmojiPanel(
             .height(EmojiPanelHeight),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Suggestion row: keyword-matched emoji for the text before the
+        // cursor, hidden entirely when there is nothing to suggest. The
+        // panel height stays fixed — the weighted grid below absorbs the
+        // row, so the IME window never resizes when it appears. Tapping a
+        // suggestion commits exactly like a grid tap.
+        if (suggestions.isNotEmpty()) {
+            SectionLabel(text = "Suggestions", colors = colors)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                suggestions.forEach { emoji ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.keyBackground)
+                            .clickable { onAction(KeyboardAction.InsertText(emoji)) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = emoji, fontSize = 22.sp)
+                    }
+                }
+            }
+        }
+
         // Category bar: tap an icon to jump the grid to that section.
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -101,12 +131,9 @@ fun EmojiPanel(
         ) {
             EmojiCategories.forEach { category ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
+                    SectionLabel(
                         text = category.title,
-                        color = colors.keyText.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelSmall,
+                        colors = colors,
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
@@ -156,6 +183,22 @@ fun EmojiPanel(
             }
         }
     }
+}
+
+@Composable
+private fun SectionLabel(
+    text: String,
+    colors: KeyboardColors,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        color = colors.keyText.copy(alpha = 0.6f),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = modifier,
+    )
 }
 
 @Composable
