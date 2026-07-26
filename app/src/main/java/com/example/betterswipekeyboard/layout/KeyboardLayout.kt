@@ -7,7 +7,7 @@ package com.example.betterswipekeyboard.layout
  * here instead of being baked into the UI.
  */
 
-enum class LayoutId { LETTERS, SYMBOLS, EMOJI }
+enum class LayoutId { LETTERS, SYMBOLS, EMOJI, CLIPBOARD }
 
 /** What a key produces when tapped. Labels are a UI concern; output is semantics. */
 sealed interface KeyOutput {

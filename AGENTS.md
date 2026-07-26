@@ -87,6 +87,25 @@ Data flow (deliberately layered, keep it this way):
 - `KeyboardGeometry`: collects key bounds from the Compose UI
   (`onGloballyPositioned`) and answers hit-testing / key-center questions.
 
+### Clipboard history (`clipboard/`)
+
+- `ClipboardHistory` (pure Kotlin, injectable clock): in-memory ring buffer,
+  50 entries max, 1-hour lazy expiry, case-sensitive exact-match dedup
+  (re-copying moves a clip to the top). Blank and >10k-char clips rejected.
+  Deliberately not persisted — process death clears it, and nothing lands
+  on disk or in backups.
+- `SwipeKeyboardService` observes `ClipboardManager` with an
+  `OnPrimaryClipChangedListener` (the platform grants the default IME
+  clipboard access even when the keyboard is hidden) and feeds accepted
+  clips to `KeyboardViewModel.addClip`; the ViewModel mirrors them into
+  `KeyboardState.clipboard`. Clips marked
+  `ClipDescription.EXTRA_IS_SENSITIVE` are never stored; only item text is
+  read (never `coerceToText`).
+- The 📋 utility key toggles `LayoutId.CLIPBOARD`; `ClipboardPanel.kt`
+  renders outside the letter-gesture `pointerInput` scope (same pattern as
+  panels elsewhere). Tap emits `PasteClip` (commits verbatim — never
+  uppercased by caps — and returns to letters); long-press deletes.
+
 ### AI proofreading (`proofread/`)
 
 - `Proofreader` interface; `MlKitProofreader` (on-device Gemini Nano via
@@ -169,6 +188,11 @@ selected as the active IME (the app's setup screen has buttons for both).
   `openrouter.ai`.
 - The app requests only the `INTERNET` permission; the IME service is
   protected by `BIND_INPUT_METHOD`.
+- Clipboard history is recorded from `ClipboardManager` but never leaves
+  the device (no network, in-memory only, never persisted). Clips flagged
+  `ClipDescription.EXTRA_IS_SENSITIVE` (password managers, password
+  fields) are dropped at the source and never stored or logged. Preserve
+  both guarantees.
 
 ## Android API 36 + gesture-handling gotchas
 

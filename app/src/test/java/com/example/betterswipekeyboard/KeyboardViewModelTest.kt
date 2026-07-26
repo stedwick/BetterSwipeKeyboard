@@ -130,4 +130,42 @@ class KeyboardViewModelTest {
         vm.setProofreadInFlight(true)
         assertEquals(true, vm.state.value.proofreadInFlight)
     }
+
+    @Test
+    fun `paste clip commits verbatim under caps lock and returns to letters`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CapsLock)
+        vm.onAction(KeyboardAction.SwitchLayout(LayoutId.CLIPBOARD))
+
+        val effect = vm.onAction(KeyboardAction.PasteClip("hello World"))
+        assertEquals(KeyboardEffect.CommitText("hello World"), effect)
+        assertEquals(LayoutId.LETTERS, vm.state.value.layout)
+        assertEquals(ShiftMode.LOCKED, vm.state.value.shiftMode)
+    }
+
+    @Test
+    fun `paste clip consumes one shot shift`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        assertEquals(KeyboardEffect.CommitText("clip"), vm.onAction(KeyboardAction.PasteClip("clip")))
+        assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
+    }
+
+    @Test
+    fun `add clip dedups through state`() {
+        val vm = viewModel()
+        vm.addClip("x")
+        vm.addClip("y")
+        vm.addClip("x")
+        assertEquals(listOf("x", "y"), vm.state.value.clipboard.map { it.text })
+    }
+
+    @Test
+    fun `delete clip removes entry without editor effect`() {
+        val vm = viewModel()
+        vm.addClip("a")
+        vm.addClip("b")
+        assertNull(vm.onAction(KeyboardAction.DeleteClip("a")))
+        assertEquals(listOf("b"), vm.state.value.clipboard.map { it.text })
+    }
 }

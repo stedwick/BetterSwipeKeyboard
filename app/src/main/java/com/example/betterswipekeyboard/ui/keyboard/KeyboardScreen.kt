@@ -68,7 +68,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-// Not private: EmojiPanel (same package) renders with these colors.
+// Not private: EmojiPanel and ClipboardPanel (same package) render with these colors.
 data class KeyboardColors(
     val keyboardBackground: Color,
     val keyBackground: Color,
@@ -167,6 +167,12 @@ fun KeyboardScreen(
             when (state.layout) {
                 LayoutId.EMOJI -> EmojiPanel(colors = colors, onAction = onAction)
 
+                LayoutId.CLIPBOARD -> ClipboardPanel(
+                    colors = colors,
+                    entries = state.clipboard,
+                    onAction = onAction,
+                )
+
                 else -> {
                     val layout = when (state.layout) {
                         LayoutId.SYMBOLS -> SymbolsLayout
@@ -182,9 +188,9 @@ fun KeyboardScreen(
                             // long-presses and swipe trails) so a finger can
                             // travel across keys in a single gesture. Keys
                             // below are purely visual. The utility row and the
-                            // emoji panel deliberately live OUTSIDE this scope:
-                            // utility taps must not start gestures, and grid
-                            // scrolls must not be read as swipe trails.
+                            // emoji/clipboard panels deliberately live OUTSIDE
+                            // this scope: utility taps must not start gestures,
+                            // and panel scrolls must not be read as swipe trails.
                             .pointerInput(layout.id) {
                                 val touchSlop = viewConfiguration.touchSlop
                                 awaitEachGesture {
@@ -443,7 +449,7 @@ fun KeyboardScreen(
 
 private enum class GestureOutcome { TAP, DRAG }
 
-/** Utility row above the keys: sparkly AI proofreader, emoji, microphone. */
+/** Utility row above the keys: sparkly AI proofreader, emoji, clipboard, settings. */
 @Composable
 private fun UtilityRow(
     state: KeyboardState,
@@ -493,6 +499,21 @@ private fun UtilityRow(
             modifier = Modifier.weight(1f),
         ) {
             UtilityKeyLabel("😀", colors)
+        }
+        UtilityKey(
+            // The clipboard key toggles: from letters/symbols into the
+            // clipboard panel, from the panel back to letters.
+            onClick = {
+                onAction(
+                    KeyboardAction.SwitchLayout(
+                        if (state.layout == LayoutId.CLIPBOARD) LayoutId.LETTERS else LayoutId.CLIPBOARD,
+                    ),
+                )
+            },
+            colors = colors,
+            modifier = Modifier.weight(1f),
+        ) {
+            UtilityKeyLabel("📋", colors)
         }
         UtilityKey(
             onClick = onSettingsClick,

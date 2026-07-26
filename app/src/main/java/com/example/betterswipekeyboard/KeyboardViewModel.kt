@@ -1,6 +1,8 @@
 package com.example.betterswipekeyboard
 
 import androidx.lifecycle.ViewModel
+import com.example.betterswipekeyboard.clipboard.ClipboardHistory
+import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +20,8 @@ class KeyboardViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(KeyboardState())
     val state: StateFlow<KeyboardState> = _state.asStateFlow()
+
+    private val clipboardHistory = ClipboardHistory()
 
     /** Returns the effect to apply to the InputConnection, or null for pure state changes. */
     fun onAction(action: KeyboardAction): KeyboardEffect? = when (action) {
@@ -71,7 +75,30 @@ class KeyboardViewModel : ViewModel() {
             null
         }
 
+        is KeyboardAction.PasteClip -> {
+            // Unlike InsertText, clips commit verbatim: uppercasing a paste
+            // under caps lock would corrupt it. Pasting returns to letters.
+            consumeOneShot()
+            _state.update { it.copy(layout = LayoutId.LETTERS) }
+            KeyboardEffect.CommitText(action.text)
+        }
+
+        is KeyboardAction.DeleteClip -> {
+            clipboardHistory.remove(action.text)
+            refreshClipboard()
+            null
+        }
+
         KeyboardAction.Noop -> null
+    }
+
+    /**
+     * Called by the service's ClipboardManager listener for each accepted
+     * clip. Refreshes the state snapshot so the clipboard panel stays
+     * current; copies are rare and the snapshot is ≤ 50 entries.
+     */
+    fun addClip(text: String) {
+        if (clipboardHistory.add(text)) refreshClipboard()
     }
 
     /** Called by the service after async availability checks of the AI proofreader. */
@@ -82,6 +109,10 @@ class KeyboardViewModel : ViewModel() {
     /** Called by the service while a proofread request runs. */
     fun setProofreadInFlight(inFlight: Boolean) {
         _state.update { it.copy(proofreadInFlight = inFlight) }
+    }
+
+    private fun refreshClipboard() {
+        _state.update { it.copy(clipboard = clipboardHistory.entries()) }
     }
 
     private fun consumeOneShot() {

@@ -1,5 +1,6 @@
 package com.example.betterswipekeyboard
 
+import com.example.betterswipekeyboard.clipboard.ClipEntry
 import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
@@ -19,6 +20,8 @@ data class KeyboardState(
     /** Auto-proofreading toggle: while on, text is proofread after 1s of idle. */
     val proofreadAuto: Boolean = false,
     val proofreadInFlight: Boolean = false,
+    /** Mirror of the service-observed clipboard history, newest first. */
+    val clipboard: List<ClipEntry> = emptyList(),
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF
