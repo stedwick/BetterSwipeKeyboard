@@ -35,11 +35,12 @@ The app has two entry points declared in `app/src/main/AndroidManifest.xml`:
 
 Data flow (deliberately layered, keep it this way):
 
-1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = `KeyRow`s of
-   `Key`s, each with a `KeyOutput` (Text, Backspace, Enter, Shift,
-   SwitchLayout, Microphone). `KeyRow.insetWeight` indents short rows (e.g.
-   the 9-key home row) so every row spans 10 weight units and all character
-   keys render the same width. `QwertyLayout` and `SymbolsLayout`.
+1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
+   each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
+   Microphone). `QwertyLayout` and `SymbolsLayout`. Character keys render at
+   one fixed global width computed in `KeyboardScreen` (`unitKeyWidthPx` in
+   `ui/keyboard/KeyWidth.kt`); rows with fewer keys are centered instead of
+   stretched, and modifier keys take the remaining space via weights.
 2. **All gestures produce semantic actions** (`KeyboardAction`): taps,
    long-presses and swipes are handled at the container level in
    `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and

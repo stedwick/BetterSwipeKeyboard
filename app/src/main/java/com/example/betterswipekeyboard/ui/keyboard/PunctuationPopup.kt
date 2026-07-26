@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +23,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import kotlin.math.roundToInt
 
 /**
@@ -90,7 +91,14 @@ internal fun popupTopLeft(
 
 /**
  * The punctuation popup for the period long-press: a compact 3x3 grid of
- * key tiles, positioned by the caller via [topLeft].
+ * key tiles, positioned by the caller via [topLeft] (in the parent
+ * keyboard's coordinate space).
+ *
+ * Rendered as a [Popup] — a separate window layered over the keyboard — so
+ * it is a pure overlay: it never participates in the keyboard's own
+ * measurement or layout, and the keyboard does not shift when it opens or
+ * closes. Non-focusable so it steals neither input focus nor the ongoing
+ * drag gesture.
  */
 @Composable
 internal fun PunctuationPopup(
@@ -101,34 +109,39 @@ internal fun PunctuationPopup(
     onPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(PopupTileGap),
-        modifier = modifier
-            .offset { IntOffset(topLeft.x.roundToInt(), topLeft.y.roundToInt()) }
-            .shadow(8.dp, RoundedCornerShape(10.dp))
-            .clip(RoundedCornerShape(10.dp))
-            .background(colors.keyboardBackground)
-            .padding(PopupPadding)
-            .onGloballyPositioned(onPositioned),
+    Popup(
+        alignment = Alignment.TopStart,
+        offset = IntOffset(topLeft.x.roundToInt(), topLeft.y.roundToInt()),
+        properties = PopupProperties(focusable = false),
     ) {
-        choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
-            Row(horizontalArrangement = Arrangement.spacedBy(PopupTileGap)) {
-                rowChoices.forEach { label ->
-                    val index = choices.indexOf(label)
-                    Box(
-                        modifier = Modifier
-                            .size(PopupTileSize)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                if (index == highlightIndex) {
-                                    colors.keyBackgroundActive
-                                } else {
-                                    colors.keyBackground
-                                },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = label, color = colors.keyText, fontSize = 20.sp)
+        Column(
+            verticalArrangement = Arrangement.spacedBy(PopupTileGap),
+            modifier = modifier
+                .shadow(8.dp, RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(10.dp))
+                .background(colors.keyboardBackground)
+                .padding(PopupPadding)
+                .onGloballyPositioned(onPositioned),
+        ) {
+            choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
+                Row(horizontalArrangement = Arrangement.spacedBy(PopupTileGap)) {
+                    rowChoices.forEach { label ->
+                        val index = choices.indexOf(label)
+                        Box(
+                            modifier = Modifier
+                                .size(PopupTileSize)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (index == highlightIndex) {
+                                        colors.keyBackgroundActive
+                                    } else {
+                                        colors.keyBackground
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                        }
                     }
                 }
             }

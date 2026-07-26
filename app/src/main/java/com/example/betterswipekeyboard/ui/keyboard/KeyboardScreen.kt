@@ -10,11 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -42,6 +42,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +125,7 @@ fun KeyboardScreen(
     geometry.activeLayout = layout.id
 
     var boxOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
+    var boxOffsetOnScreen by remember { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(Size.Zero) }
     var pressedKey by remember { mutableStateOf<Key?>(null) }
     var trailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -133,6 +135,13 @@ fun KeyboardScreen(
     var popupAnchor by remember { mutableStateOf<Rect?>(null) }
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
+    // Canonical character-key width: one slot of a full 10-key row. Every
+    // character key in every row uses it, so keys are the same pixel width
+    // across the whole keyboard. Zero until the container is measured — the
+    // first frame falls back to weights.
+    val unitKeyWidth = with(LocalDensity.current) {
+        unitKeyWidthPx(boxSize.width, 3.dp.toPx(), 4.dp.toPx()).toDp()
+    }
 
     Box(
         modifier = Modifier
@@ -144,6 +153,7 @@ fun KeyboardScreen(
             .padding(bottom = bottomClearance + KeyboardBottomClearance)
             .onGloballyPositioned {
                 boxOffsetInWindow = it.positionInWindow()
+                boxOffsetOnScreen = it.positionOnScreen()
                 boxSize = it.size.toSize()
             }
             // ALL pointer input is handled here at the container level (taps,
@@ -335,16 +345,26 @@ fun KeyboardScreen(
             layout.rows.forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    // Center rows that end up narrower than the full 10-key
+                    // row (e.g. the 9-key home row) instead of stretching
+                    // them — modifier keys keep their weights and take the
+                    // remaining space.
+                    horizontalArrangement = Arrangement.spacedBy(
+                        4.dp,
+                        Alignment.CenterHorizontally,
+                    ),
                 ) {
-                    if (row.insetWeight > 0f) Spacer(Modifier.weight(row.insetWeight))
-                    row.keys.forEach { key ->
+                    row.forEach { key ->
                         KeyView(
                             key = key,
                             state = state,
                             pressed = key == pressedKey,
                             colors = colors,
-                            modifier = Modifier.weight(key.weight),
+                            modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
+                                Modifier.width(unitKeyWidth)
+                            } else {
+                                Modifier.weight(key.weight)
+                            },
                             onPositioned = { coordinates ->
                                 geometry.register(
                                     layout.id,
@@ -357,7 +377,6 @@ fun KeyboardScreen(
                             },
                         )
                     }
-                    if (row.insetWeight > 0f) Spacer(Modifier.weight(row.insetWeight))
                 }
             }
         }
@@ -380,7 +399,10 @@ fun KeyboardScreen(
         }
 
         // Punctuation popup for the period long-press: a compact 3x3 grid
-        // of key tiles anchored just above the period key, within thumb reach.
+        // of key tiles anchored just above the period key, within thumb
+        // reach. Rendered as a real overlay window so it never participates
+        // in the keyboard's own layout (a measured sibling shifted the whole
+        // keyboard by a few pixels when it appeared).
         val choices = popupChoices
         val anchor = popupAnchor
         if (choices != null && anchor != null) {
@@ -398,7 +420,7 @@ fun KeyboardScreen(
                 ),
                 onPositioned = {
                     popupBounds = Rect(
-                        it.positionInWindow() - boxOffsetInWindow,
+                        it.positionOnScreen() - boxOffsetOnScreen,
                         it.size.toSize(),
                     )
                 },
@@ -458,6 +480,14 @@ private fun Vec2.toOffset() = Offset(x, y)
 
 private fun Key.isLetter(): Boolean =
     (output as? KeyOutput.Text)?.text?.singleOrNull()?.isLetter() == true
+
+/**
+ * Character keys (letters, digits, punctuation — any visible single- or
+ * multi-character text output) get the fixed global width; the space bar
+ * (blank text) and modifiers keep their weights.
+ */
+private fun Key.isUnitCharacterKey(): Boolean =
+    (output as? KeyOutput.Text)?.text?.isNotBlank() == true
 
 private fun Key.tapAction(): KeyboardAction = when (val out = output) {
     is KeyOutput.Text -> KeyboardAction.InsertText(out.text)

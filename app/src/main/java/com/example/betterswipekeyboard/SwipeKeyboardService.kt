@@ -167,10 +167,7 @@ class SwipeKeyboardService : InputMethodService(),
      * The default implementation hides the soft keyboard when a hardware
      * keyboard is attached (e.g. on emulators). We always want to show.
      */
-    override fun onEvaluateInputViewShown(): Boolean {
-        super.onEvaluateInputViewShown()
-        return true
-    }
+    override fun onEvaluateInputViewShown(): Boolean = true
 
     private fun onKeyboardAction(action: KeyboardAction) {
         when (val effect = viewModel.onAction(action)) {
