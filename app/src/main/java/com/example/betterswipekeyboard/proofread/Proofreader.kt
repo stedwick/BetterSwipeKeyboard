@@ -64,6 +64,11 @@ class MlKitProofreader(context: Context) : Proofreader {
     }
 
     override suspend fun proofread(text: String): String {
+        // The ML Kit API takes only plain input text — no system prompt, no
+        // few-shot. It receives the two-sentence window like the cloud
+        // backend, but merging a continuation fragment into the previous
+        // sentence (taught via ProofreadPrompt on the OpenRouter path) is
+        // best-effort model behavior here and cannot be prompted.
         val request = ProofreadingRequest.builder(text).build()
         val result = client.runInference(request).await()
         return result.results.firstOrNull()?.text.orEmpty()

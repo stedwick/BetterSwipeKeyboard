@@ -34,6 +34,16 @@ sealed interface KeyboardAction {
 
     /** Tap the sparkly key: toggles auto-proofreading on/off (like Shift). */
     data object ToggleProofread : KeyboardAction
+
+    /**
+     * Finger down on the key area. No state change; the service uses it to
+     * suspend the auto-proofread timer for the duration of the gesture, so
+     * a proofread can never start mid-swipe or mid-long-press.
+     */
+    data object GestureStarted : KeyboardAction
+
+    /** Finger lifted (or the gesture otherwise ended). */
+    data object GestureEnded : KeyboardAction
 }
 
 /** Side effects to apply to the current InputConnection. */

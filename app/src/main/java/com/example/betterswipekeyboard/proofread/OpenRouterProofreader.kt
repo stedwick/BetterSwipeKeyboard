@@ -15,7 +15,9 @@ import org.json.JSONObject
 /**
  * The proofreading prompt: a strict system message plus a few-shot example
  * per behavior we want (conservative fixes, nearby-key typos, homophones,
- * missing spaces, tone/emoji preservation, and leaving correct text alone).
+ * missing spaces, tone/emoji preservation, leaving correct text alone, and
+ * merging a continuation fragment into the previous sentence — needed when
+ * an earlier pass terminated the sentence during a mid-thought pause).
  * Pure data/functions so it is unit-testable.
  */
 object ProofreadPrompt {
@@ -24,7 +26,12 @@ object ProofreadPrompt {
         "You are a meticulous proofreader. Correct spelling, grammar, punctuation " +
             "and capitalization. Preserve the writer's meaning, tone, formatting and emoji. " +
             "Do not translate or answer questions in the text. If the text is already " +
-            "correct, return it unchanged. Reply with ONLY the corrected text - no " +
+            "correct, return it unchanged. The text may contain the previous sentence " +
+            "followed by the sentence currently being typed. Never rephrase an " +
+            "already-correct sentence. If the last sentence is a fragment that " +
+            "continues the previous one (e.g. it starts with 'and', 'but', 'so' or " +
+            "lacks a subject), merge them into one natural sentence. Genuinely " +
+            "separate sentences stay separate. Reply with ONLY the corrected text - no " +
             "quotes, no explanations."
 
     val EXAMPLES: List<Pair<String, String>> = listOf(
@@ -37,6 +44,18 @@ object ProofreadPrompt {
         "omg cant wait for the concert friday!! 🎉 its gonna be lit" to
             "Omg, can't wait for the concert Friday!! 🎉 It's gonna be lit.",
         "Meeting moved to 3 PM tomorrow." to "Meeting moved to 3 PM tomorrow.",
+        // A fragment continuing the previous sentence merges into one.
+        "I went to the store. And bought some ice cream." to
+            "I went to the store and bought some ice cream.",
+        "The meeting ran long. But we got a lot done." to
+            "The meeting ran long, but we got a lot done.",
+        // Genuinely separate sentences stay separate (returned unchanged).
+        "I love hiking. The trails near my house are beautiful." to
+            "I love hiking. The trails near my house are beautiful.",
+        "Just got home. What a day!" to "Just got home. What a day!",
+        // Merging across the boundary does not exempt the previous
+        // sentence from obvious-error fixes.
+        "she said shed call. when she got home" to "She said she'd call when she got home.",
     )
 
     fun buildRequestJson(model: String, sentence: String): String {

@@ -66,6 +66,9 @@ class SwipeKeyboardService : InputMethodService(),
     private var autoProofreadJob: Job? = null
     private var lastCommitWasSwipe = false
 
+    /** True when text was committed/deleted since the last proofread attempt. */
+    private var textDirtySinceProofread = false
+
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
@@ -138,10 +141,24 @@ class SwipeKeyboardService : InputMethodService(),
     /**
      * The default implementation hides the soft keyboard when a hardware
      * keyboard is attached (e.g. on emulators). We always want to show.
+     * Deliberately no super call: the super implementation is exactly the
+     * behavior being overridden.
      */
+    @android.annotation.SuppressLint("MissingSuperCall")
     override fun onEvaluateInputViewShown(): Boolean = true
 
     private fun onKeyboardAction(action: KeyboardAction) {
+        // A touch suspends the auto-proofread timer for the gesture's whole
+        // duration (a swipe or long-press produces no actions until
+        // finger-up, so per-effect scheduling alone can fire mid-gesture).
+        // Finger-up restarts the timer only when there is un-proofread
+        // text — no wasted API calls after no-op gestures.
+        if (action is KeyboardAction.GestureStarted) {
+            autoProofreadJob?.cancel()
+        }
+        if (action is KeyboardAction.GestureEnded && textDirtySinceProofread) {
+            scheduleAutoProofread()
+        }
         when (val effect = viewModel.onAction(action)) {
             is KeyboardEffect.CommitText -> {
                 // Mode change swipe → tap starts a new word (letters only).
@@ -156,20 +173,24 @@ class SwipeKeyboardService : InputMethodService(),
                     editor.commitText(effect.text)
                 }
                 lastCommitWasSwipe = false
+                textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
             is KeyboardEffect.CommitWord -> {
                 // commitWord inserts the leading space for tap → swipe itself.
                 editor.commitWord(effect.word)
                 lastCommitWasSwipe = true
+                textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
             KeyboardEffect.DeleteBackward -> {
                 editor.backspace()
+                textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
             KeyboardEffect.PerformEnter -> {
                 editor.enter(currentInputEditorInfo)
+                textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
             null -> Unit
@@ -178,14 +199,16 @@ class SwipeKeyboardService : InputMethodService(),
 
     /**
      * Auto-proofreading debounce: every text change restarts a 1-second
-     * timer; the proofread fires only after a full second of typing
-     * inactivity (so at most once per second, never mid-thought).
+     * timer; the proofread fires only after a full second of no touches or
+     * text changes (so at most once per second, never mid-gesture).
      */
     private fun scheduleAutoProofread() {
         if (!viewModel.state.value.proofreadAuto) return
         autoProofreadJob?.cancel()
         autoProofreadJob = lifecycleScope.launch {
             delay(AUTO_PROOFREAD_DEBOUNCE_MS)
+            // One attempt per dirty period; the next text change re-dirties.
+            textDirtySinceProofread = false
             runProofread()
         }
     }
@@ -202,22 +225,28 @@ class SwipeKeyboardService : InputMethodService(),
         lifecycleScope.launch {
             try {
                 val before = editor.textBeforeCursor().orEmpty()
-                val sentence = SentenceExtractor.currentSentence(before)
-                if (sentence.isEmpty()) return@launch
-                val corrected = proofreader.proofread(sentence.trim())
+                // The window spans the current fragment plus the previous
+                // sentence, so a continuation fragment ("and bought ...")
+                // can be merged back into a sentence an earlier pass
+                // terminated during a mid-thought pause.
+                val window = SentenceExtractor.currentWindow(before)
+                if (window.text.isBlank()) return@launch
+                val corrected = proofreader.proofread(window.text.trim())
                 // The user may have kept typing while the request was in
-                // flight; never clobber newer text.
-                val latest = SentenceExtractor.currentSentence(
+                // flight; never clobber newer text. Comparing whole windows
+                // also invalidates the result when either of the two
+                // visible sentences changed.
+                val latest = SentenceExtractor.currentWindow(
                     editor.textBeforeCursor().orEmpty(),
                 )
-                if (latest == sentence &&
+                if (latest == window &&
                     corrected.isNotBlank() &&
-                    corrected != sentence.trim()
+                    corrected != window.text.trim()
                 ) {
                     // Preserve the fragment's surrounding whitespace.
                     editor.replaceBeforeCursor(
-                        sentence.length,
-                        sentence.replace(sentence.trim(), corrected),
+                        window.text.length,
+                        window.text.replace(window.text.trim(), corrected),
                     )
                 }
             } catch (e: Exception) {

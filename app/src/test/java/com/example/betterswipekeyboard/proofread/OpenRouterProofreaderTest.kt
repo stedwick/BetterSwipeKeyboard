@@ -77,6 +77,33 @@ class ProofreadPromptTest {
     }
 
     @Test
+    fun `system prompt teaches boundary merging`() {
+        assertTrue(ProofreadPrompt.SYSTEM.contains("merge"))
+        assertTrue(ProofreadPrompt.SYSTEM.contains("previous sentence"))
+    }
+
+    @Test
+    fun `at least one example merges a continuation fragment into the previous sentence`() {
+        assertTrue(
+            "expected a few-shot example merging a fragment after a boundary",
+            ProofreadPrompt.EXAMPLES.any { (input, output) ->
+                Regex("\\. (And|But|So) ").containsMatchIn(input) && !output.contains(". And")
+            },
+        )
+    }
+
+    @Test
+    fun `at least one two-sentence example is returned unchanged`() {
+        // Guards the keep-separate direction against oscillation.
+        assertTrue(
+            "expected a two-sentence example returned verbatim",
+            ProofreadPrompt.EXAMPLES.any { (input, output) ->
+                input == output && Regex("[.!?] \\S.*[.!?]").containsMatchIn(input)
+            },
+        )
+    }
+
+    @Test
     fun `parseResponse returns trimmed content of first choice`() {
         val body = """
             {"choices": [{"message": {"role": "assistant", "content": "  Fixed text.  "}}]}
