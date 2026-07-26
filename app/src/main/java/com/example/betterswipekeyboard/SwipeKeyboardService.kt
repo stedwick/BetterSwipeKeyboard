@@ -2,6 +2,7 @@ package com.example.betterswipekeyboard
 
 import android.inputmethodservice.InputMethodService
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
@@ -78,6 +79,15 @@ class SwipeKeyboardService : InputMethodService(),
                     onAction = ::onKeyboardAction,
                 )
             }
+        }
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        // Keep the status bar fresh: the model may have finished downloading
+        // since the last check.
+        lifecycleScope.launch {
+            viewModel.setProofreaderStatus(proofreader.status())
         }
     }
 
