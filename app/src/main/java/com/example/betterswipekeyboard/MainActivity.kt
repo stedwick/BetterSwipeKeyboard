@@ -9,10 +9,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
 
@@ -44,7 +48,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val keyStore = remember { ApiKeyStore(context) }
     var testText by remember { mutableStateOf("") }
+    var apiKeyInput by remember { mutableStateOf("") }
+    var savedKey by remember { mutableStateOf(keyStore.apiKey) }
 
     Column(
         modifier = modifier
@@ -67,6 +74,50 @@ fun SetupScreen(modifier: Modifier = Modifier) {
         ) {
             Text(stringResource(R.string.pick_keyboard))
         }
+
+        Text(
+            text = "AI proofreader (cloud)",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        OutlinedTextField(
+            value = apiKeyInput,
+            onValueChange = { apiKeyInput = it },
+            label = { Text(stringResource(R.string.api_key_hint)) },
+            visualTransformation = PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = {
+                    keyStore.save(apiKeyInput)
+                    savedKey = keyStore.apiKey
+                    apiKeyInput = ""
+                },
+                enabled = apiKeyInput.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.save_key))
+            }
+            if (savedKey != null) {
+                OutlinedButton(
+                    onClick = {
+                        keyStore.clear()
+                        savedKey = null
+                    },
+                ) {
+                    Text(stringResource(R.string.clear_key))
+                }
+            }
+        }
+        Text(
+            text = if (savedKey != null) {
+                stringResource(R.string.api_key_saved)
+            } else {
+                stringResource(R.string.api_key_get)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         OutlinedTextField(
             value = testText,
             onValueChange = { testText = it },

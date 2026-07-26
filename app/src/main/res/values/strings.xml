@@ -4,4 +4,9 @@
     <string name="enable_keyboard">Enable keyboard</string>
     <string name="pick_keyboard">Pick keyboard</string>
     <string name="test_field_hint">Try your keyboard here</string>
+    <string name="api_key_hint">OpenRouter API key</string>
+    <string name="save_key">Save key</string>
+    <string name="clear_key">Clear</string>
+    <string name="api_key_saved">✓ Key saved — the proofreader is ready</string>
+    <string name="api_key_get">Get a key at openrouter.ai/keys (cloud proofreading sends sentence text to OpenRouter)</string>
 </resources>

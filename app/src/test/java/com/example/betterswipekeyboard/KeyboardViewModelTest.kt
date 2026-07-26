@@ -75,9 +75,14 @@ class KeyboardViewModelTest {
         val vm = viewModel()
         assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderStatus.UNAVAILABLE,
             vm.state.value.proofreader)
-        vm.setProofreaderStatus(com.example.betterswipekeyboard.proofread.ProofreaderStatus.AVAILABLE)
+        vm.setProofreaderStatus(
+            com.example.betterswipekeyboard.proofread.ProofreaderStatus.AVAILABLE,
+            com.example.betterswipekeyboard.proofread.ProofreaderBackend.CLOUD,
+        )
         assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderStatus.AVAILABLE,
             vm.state.value.proofreader)
+        assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderBackend.CLOUD,
+            vm.state.value.proofreaderBackend)
         vm.setProofreadInFlight(true)
         assertEquals(true, vm.state.value.proofreadInFlight)
     }

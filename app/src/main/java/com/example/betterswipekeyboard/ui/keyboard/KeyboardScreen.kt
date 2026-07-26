@@ -54,6 +54,7 @@ import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
+import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
@@ -278,10 +279,15 @@ private fun ProofreaderBar(
     state: KeyboardState,
     onProofread: () -> Unit,
 ) {
-    val (dotColor, label) = when (state.proofreader) {
-        ProofreaderStatus.AVAILABLE -> StatusReady to "AI proofreader ready"
-        ProofreaderStatus.DOWNLOADING -> StatusBusy to "AI proofreader downloading…"
-        ProofreaderStatus.UNAVAILABLE -> StatusOff to "AI proofreader unavailable on this device"
+    val (dotColor, label) = when {
+        state.proofreader == ProofreaderStatus.DOWNLOADING ->
+            StatusBusy to "AI proofreader downloading…"
+        state.proofreaderBackend == ProofreaderBackend.ON_DEVICE ->
+            StatusReady to "AI proofreader ready (on-device)"
+        state.proofreaderBackend == ProofreaderBackend.CLOUD ->
+            StatusReady to "AI proofreader ready (cloud — text leaves device)"
+        else ->
+            StatusOff to "AI proofreader unavailable (no device AI, no API key)"
     }
     Row(
         modifier = Modifier

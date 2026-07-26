@@ -20,8 +20,12 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
+import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.proofread.Proofreader
+import com.example.betterswipekeyboard.proofread.ProofreaderBackend
+import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.proofread.SentenceExtractor
+import com.example.betterswipekeyboard.proofread.selectBackend
 import com.example.betterswipekeyboard.swipe.Dictionary
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.ui.keyboard.KeyboardScreen
@@ -48,7 +52,13 @@ class SwipeKeyboardService : InputMethodService(),
 
     private lateinit var viewModel: KeyboardViewModel
     private lateinit var decoder: SwipeDecoder
-    private lateinit var proofreader: Proofreader
+    private lateinit var apiKeyStore: ApiKeyStore
+    private lateinit var mlKitProofreader: MlKitProofreader
+    private lateinit var openRouterProofreader: OpenRouterProofreader
+
+    /** The backend currently backing the sparkly button, or null when none. */
+    private var activeProofreader: Proofreader? = null
+
     private val editor = InputConnectionEditor { currentInputConnection }
 
     override fun onCreate() {
@@ -57,10 +67,34 @@ class SwipeKeyboardService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
         decoder = SwipeDecoder(Dictionary.load(assets.open("words_en.txt")))
-        proofreader = MlKitProofreader(this)
-        lifecycleScope.launch {
-            viewModel.setProofreaderStatus(proofreader.status())
+        apiKeyStore = ApiKeyStore(this)
+        mlKitProofreader = MlKitProofreader(this)
+        openRouterProofreader = OpenRouterProofreader(apiKeyStore)
+        lifecycleScope.launch { refreshProofreader() }
+    }
+
+    /**
+     * On-device Gemini Nano wins when available; otherwise fall back to the
+     * OpenRouter cloud backend when the user has configured an API key.
+     */
+    private suspend fun refreshProofreader() {
+        val mlKitStatus = mlKitProofreader.status()
+        val backend = selectBackend(mlKitStatus, hasApiKey = apiKeyStore.apiKey != null)
+        activeProofreader = when (backend) {
+            ProofreaderBackend.ON_DEVICE -> mlKitProofreader
+            ProofreaderBackend.CLOUD -> openRouterProofreader
+            ProofreaderBackend.NONE -> null
         }
+        val status = when (backend) {
+            ProofreaderBackend.NONE ->
+                if (mlKitStatus == ProofreaderStatus.DOWNLOADING) {
+                    ProofreaderStatus.DOWNLOADING
+                } else {
+                    ProofreaderStatus.UNAVAILABLE
+                }
+            else -> ProofreaderStatus.AVAILABLE
+        }
+        viewModel.setProofreaderStatus(status, backend)
     }
 
     override fun onCreateInputView(): View {
@@ -85,10 +119,8 @@ class SwipeKeyboardService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         // Keep the status bar fresh: the model may have finished downloading
-        // since the last check.
-        lifecycleScope.launch {
-            viewModel.setProofreaderStatus(proofreader.status())
-        }
+        // or the API key may have changed since the last check.
+        lifecycleScope.launch { refreshProofreader() }
     }
 
     /**
@@ -108,11 +140,12 @@ class SwipeKeyboardService : InputMethodService(),
     }
 
     /**
-     * Fixes the current sentence with the on-device AI proofreader. The text
-     * never leaves the device. Failures are logged and otherwise ignored —
-     * the keyboard must never depend on the AI being present.
+     * Fixes the current sentence with the active proofreader (on-device when
+     * possible, OpenRouter cloud otherwise). Failures are logged and
+     * otherwise ignored — the keyboard must never depend on the AI.
      */
     private fun runProofread() {
+        val proofreader = activeProofreader ?: return
         if (viewModel.state.value.proofreadInFlight) return
         viewModel.setProofreadInFlight(true)
         lifecycleScope.launch {
@@ -138,7 +171,8 @@ class SwipeKeyboardService : InputMethodService(),
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        if (::proofreader.isInitialized) proofreader.close()
+        if (::mlKitProofreader.isInitialized) mlKitProofreader.close()
+        if (::openRouterProofreader.isInitialized) openRouterProofreader.close()
         store.clear()
         super.onDestroy()
     }
