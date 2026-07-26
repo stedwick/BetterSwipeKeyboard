@@ -12,8 +12,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -23,18 +27,23 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
+import kotlinx.coroutines.delay
 
 private val KeySavedGreen = Color(0xFF30D158)
 
@@ -61,15 +70,37 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     var savedKey by remember { mutableStateOf(keyStore.apiKey) }
     var inputVisible by remember { mutableStateOf(savedKey == null) }
 
+    // Auto-scroll the focused text field above the soft keyboard: imePadding
+    // only shrinks the viewport, and Compose's built-in focus relocation
+    // fires before the IME inset lands, so without this the field stays
+    // hidden behind the keyboard (verified on emulator: the ime() inset
+    // arrives, the layout just never scrolls).
+    val scrollState = rememberScrollState()
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val requesters = remember { Array(2) { BringIntoViewRequester() } }
+    var focusedField by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(imeBottom, focusedField) {
+        if (imeBottom > 0 && focusedField >= 0) {
+            // The IME slide-in animates the inset over a few hundred ms, and
+            // relocating against a mid-animation viewport is a no-op. Every
+            // animation frame relaunches this effect, so the delay only
+            // elapses once the inset has settled at its final value.
+            delay(300)
+            requesters[focusedField].bringIntoView()
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            // Keep content above the soft keyboard (e.g. while typing in the
-            // test field): adjustResize shrinks the window, this pads for
-            // the IME, and verticalScroll makes the off-screen part
-            // reachable.
+            // Keep content above the soft keyboard: with edge-to-edge the
+            // window is not resized for the IME, so pad for it here. Order
+            // matters — modifiers after verticalScroll become part of the
+            // scrollable CONTENT (the inset would just extend the scroll
+            // range); before it, the padding shrinks the viewport, which is
+            // what lets bringIntoView lift the focused field clear.
             .imePadding()
+            .verticalScroll(scrollState)
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -107,7 +138,10 @@ fun SetupScreen(modifier: Modifier = Modifier) {
                 label = { Text(stringResource(R.string.api_key_hint)) },
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(requesters[0])
+                    .onFocusChanged { focusedField = if (it.isFocused) 0 else -1 },
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -160,7 +194,10 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             value = testText,
             onValueChange = { testText = it },
             label = { Text(stringResource(R.string.test_field_hint)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(requesters[1])
+                .onFocusChanged { focusedField = if (it.isFocused) 1 else -1 },
         )
     }
 }
