@@ -1,6 +1,8 @@
 package com.example.betterswipekeyboard
 
 import android.inputmethodservice.InputMethodService
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -66,6 +68,27 @@ class SwipeKeyboardService : InputMethodService(),
     private var autoProofreadJob: Job? = null
     private var lastCommitWasSwipe = false
 
+    private lateinit var clipboardManager: ClipboardManager
+
+    /**
+     * Records clipboard history Gboard-style: Android keeps no history, so
+     * the keyboard observes every clip while it is the selected IME (the
+     * platform grants the default IME clipboard access even when the
+     * keyboard is hidden). Sensitive clips (password managers, password
+     * fields) are never stored.
+     */
+    private val clipChangedListener =
+        ClipboardManager.OnPrimaryClipChangedListener {
+            val clip = clipboardManager.primaryClip ?: return@OnPrimaryClipChangedListener
+            val sensitive = clip.description.extras
+                ?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
+            if (sensitive) return@OnPrimaryClipChangedListener
+            // Text clips only: no coerceToText, which could resolve URIs
+            // through our own content resolver into unexpected data.
+            val text = clip.getItemAt(0).text ?: return@OnPrimaryClipChangedListener
+            viewModel.addClip(text.toString())
+        }
+
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
@@ -75,6 +98,8 @@ class SwipeKeyboardService : InputMethodService(),
         apiKeyStore = ApiKeyStore(this)
         mlKitProofreader = MlKitProofreader(this)
         openRouterProofreader = OpenRouterProofreader(apiKeyStore)
+        clipboardManager = getSystemService(ClipboardManager::class.java)
+        clipboardManager.addPrimaryClipChangedListener(clipChangedListener)
         lifecycleScope.launch { refreshProofreader() }
     }
 
@@ -230,6 +255,7 @@ class SwipeKeyboardService : InputMethodService(),
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        clipboardManager.removePrimaryClipChangedListener(clipChangedListener)
         if (::mlKitProofreader.isInitialized) mlKitProofreader.close()
         if (::openRouterProofreader.isInitialized) openRouterProofreader.close()
         store.clear()

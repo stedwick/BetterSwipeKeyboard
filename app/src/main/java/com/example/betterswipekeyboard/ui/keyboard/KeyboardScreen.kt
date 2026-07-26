@@ -68,7 +68,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-private data class KeyboardColors(
+// Not private: ClipboardPanel (same package) renders with these colors.
+data class KeyboardColors(
     val keyboardBackground: Color,
     val keyBackground: Color,
     val keyBackgroundActive: Color,
@@ -131,12 +132,7 @@ fun KeyboardScreen(
     onSettingsClick: () -> Unit,
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
-    val layout = when (state.layout) {
-        LayoutId.LETTERS -> QwertyLayout
-        LayoutId.SYMBOLS -> SymbolsLayout
-    }
     val geometry = remember { KeyboardGeometry() }
-    geometry.activeLayout = layout.id
 
     var boxOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
     var pressedKey by remember { mutableStateOf<Key?>(null) }
@@ -154,141 +150,7 @@ fun KeyboardScreen(
             .windowInsetsPadding(WindowInsets.navigationBars)
             // Extra clearance so the system nav strip (gesture pill,
             // hide-keyboard and IME-switcher buttons) never overlaps keys.
-            .padding(bottom = KeyboardBottomClearance)
-            .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
-            // ALL pointer input is handled here at the container level (taps,
-            // long-presses and swipe trails) so a finger can travel across
-            // keys in a single gesture. Keys below are purely visual.
-            .pointerInput(layout.id) {
-                val touchSlop = viewConfiguration.touchSlop
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    val downKey = geometry.keyAt(down.position)
-                    pressedKey = downKey
-                    val trail = mutableListOf(
-                        TimedPoint(down.position.toVec2(), down.uptimeMillis),
-                    )
-
-                    // Phase 1: up = tap, travel beyond slop = swipe, timeout = long-press.
-                    val outcome = withTimeoutOrNull(LONG_PRESS_TIMEOUT_MS) {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: continue
-                            if (change.changedToUp()) return@withTimeoutOrNull GestureOutcome.TAP
-                            if ((change.position - down.position).getDistance() > touchSlop) {
-                                return@withTimeoutOrNull GestureOutcome.DRAG
-                            }
-                        }
-                        @Suppress("UNREACHABLE_CODE")
-                        error("unreachable")
-                    }
-
-                    var swipeCompleted = false
-                    when (outcome) {
-                        GestureOutcome.TAP ->
-                            downKey?.let { onAction(it.tapAction()) }
-
-                        GestureOutcome.DRAG ->
-                            if (layout.id == LayoutId.LETTERS && downKey?.isLetter() == true) {
-                                // Phase 2 (swipe): collect the trail until finger lifts.
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id }
-                                        ?: break // pointer vanished
-                                    if (change.positionChange() != Offset.Zero) {
-                                        trail += TimedPoint(
-                                            change.position.toVec2(), change.uptimeMillis,
-                                        )
-                                        trailPoints = trail.map { it.position.toOffset() }
-                                        pressedKey = geometry.keyAt(change.position)
-                                        change.consume()
-                                    }
-                                    // Note: the release may arrive consumed (e.g. after
-                                    // move consumption), so check `pressed`, not
-                                    // `changedToUp()`.
-                                    if (!change.pressed) break
-                                }
-                                swipeCompleted = true
-                            } else {
-                                // Drag from a non-letter key is not a swipe; swallow it.
-                                awaitUp(down.id)
-                            }
-
-                        null -> when (downKey?.output) {
-                            // Phase 2 (long-press): repeat / caps-lock until finger lifts.
-                            is KeyOutput.Backspace -> {
-                                onAction(KeyboardAction.Backspace)
-                                var up = false
-                                while (!up) {
-                                    val event =
-                                        withTimeoutOrNull(BACKSPACE_REPEAT_MS) { awaitPointerEvent() }
-                                    if (event == null) {
-                                        // Timed out while still held: repeat.
-                                        onAction(KeyboardAction.Backspace)
-                                    } else {
-                                        val change = event.changes
-                                            .firstOrNull { it.id == down.id }
-                                        if (change != null && change.changedToUp()) up = true
-                                    }
-                                }
-                            }
-
-                            is KeyOutput.Shift -> {
-                                onAction(KeyboardAction.CapsLock)
-                                awaitUp(down.id)
-                            }
-
-                            is KeyOutput.Text -> {
-                                if ((downKey.output as KeyOutput.Text).text == ".") {
-                                    // Long-press period: punctuation popup with drag-select.
-                                    var selection = -1
-                                    popupChoices = PUNCTUATION_POPUP
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change =
-                                            event.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (change.positionChange() != Offset.Zero) {
-                                            selection = popupIndexAt(change.position, popupBounds)
-                                            popupIndex = selection
-                                        }
-                                        if (!change.pressed) break
-                                    }
-                                    popupChoices = null
-                                    popupIndex = -1
-                                    onAction(
-                                        KeyboardAction.InsertText(
-                                            if (selection >= 0) PUNCTUATION_POPUP[selection] else ".",
-                                        ),
-                                    )
-                                } else {
-                                    awaitUp(down.id)
-                                }
-                            }
-
-                            else -> awaitUp(down.id)
-                        }
-                    }
-                    pressedKey = null
-
-                    if (swipeCompleted) {
-                        val results = decoder.decode(
-                            trail = trail.toList(),
-                            keyCenters = geometry.letterCenters(),
-                            keyWidth = geometry.keyWidth(),
-                            topN = 1,
-                        )
-                        val best = results.firstOrNull()
-                        if (best != null && best.score < MAX_COMMIT_SCORE) {
-                            onAction(KeyboardAction.CommitWord(best.word))
-                        }
-                        // Let the trail linger briefly, then clear it.
-                        scope.launch {
-                            delay(TRAIL_LINGER_MS)
-                            trailPoints = emptyList()
-                        }
-                    }
-                }
-            },
+            .padding(bottom = KeyboardBottomClearance),
     ) {
         Column(
             modifier = Modifier
@@ -296,133 +158,283 @@ fun KeyboardScreen(
                 .padding(horizontal = 3.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Utility row: sparkly AI proofreader, emoji, microphone.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                UtilityKey(
-                    onClick = { onAction(KeyboardAction.ToggleProofread) },
-                    enabled = state.proofreader == ProofreaderStatus.AVAILABLE,
-                    active = state.proofreadAuto,
+            UtilityRow(
+                state = state,
+                colors = colors,
+                onAction = onAction,
+                onSettingsClick = onSettingsClick,
+            )
+            when (state.layout) {
+                LayoutId.CLIPBOARD -> ClipboardPanel(
                     colors = colors,
-                    modifier = Modifier.weight(2f),
-                ) {
-                    if (state.proofreadInFlight) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = colors.keyText,
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            UtilityKeyLabel("✨ AI ", colors)
-                            UtilityKeyLabel(
-                                text = if (state.proofreadAuto) "on" else "off",
-                                colors = colors,
-                                color = if (state.proofreadAuto) ToggleOn else ToggleOff,
-                            )
-                        }
+                    entries = state.clipboard,
+                    onAction = onAction,
+                )
+
+                else -> {
+                    val layout = when (state.layout) {
+                        LayoutId.SYMBOLS -> SymbolsLayout
+                        else -> QwertyLayout
                     }
-                }
-                UtilityKey(
-                    onClick = { /* TODO: emoji panel */ },
-                    colors = colors,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    UtilityKeyLabel("😀", colors)
-                }
-                UtilityKey(
-                    onClick = onSettingsClick,
-                    colors = colors,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    UtilityKeyLabel("⚙", colors)
-                }
-            }
-            layout.rows.forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    row.forEach { key ->
-                        KeyView(
-                            key = key,
-                            state = state,
-                            pressed = key == pressedKey,
-                            colors = colors,
-                            modifier = Modifier.weight(key.weight),
-                            onPositioned = { coordinates ->
-                                geometry.register(
-                                    layout.id,
-                                    key,
-                                    Rect(
-                                        coordinates.positionInWindow() - boxOffsetInWindow,
-                                        coordinates.size.toSize(),
-                                    ),
-                                )
+                    geometry.activeLayout = layout.id
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
+                            // ALL pointer input for the letter/symbol rows is
+                            // handled here at the container level (taps,
+                            // long-presses and swipe trails) so a finger can
+                            // travel across keys in a single gesture. Keys
+                            // below are purely visual. The utility row and the
+                            // clipboard panel deliberately live OUTSIDE this
+                            // scope: utility taps must not start gestures, and
+                            // list scrolls must not be read as swipe trails.
+                            .pointerInput(layout.id) {
+                                val touchSlop = viewConfiguration.touchSlop
+                                awaitEachGesture {
+                                    val down = awaitFirstDown()
+                                    val downKey = geometry.keyAt(down.position)
+                                    pressedKey = downKey
+                                    val trail = mutableListOf(
+                                        TimedPoint(down.position.toVec2(), down.uptimeMillis),
+                                    )
+
+                                    // Phase 1: up = tap, travel beyond slop = swipe, timeout = long-press.
+                                    val outcome = withTimeoutOrNull(LONG_PRESS_TIMEOUT_MS) {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                                ?: continue
+                                            if (change.changedToUp()) {
+                                                return@withTimeoutOrNull GestureOutcome.TAP
+                                            }
+                                            if ((change.position - down.position).getDistance() > touchSlop) {
+                                                return@withTimeoutOrNull GestureOutcome.DRAG
+                                            }
+                                        }
+                                        @Suppress("UNREACHABLE_CODE")
+                                        error("unreachable")
+                                    }
+
+                                    var swipeCompleted = false
+                                    when (outcome) {
+                                        GestureOutcome.TAP ->
+                                            downKey?.let { onAction(it.tapAction()) }
+
+                                        GestureOutcome.DRAG ->
+                                            if (layout.id == LayoutId.LETTERS &&
+                                                downKey?.isLetter() == true
+                                            ) {
+                                                // Phase 2 (swipe): collect the trail until finger lifts.
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                                        ?: break // pointer vanished
+                                                    if (change.positionChange() != Offset.Zero) {
+                                                        trail += TimedPoint(
+                                                            change.position.toVec2(),
+                                                            change.uptimeMillis,
+                                                        )
+                                                        trailPoints =
+                                                            trail.map { it.position.toOffset() }
+                                                        pressedKey =
+                                                            geometry.keyAt(change.position)
+                                                        change.consume()
+                                                    }
+                                                    // Note: the release may arrive consumed
+                                                    // (e.g. after move consumption), so check
+                                                    // `pressed`, not `changedToUp()`.
+                                                    if (!change.pressed) break
+                                                }
+                                                swipeCompleted = true
+                                            } else {
+                                                // Drag from a non-letter key is not a swipe; swallow it.
+                                                awaitUp(down.id)
+                                            }
+
+                                        null -> when (downKey?.output) {
+                                            // Phase 2 (long-press): repeat / caps-lock until finger lifts.
+                                            is KeyOutput.Backspace -> {
+                                                onAction(KeyboardAction.Backspace)
+                                                var up = false
+                                                while (!up) {
+                                                    val event =
+                                                        withTimeoutOrNull(BACKSPACE_REPEAT_MS) {
+                                                            awaitPointerEvent()
+                                                        }
+                                                    if (event == null) {
+                                                        // Timed out while still held: repeat.
+                                                        onAction(KeyboardAction.Backspace)
+                                                    } else {
+                                                        val change = event.changes
+                                                            .firstOrNull { it.id == down.id }
+                                                        if (change != null && change.changedToUp()) {
+                                                            up = true
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            is KeyOutput.Shift -> {
+                                                onAction(KeyboardAction.CapsLock)
+                                                awaitUp(down.id)
+                                            }
+
+                                            is KeyOutput.Text -> {
+                                                if ((downKey.output as KeyOutput.Text).text == ".") {
+                                                    // Long-press period: punctuation popup with drag-select.
+                                                    var selection = -1
+                                                    popupChoices = PUNCTUATION_POPUP
+                                                    while (true) {
+                                                        val event = awaitPointerEvent()
+                                                        val change =
+                                                            event.changes
+                                                                .firstOrNull { it.id == down.id }
+                                                                ?: break
+                                                        if (change.positionChange() != Offset.Zero) {
+                                                            selection = popupIndexAt(
+                                                                change.position, popupBounds,
+                                                            )
+                                                            popupIndex = selection
+                                                        }
+                                                        if (!change.pressed) break
+                                                    }
+                                                    popupChoices = null
+                                                    popupIndex = -1
+                                                    onAction(
+                                                        KeyboardAction.InsertText(
+                                                            if (selection >= 0) {
+                                                                PUNCTUATION_POPUP[selection]
+                                                            } else {
+                                                                "."
+                                                            },
+                                                        ),
+                                                    )
+                                                } else {
+                                                    awaitUp(down.id)
+                                                }
+                                            }
+
+                                            else -> awaitUp(down.id)
+                                        }
+                                    }
+                                    pressedKey = null
+
+                                    if (swipeCompleted) {
+                                        val results = decoder.decode(
+                                            trail = trail.toList(),
+                                            keyCenters = geometry.letterCenters(),
+                                            keyWidth = geometry.keyWidth(),
+                                            topN = 1,
+                                        )
+                                        val best = results.firstOrNull()
+                                        if (best != null && best.score < MAX_COMMIT_SCORE) {
+                                            onAction(KeyboardAction.CommitWord(best.word))
+                                        }
+                                        // Let the trail linger briefly, then clear it.
+                                        scope.launch {
+                                            delay(TRAIL_LINGER_MS)
+                                            trailPoints = emptyList()
+                                        }
+                                    }
+                                }
                             },
-                        )
-                    }
-                }
-            }
-        }
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            layout.rows.forEach { row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    row.forEach { key ->
+                                        KeyView(
+                                            key = key,
+                                            state = state,
+                                            pressed = key == pressedKey,
+                                            colors = colors,
+                                            modifier = Modifier.weight(key.weight),
+                                            onPositioned = { coordinates ->
+                                                geometry.register(
+                                                    layout.id,
+                                                    key,
+                                                    Rect(
+                                                        coordinates.positionInWindow() -
+                                                            boxOffsetInWindow,
+                                                        coordinates.size.toSize(),
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
-        // Swipe trail overlay: recent points bright, older points fading out.
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val points = trailPoints
-            if (points.size >= 2) {
-                for (i in 1 until points.size) {
-                    val alpha = 0.15f + 0.75f * (i.toFloat() / points.size)
-                    drawLine(
-                        color = colors.trail.copy(alpha = alpha),
-                        start = points[i - 1],
-                        end = points[i],
-                        strokeWidth = trailStrokeWidth,
-                        cap = StrokeCap.Round,
-                    )
-                }
-            }
-        }
+                        // Swipe trail overlay: recent points bright, older points fading out.
+                        Canvas(modifier = Modifier.matchParentSize()) {
+                            val points = trailPoints
+                            if (points.size >= 2) {
+                                for (i in 1 until points.size) {
+                                    val alpha = 0.15f + 0.75f * (i.toFloat() / points.size)
+                                    drawLine(
+                                        color = colors.trail.copy(alpha = alpha),
+                                        start = points[i - 1],
+                                        end = points[i],
+                                        strokeWidth = trailStrokeWidth,
+                                        cap = StrokeCap.Round,
+                                    )
+                                }
+                            }
+                        }
 
-        // Punctuation popup for the period long-press: a compact 3x3 grid
-        // of key tiles anchored over the period key, within thumb reach.
-        val choices = popupChoices
-        if (choices != null) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 76.dp)
-                    .shadow(8.dp, RoundedCornerShape(10.dp))
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(colors.keyboardBackground)
-                    .padding(4.dp)
-                    .onGloballyPositioned {
-                        popupBounds = Rect(
-                            it.positionInWindow() - boxOffsetInWindow,
-                            it.size.toSize(),
-                        )
-                    },
-            ) {
-                choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        rowChoices.forEach { label ->
-                            val index = choices.indexOf(label)
-                            Box(
+                        // Punctuation popup for the period long-press: a compact 3x3 grid
+                        // of key tiles anchored over the period key, within thumb reach.
+                        val choices = popupChoices
+                        if (choices != null) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
                                 modifier = Modifier
-                                    .size(width = 48.dp, height = 48.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(
-                                        if (index == popupIndex) {
-                                            colors.keyBackgroundActive
-                                        } else {
-                                            colors.keyBackground
-                                        },
-                                    ),
-                                contentAlignment = Alignment.Center,
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 8.dp, bottom = 76.dp)
+                                    .shadow(8.dp, RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.keyboardBackground)
+                                    .padding(4.dp)
+                                    .onGloballyPositioned {
+                                        popupBounds = Rect(
+                                            it.positionInWindow() - boxOffsetInWindow,
+                                            it.size.toSize(),
+                                        )
+                                    },
                             ) {
-                                Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                                choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        rowChoices.forEach { label ->
+                                            val index = choices.indexOf(label)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(width = 48.dp, height = 48.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(
+                                                        if (index == popupIndex) {
+                                                            colors.keyBackgroundActive
+                                                        } else {
+                                                            colors.keyBackground
+                                                        },
+                                                    ),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = colors.keyText,
+                                                    fontSize = 20.sp,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -433,6 +445,74 @@ fun KeyboardScreen(
 }
 
 private enum class GestureOutcome { TAP, DRAG }
+
+/** Utility row above the keys: sparkly AI proofreader, emoji, clipboard, settings. */
+@Composable
+private fun UtilityRow(
+    state: KeyboardState,
+    colors: KeyboardColors,
+    onAction: (KeyboardAction) -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        UtilityKey(
+            onClick = { onAction(KeyboardAction.ToggleProofread) },
+            enabled = state.proofreader == ProofreaderStatus.AVAILABLE,
+            active = state.proofreadAuto,
+            colors = colors,
+            modifier = Modifier.weight(2f),
+        ) {
+            if (state.proofreadInFlight) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = colors.keyText,
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    UtilityKeyLabel("✨ AI ", colors)
+                    UtilityKeyLabel(
+                        text = if (state.proofreadAuto) "on" else "off",
+                        colors = colors,
+                        color = if (state.proofreadAuto) ToggleOn else ToggleOff,
+                    )
+                }
+            }
+        }
+        UtilityKey(
+            onClick = { /* TODO: emoji panel */ },
+            colors = colors,
+            modifier = Modifier.weight(1f),
+        ) {
+            UtilityKeyLabel("😀", colors)
+        }
+        UtilityKey(
+            // The clipboard key toggles: from letters/symbols into the
+            // clipboard panel, from the panel back to letters.
+            onClick = {
+                onAction(
+                    KeyboardAction.SwitchLayout(
+                        if (state.layout == LayoutId.CLIPBOARD) LayoutId.LETTERS else LayoutId.CLIPBOARD,
+                    ),
+                )
+            },
+            colors = colors,
+            modifier = Modifier.weight(1f),
+        ) {
+            UtilityKeyLabel("📋", colors)
+        }
+        UtilityKey(
+            onClick = onSettingsClick,
+            colors = colors,
+            modifier = Modifier.weight(1f),
+        ) {
+            UtilityKeyLabel("⚙", colors)
+        }
+    }
+}
 
 /** A key in the utility row above the letter rows. */
 @Composable

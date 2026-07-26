@@ -34,6 +34,12 @@ sealed interface KeyboardAction {
 
     /** Tap the sparkly key: toggles auto-proofreading on/off (like Shift). */
     data object ToggleProofread : KeyboardAction
+
+    /** Tap a clipboard-history entry: paste it verbatim and return to letters. */
+    data class PasteClip(val text: String) : KeyboardAction
+
+    /** Long-press a clipboard-history entry: delete it. */
+    data class DeleteClip(val text: String) : KeyboardAction
 }
 
 /** Side effects to apply to the current InputConnection. */
