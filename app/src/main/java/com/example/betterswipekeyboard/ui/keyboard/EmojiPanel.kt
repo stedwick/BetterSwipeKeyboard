@@ -31,9 +31,8 @@ import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.layout.categoryJumpIndex
 import kotlinx.coroutines.launch
 
-// Matches the letter-rows block (4 x 52dp rows + 3 x 6dp gaps) so switching
-// between letters and emoji never resizes the IME window.
-private val EmojiPanelHeight = 226.dp
+// The panel pins to KeyboardContentHeight (KeyboardScreen.kt, same package)
+// so switching between letters and emoji never resizes the IME window.
 private const val GRID_COLUMNS = 8
 
 /**
@@ -63,7 +62,7 @@ fun EmojiPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(EmojiPanelHeight),
+            .height(KeyboardContentHeight),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // ONE scroll surface: the suggestion block (when present), the

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -109,6 +110,18 @@ private const val TRAIL_LINGER_MS = 200L
 // non-zero.
 private val KeyboardBottomClearance = 4.dp
 
+/**
+ * Content height of EVERY keyboard surface (letter rows, emoji panel,
+ * clipboard panel, voice panel) — they must all be exactly this tall or
+ * the IME window shifts on layout switches. Pinning matters because the
+ * letter rows would otherwise sum 4 x 52.dp + 3 x 6.dp with each gap
+ * rounded to whole px separately (16.5 -> 17px at density 2.75), landing
+ * 1px off a pinned 226.dp panel. The letter rows are weighted to fill
+ * exactly this height instead of fixing each row at 52.dp.
+ * Not private: EmojiPanel and ClipboardPanel (same package) pin to it too.
+ */
+val KeyboardContentHeight = 226.dp
+
 /** Horizontal travel on the space bar per cursor step (tune on-device). */
 private val SpacebarCursorStep = 14.dp
 
@@ -203,6 +216,10 @@ fun KeyboardScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            // Pinned to the same height as the panels: the
+                            // weighted rows below fill it exactly, so letters
+                            // and panels never differ by a rounding pixel.
+                            .height(KeyboardContentHeight)
                             .onGloballyPositioned {
                                 boxOffsetInWindow = it.positionInWindow()
                                 boxOffsetOnScreen = it.positionOnScreen()
@@ -387,11 +404,20 @@ fun KeyboardScreen(
                             },
                     ) {
                         Column(
+                            modifier = Modifier.fillMaxHeight(),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             layout.rows.forEach { row ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    // Rows split the pinned content height
+                                    // equally (was: a fixed 52.dp each) so
+                                    // the letter stack is EXACTLY
+                                    // KeyboardContentHeight tall — 4 x 52.dp
+                                    // + 3 rounded 6.dp gaps could drift 1px
+                                    // off the pinned panels.
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth(),
                                     // Center rows that end up narrower than
                                     // the full 10-key row (e.g. the 9-key
                                     // home row) instead of stretching them —
@@ -563,13 +589,11 @@ private fun UtilityRow(
     }
 }
 
-/** Matches the height of the four key rows, so the IME window doesn't jump. */
-private val VoicePanelHeight = 226.dp
-
 /**
  * Replaces the key rows while [VoiceState] is not OFF: a mic icon, a status
  * line, the live partial transcript, and a single Done / close / help
- * button. Deliberately minimal — no waveform, no cancel button.
+ * button. Deliberately minimal — no waveform, no cancel button. Pins to the
+ * shared [KeyboardContentHeight], so the IME window doesn't jump.
  */
 @Composable
 private fun VoicePanel(
@@ -581,7 +605,7 @@ private fun VoicePanel(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(VoicePanelHeight),
+            .height(KeyboardContentHeight),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
@@ -724,7 +748,9 @@ private fun KeyView(
     Box(
         modifier = modifier
             .onGloballyPositioned(onPositioned)
-            .height(52.dp)
+            // Height comes from the weighted row (rows split the pinned
+            // content height); see KeyboardContentHeight.
+            .fillMaxHeight()
             .clip(RoundedCornerShape(6.dp))
             .background(background),
         contentAlignment = Alignment.Center,
