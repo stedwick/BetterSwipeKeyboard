@@ -204,6 +204,12 @@ class SwipeKeyboardService : InputMethodService(),
                 editor.enter(currentInputEditorInfo)
                 scheduleAutoProofread()
             }
+            is KeyboardEffect.MoveCursor -> {
+                editor.moveCursor(effect.steps)
+                // Cursor move ends the swipe → tap leading-space context;
+                // no scheduleAutoProofread: the text did not change.
+                lastCommitWasSwipe = false
+            }
             null -> Unit
         }
     }

@@ -57,6 +57,12 @@ Data flow (deliberately layered, keep it this way):
    (`precedingGraphemeLength`, `java.text.BreakIterator`): never delete a
    single UTF-16 unit — emoji are surrogate pairs and deleting one unit
    leaves a U+FFFD replacement char.
+6. **Space-bar drag = cursor control** (`SpacebarCursor.kt` +
+   `ui/keyboard/SpacebarCursorDrag.kt`): a horizontal drag on the space bar
+   emits `MoveCursor` step deltas (net displacement, 14.dp per step), which
+   `InputConnectionEditor.moveCursor` applies as D-pad key events so the
+   target app handles grapheme clusters, selection collapse and clamping.
+   Cursor moves consume no one-shot shift and schedule no auto-proofread.
 
 ### Swipe decoding (`swipe/`)
 

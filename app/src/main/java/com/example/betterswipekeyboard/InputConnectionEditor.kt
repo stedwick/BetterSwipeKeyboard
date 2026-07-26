@@ -1,7 +1,9 @@
 package com.example.betterswipekeyboard
 
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import kotlin.math.abs
 
 /**
  * The only class that talks to the text field. It resolves the
@@ -48,6 +50,23 @@ class InputConnectionEditor(
             ic.performEditorAction(action)
         } else {
             ic.commitText("\n", 1)
+        }
+    }
+
+    /**
+     * Moves the cursor by [steps] characters (negative = backward) via
+     * D-pad key events: the target app handles grapheme clusters (no
+     * mid-surrogate cursor stops), selection collapse and boundary
+     * clamping — the same path as hardware arrow keys. A setSelection
+     * implementation would need ExtractedText offset plumbing and manual
+     * grapheme math for the same guarantees.
+     */
+    fun moveCursor(steps: Int) {
+        val ic = connectionProvider() ?: return
+        val code = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(abs(steps)) {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
         }
     }
 

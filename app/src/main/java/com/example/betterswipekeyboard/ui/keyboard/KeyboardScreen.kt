@@ -54,6 +54,7 @@ import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.KeyboardState
 import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
+import com.example.betterswipekeyboard.isSpaceBar
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
@@ -101,6 +102,9 @@ private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
 private val KeyboardBottomClearance = 12.dp
 
+/** Horizontal travel on the space bar per cursor step (tune on-device). */
+private val SpacebarCursorStep = 14.dp
+
 /** Choices in the long-press popup on the period key, as a 3x3 grid. */
 private val PUNCTUATION_POPUP = listOf("!", "?", ",", ";", ":", "-", "\"", "'", ".")
 private const val PUNCTUATION_POPUP_COLUMNS = 3
@@ -142,6 +146,7 @@ fun KeyboardScreen(
     var popupBounds by remember { mutableStateOf<Rect?>(null) }
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
+    val cursorStepPx = with(LocalDensity.current) { SpacebarCursorStep.toPx() }
 
     Box(
         modifier = Modifier
@@ -250,6 +255,15 @@ fun KeyboardScreen(
                                                     if (!change.pressed) break
                                                 }
                                                 swipeCompleted = true
+                                            } else if (isSpaceBar(downKey)) {
+                                                // Space-bar drag: cursor
+                                                // control, in either layout.
+                                                trackSpacebarDrag(
+                                                    down.id,
+                                                    down.position,
+                                                    cursorStepPx,
+                                                    onAction,
+                                                )
                                             } else {
                                                 // Drag from a non-letter key is not a swipe; swallow it.
                                                 awaitUp(down.id)
