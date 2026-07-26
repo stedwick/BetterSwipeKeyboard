@@ -49,4 +49,41 @@ class InputConnectionEditorTest {
         assertEquals(false, InputConnectionEditor.needsSpaceAfterSwipe("", "x"))
         assertEquals(false, InputConnectionEditor.needsSpaceAfterSwipe(" ", "x"))
     }
+
+    @Test
+    fun `grapheme length falls back to one with no text`() {
+        assertEquals(1, InputConnectionEditor.precedingGraphemeLength(null))
+        assertEquals(1, InputConnectionEditor.precedingGraphemeLength(""))
+    }
+
+    @Test
+    fun `grapheme length of plain ascii is one`() {
+        assertEquals(1, InputConnectionEditor.precedingGraphemeLength("a"))
+        assertEquals(1, InputConnectionEditor.precedingGraphemeLength("hello"))
+    }
+
+    @Test
+    fun `grapheme length of surrogate-pair emoji is two`() {
+        assertEquals(2, InputConnectionEditor.precedingGraphemeLength("😀"))
+        assertEquals(2, InputConnectionEditor.precedingGraphemeLength("text😀"))
+    }
+
+    @Test
+    fun `grapheme length of regional-indicator flag is four`() {
+        assertEquals(4, InputConnectionEditor.precedingGraphemeLength("🇩🇪"))
+    }
+
+    @Test
+    fun `grapheme length of letter plus combining mark deletes both`() {
+        assertEquals(2, InputConnectionEditor.precedingGraphemeLength("é"))
+        assertEquals(1, InputConnectionEditor.precedingGraphemeLength("éx"))
+    }
+
+    @Test
+    fun `grapheme length of zwj family emoji deletes whole sequence`() {
+        // 👨 ZWJ 👩 ZWJ 👧 = 2+1+2+1+2 = 8 UTF-16 code units. The JVM
+        // BreakIterator reports this as one cluster; if a future JDK splits
+        // it, one backspace removing one sub-emoji is accepted.
+        assertEquals(8, InputConnectionEditor.precedingGraphemeLength("👨‍👩‍👧"))
+    }
 }

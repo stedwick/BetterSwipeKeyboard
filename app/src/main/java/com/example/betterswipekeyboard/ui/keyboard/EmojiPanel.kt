@@ -129,7 +129,9 @@ fun EmojiPanel(
 
         // Bottom bar: ABC returns to letters, backspace deletes. Backspace
         // is deliberately tap-only (no hold-to-repeat) — a known
-        // simplification vs Gboard, see PLAN/edge cases.
+        // simplification vs Gboard. Deletion itself is grapheme-aware
+        // (see InputConnectionEditor.backspace), so one tap removes one
+        // whole emoji, never half a surrogate pair.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),

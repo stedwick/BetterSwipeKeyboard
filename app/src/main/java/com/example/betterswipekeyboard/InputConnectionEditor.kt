@@ -32,7 +32,12 @@ class InputConnectionEditor(
             ic.commitText("", 1)
             return
         }
-        ic.deleteSurroundingText(1, 0)
+        // Delete the previous extended grapheme cluster, not one UTF-16 code
+        // unit: emoji are surrogate pairs (or longer ZWJ sequences), and
+        // deleting a single unit leaves a lone surrogate that renders as
+        // U+FFFD. Capped read; clusters are never anywhere near 64 units.
+        val before = textBeforeCursor(maxChars = 64)
+        ic.deleteSurroundingText(precedingGraphemeLength(before), 0)
     }
 
     fun enter(editorInfo: EditorInfo?) {
@@ -79,5 +84,32 @@ class InputConnectionEditor(
             text.firstOrNull()?.isLetter() == true &&
                 !beforeCursor.isNullOrEmpty() &&
                 !beforeCursor.last().isWhitespace()
+
+        /**
+         * Pure, unit-tested: UTF-16 length of the extended grapheme cluster
+         * ending at the end of [textBeforeCursor] — i.e. how many code units
+         * backspace must delete to remove one user-perceived character.
+         * Uses [java.text.BreakIterator] (pure JVM, no Android deps).
+         * Falls back to 1 when there is no text (or no boundary is found),
+         * so callers can always pass the result straight to
+         * `deleteSurroundingText`.
+         *
+         * Handles surrogate-pair emoji (2 units), regional-indicator flags
+         * (4 units) and combining marks. ZWJ sequences (e.g. family emoji)
+         * are deleted whole when the JVM's BreakIterator reports them as one
+         * cluster — if it splits them, one backspace removes one sub-emoji;
+         * accepted (same as many stock keyboards).
+         */
+        fun precedingGraphemeLength(textBeforeCursor: String?): Int {
+            if (textBeforeCursor.isNullOrEmpty()) return 1
+            val iterator = java.text.BreakIterator.getCharacterInstance()
+            iterator.setText(textBeforeCursor)
+            val boundary = iterator.preceding(textBeforeCursor.length)
+            return if (boundary == java.text.BreakIterator.DONE) {
+                1
+            } else {
+                textBeforeCursor.length - boundary
+            }
+        }
     }
 }
