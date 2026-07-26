@@ -35,6 +35,8 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.betterswipekeyboard.ime.bottomClearancePx
+import com.example.betterswipekeyboard.emoji.EmojiSuggester
+import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.proofread.ProofreadMode
@@ -74,6 +76,7 @@ class SwipeKeyboardService : InputMethodService(),
     private lateinit var baseDictionary: Dictionary
     private lateinit var customWordStore: CustomWordStore
     private lateinit var decoder: SwipeDecoder
+    private lateinit var emojiSuggester: EmojiSuggester
     private var lastCustomWordsRaw: String? = null
     private lateinit var apiKeyStore: ApiKeyStore
     private lateinit var mlKitProofreader: MlKitProofreader
@@ -177,6 +180,7 @@ class SwipeKeyboardService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
         baseDictionary = Dictionary.load(assets.open("words_en.txt"))
+        emojiSuggester = EmojiSuggester.load(assets.open("emoji_keywords_en.txt"))
         customWordStore = CustomWordStore(this)
         rebuildDecoder()
         apiKeyStore = ApiKeyStore(this)
@@ -300,7 +304,8 @@ class SwipeKeyboardService : InputMethodService(),
             onToggleVoice()
             return
         }
-        when (val effect = viewModel.onAction(action)) {
+        val effect = viewModel.onAction(action)
+        when (effect) {
             is KeyboardEffect.CommitText -> {
                 // Mode change swipe → tap starts a new word (letters only).
                 if (lastCommitWasSwipe &&
@@ -349,6 +354,28 @@ class SwipeKeyboardService : InputMethodService(),
             }
             null -> Unit
         }
+        // Emoji-panel suggestions: refresh on opening the panel and after
+        // any text change (emoji insert, backspace, ...) while it is open;
+        // clear when switching away so stale suggestions never linger.
+        if (action is KeyboardAction.SwitchLayout) {
+            if (action.layout == LayoutId.EMOJI) {
+                refreshEmojiSuggestions()
+            } else {
+                viewModel.setEmojiSuggestions(emptyList())
+            }
+        } else if (effect != null && viewModel.state.value.layout == LayoutId.EMOJI) {
+            refreshEmojiSuggestions()
+        }
+    }
+
+    /**
+     * Recomputes the emoji suggestion row from the text before the cursor.
+     * Pure in-memory keyword lookups on the last few words — instant and
+     * offline, so no debounce is needed.
+     */
+    private fun refreshEmojiSuggestions() {
+        val before = editor.textBeforeCursor(maxChars = EMOJI_SUGGESTION_CHARS).orEmpty()
+        viewModel.setEmojiSuggestions(emojiSuggester.suggest(before))
     }
 
     /**
@@ -493,6 +520,9 @@ class SwipeKeyboardService : InputMethodService(),
 
     private companion object {
         const val AUTO_PROOFREAD_DEBOUNCE_MS = 1000L
+
+        /** How much text before the cursor the emoji suggester sees. */
+        const val EMOJI_SUGGESTION_CHARS = 200
     }
 }
 

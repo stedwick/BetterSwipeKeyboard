@@ -182,7 +182,11 @@ fun KeyboardScreen(
                     onPermissionHelpClick = onPermissionHelpClick,
                 )
 
-                state.layout == LayoutId.EMOJI -> EmojiPanel(colors = colors, onAction = onAction)
+                state.layout == LayoutId.EMOJI -> EmojiPanel(
+                    colors = colors,
+                    onAction = onAction,
+                    suggestions = state.emojiSuggestions,
+                )
 
                 state.layout == LayoutId.CLIPBOARD -> ClipboardPanel(
                     colors = colors,

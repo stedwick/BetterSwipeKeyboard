@@ -141,6 +141,11 @@ class KeyboardViewModel : ViewModel() {
         _state.update { it.copy(voicePartial = text) }
     }
 
+    /** Called by the service when the emoji-panel suggestions change. */
+    fun setEmojiSuggestions(suggestions: List<String>) {
+        _state.update { it.copy(emojiSuggestions = suggestions) }
+    }
+
     private fun refreshClipboard() {
         _state.update { it.copy(clipboard = clipboardHistory.entries()) }
     }

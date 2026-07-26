@@ -29,6 +29,8 @@ data class KeyboardState(
     val voicePartial: String = "",
     /** Mirror of the service-observed clipboard history, newest first. */
     val clipboard: List<ClipEntry> = emptyList(),
+    /** Suggestions shown in the row atop the emoji panel; service-computed. */
+    val emojiSuggestions: List<String> = emptyList(),
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF
