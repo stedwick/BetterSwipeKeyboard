@@ -54,6 +54,7 @@ import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.KeyboardState
 import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
+import com.example.betterswipekeyboard.VoiceState
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
@@ -129,6 +130,7 @@ fun KeyboardScreen(
     decoder: SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
     onSettingsClick: () -> Unit,
+    onPermissionHelpClick: () -> Unit,
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val layout = when (state.layout) {
@@ -159,10 +161,17 @@ fun KeyboardScreen(
             // ALL pointer input is handled here at the container level (taps,
             // long-presses and swipe trails) so a finger can travel across
             // keys in a single gesture. Keys below are purely visual.
-            .pointerInput(layout.id) {
+            // Keyed on the voice state too: while the voice panel replaces
+            // the key rows, the geometry rects are stale and every touch
+            // must be swallowed instead of hit-tested against dead keys.
+            .pointerInput(layout.id, state.voice) {
                 val touchSlop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown()
+                    if (state.voice != VoiceState.OFF) {
+                        awaitUp(down.id)
+                        return@awaitEachGesture
+                    }
                     val downKey = geometry.keyAt(down.position)
                     pressedKey = downKey
                     val trail = mutableListOf(
@@ -340,29 +349,38 @@ fun KeyboardScreen(
                     UtilityKeyLabel("⚙", colors)
                 }
             }
-            layout.rows.forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    row.forEach { key ->
-                        KeyView(
-                            key = key,
-                            state = state,
-                            pressed = key == pressedKey,
-                            colors = colors,
-                            modifier = Modifier.weight(key.weight),
-                            onPositioned = { coordinates ->
-                                geometry.register(
-                                    layout.id,
-                                    key,
-                                    Rect(
-                                        coordinates.positionInWindow() - boxOffsetInWindow,
-                                        coordinates.size.toSize(),
-                                    ),
-                                )
-                            },
-                        )
+            if (state.voice != VoiceState.OFF) {
+                VoicePanel(
+                    state = state,
+                    colors = colors,
+                    onToggleVoice = { onAction(KeyboardAction.ToggleVoice) },
+                    onPermissionHelpClick = onPermissionHelpClick,
+                )
+            } else {
+                layout.rows.forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        row.forEach { key ->
+                            KeyView(
+                                key = key,
+                                state = state,
+                                pressed = key == pressedKey,
+                                colors = colors,
+                                modifier = Modifier.weight(key.weight),
+                                onPositioned = { coordinates ->
+                                    geometry.register(
+                                        layout.id,
+                                        key,
+                                        Rect(
+                                            coordinates.positionInWindow() - boxOffsetInWindow,
+                                            coordinates.size.toSize(),
+                                        ),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -434,6 +452,82 @@ fun KeyboardScreen(
 
 private enum class GestureOutcome { TAP, DRAG }
 
+/** Matches the height of the four key rows, so the IME window doesn't jump. */
+private val VoicePanelHeight = 226.dp
+
+/**
+ * Replaces the key rows while [VoiceState] is not OFF: a mic icon, a status
+ * line, the live partial transcript, and a single Done / close / help
+ * button. Deliberately minimal — no waveform, no cancel button.
+ */
+@Composable
+private fun VoicePanel(
+    state: KeyboardState,
+    colors: KeyboardColors,
+    onToggleVoice: () -> Unit,
+    onPermissionHelpClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(VoicePanelHeight),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_mic),
+            contentDescription = "Voice input",
+            tint = if (state.voice == VoiceState.LISTENING) ToggleOn else colors.keyText,
+            modifier = Modifier.size(32.dp),
+        )
+        Text(
+            text = when (state.voice) {
+                VoiceState.LISTENING -> "Listening…"
+                VoiceState.PERMISSION_REQUIRED ->
+                    "Microphone permission needed — grant it in the app"
+                VoiceState.UNAVAILABLE -> "Voice typing not available on this device"
+                VoiceState.OFF -> ""
+            },
+            color = colors.keyText,
+            fontSize = 15.sp,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (state.voice == VoiceState.LISTENING && state.voicePartial.isNotEmpty()) {
+            Text(
+                text = state.voicePartial,
+                color = colors.keyText.copy(alpha = 0.6f),
+                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .height(40.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(colors.keyBackground)
+                .clickable(
+                    onClick = when (state.voice) {
+                        VoiceState.PERMISSION_REQUIRED -> onPermissionHelpClick
+                        else -> onToggleVoice
+                    },
+                )
+                .padding(horizontal = 24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = when (state.voice) {
+                    VoiceState.LISTENING -> "Done"
+                    VoiceState.PERMISSION_REQUIRED -> "Open app"
+                    else -> "Close"
+                },
+                color = colors.keyText,
+                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
 /** A key in the utility row above the letter rows. */
 @Composable
 private fun UtilityKey(
@@ -490,7 +584,7 @@ private fun Key.tapAction(): KeyboardAction = when (val out = output) {
     KeyOutput.Enter -> KeyboardAction.Enter
     KeyOutput.Shift -> KeyboardAction.Shift
     is KeyOutput.SwitchLayout -> KeyboardAction.SwitchLayout(out.layout)
-    KeyOutput.Microphone -> KeyboardAction.Noop
+    KeyOutput.Microphone -> KeyboardAction.ToggleVoice
 }
 
 @Composable

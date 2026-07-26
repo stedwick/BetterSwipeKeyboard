@@ -12,4 +12,9 @@
     <string name="api_key_get">Get a key at openrouter.ai/keys (cloud proofreading sends sentence text to OpenRouter)</string>
     <string name="proofreader_title">Proofread with AI</string>
     <string name="proofreader_description">%1$s via OpenRouter — Your writing is processed in the cloud by Google with ZDR (zero data retention)</string>
+    <string name="voice_input_title">Voice input</string>
+    <string name="voice_input_description">Dictation uses the phone\'s built-in speech recognizer. The microphone permission can only be granted here, not from the keyboard.</string>
+    <string name="mic_permission_granted">✓ Microphone permission granted</string>
+    <string name="mic_permission_denied">Microphone permission not granted — voice typing is off. If the system dialog no longer appears, enable the permission in system Settings.</string>
+    <string name="grant_mic_permission">Grant microphone permission</string>
 </resources>

@@ -71,7 +71,10 @@ class KeyboardViewModel : ViewModel() {
             null
         }
 
-        KeyboardAction.Noop -> null
+        // Starting/stopping dictation needs permission + availability checks
+        // (Android types), so the service decides and reports back via
+        // setVoiceState/setVoicePartial; the reducer only records outcomes.
+        KeyboardAction.ToggleVoice -> null
     }
 
     /** Called by the service after async availability checks of the AI proofreader. */
@@ -82,6 +85,20 @@ class KeyboardViewModel : ViewModel() {
     /** Called by the service while a proofread request runs. */
     fun setProofreadInFlight(inFlight: Boolean) {
         _state.update { it.copy(proofreadInFlight = inFlight) }
+    }
+
+    /** Called by the service on every voice-state transition. */
+    fun setVoiceState(state: VoiceState) {
+        _state.update {
+            // The partial transcript is only meaningful while listening.
+            if (state == VoiceState.LISTENING) it.copy(voice = state)
+            else it.copy(voice = state, voicePartial = "")
+        }
+    }
+
+    /** Called by the service as partial dictation results arrive. */
+    fun setVoicePartial(text: String) {
+        _state.update { it.copy(voicePartial = text) }
     }
 
     private fun consumeOneShot() {

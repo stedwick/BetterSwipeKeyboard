@@ -22,8 +22,8 @@ sealed interface KeyboardAction {
 
     data class SwitchLayout(val layout: LayoutId) : KeyboardAction
 
-    /** A key with no behavior yet (e.g. microphone). */
-    data object Noop : KeyboardAction
+    /** Tap the microphone key: start/stop voice dictation (decided by the service). */
+    data object ToggleVoice : KeyboardAction
 
     /**
      * Reserved for future swipe typing: a whole word decoded from a glide

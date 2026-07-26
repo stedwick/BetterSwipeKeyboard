@@ -16,6 +16,8 @@ import org.json.JSONObject
  * The proofreading prompt: a strict system message plus a few-shot example
  * per behavior we want (conservative fixes, nearby-key typos, homophones,
  * missing spaces, tone/emoji preservation, and leaving correct text alone).
+ * The VOICE variant targets speech-recognition errors instead (homophones,
+ * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
  */
 object ProofreadPrompt {
@@ -39,10 +41,33 @@ object ProofreadPrompt {
         "Meeting moved to 3 PM tomorrow." to "Meeting moved to 3 PM tomorrow.",
     )
 
-    fun buildRequestJson(model: String, sentence: String): String {
+    const val VOICE_SYSTEM =
+        "You are a meticulous proofreader for text produced by voice dictation " +
+            "(speech-to-text). Fix the errors speech recognition makes: homophones " +
+            "and same-sound mix-ups (their/there/they're, meat/meet), wrong word " +
+            "boundaries, missing punctuation and capitalization, and filler false " +
+            "starts (um, uh, repeated words) which you remove. Preserve the " +
+            "speaker's meaning, tone and emoji. Do not translate or answer " +
+            "questions in the text. If the text is already correct, return it " +
+            "unchanged. Reply with ONLY the corrected text - no quotes, no " +
+            "explanations."
+
+    val VOICE_EXAMPLES: List<Pair<String, String>> = listOf(
+        "their going to meat us at the beech at for" to
+            "They're going to meet us at the beach at 4.",
+        "um so I was I was thinking we could grab dinner tomorrow night" to
+            "So I was thinking we could grab dinner tomorrow night.",
+        "its there house not ours write" to "It's their house, not ours, right?",
+        "please send the report buy friday" to "Please send the report by Friday.",
+        "The meeting is at 3 PM tomorrow." to "The meeting is at 3 PM tomorrow.",
+    )
+
+    fun buildRequestJson(model: String, sentence: String, voice: Boolean = false): String {
+        val system = if (voice) VOICE_SYSTEM else SYSTEM
+        val examples = if (voice) VOICE_EXAMPLES else EXAMPLES
         val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", SYSTEM))
-        for ((input, output) in EXAMPLES) {
+        messages.put(JSONObject().put("role", "system").put("content", system))
+        for ((input, output) in examples) {
             messages.put(JSONObject().put("role", "user").put("content", input))
             messages.put(JSONObject().put("role", "assistant").put("content", output))
         }
@@ -89,24 +114,25 @@ class OpenRouterProofreader(
         if (apiKeyStore.apiKey != null) ProofreaderStatus.AVAILABLE
         else ProofreaderStatus.UNAVAILABLE
 
-    override suspend fun proofread(text: String): String = withContext(Dispatchers.IO) {
-        val key = apiKeyStore.apiKey ?: throw IOException("no OpenRouter API key configured")
-        val request = Request.Builder()
-            .url(ENDPOINT)
-            .header("Authorization", "Bearer $key")
-            .post(
-                ProofreadPrompt.buildRequestJson(MODEL, text)
-                    .toRequestBody("application/json".toMediaType()),
-            )
-            .build()
-        http.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw IOException("OpenRouter HTTP ${response.code}: $body")
+    override suspend fun proofread(text: String, mode: ProofreadMode): String =
+        withContext(Dispatchers.IO) {
+            val key = apiKeyStore.apiKey ?: throw IOException("no OpenRouter API key configured")
+            val request = Request.Builder()
+                .url(ENDPOINT)
+                .header("Authorization", "Bearer $key")
+                .post(
+                    ProofreadPrompt.buildRequestJson(MODEL, text, voice = mode == ProofreadMode.VOICE)
+                        .toRequestBody("application/json".toMediaType()),
+                )
+                .build()
+            http.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IOException("OpenRouter HTTP ${response.code}: $body")
+                }
+                ProofreadPrompt.parseResponse(body)
             }
-            ProofreadPrompt.parseResponse(body)
         }
-    }
 
     override fun close() {
         http.dispatcher.executorService.shutdown()

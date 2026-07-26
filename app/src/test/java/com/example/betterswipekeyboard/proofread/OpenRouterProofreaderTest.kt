@@ -88,4 +88,44 @@ class ProofreadPromptTest {
     fun `parseResponse throws on empty choices`() {
         ProofreadPrompt.parseResponse("""{"choices": []}""")
     }
+
+    @Test
+    fun `voice request uses the voice system message and examples`() {
+        val json = JSONObject(
+            ProofreadPrompt.buildRequestJson("test-model", "their at the beech", voice = true),
+        )
+        assertEquals("test-model", json.getString("model"))
+
+        // Same ZDR privacy guarantees as the typed prompt.
+        val provider = json.getJSONObject("provider")
+        assertEquals(true, provider.getBoolean("zdr"))
+        assertEquals("deny", provider.getString("data_collection"))
+
+        val messages = json.getJSONArray("messages")
+        // 1 system + 2 per example + 1 final user message
+        assertEquals(1 + ProofreadPrompt.VOICE_EXAMPLES.size * 2 + 1, messages.length())
+
+        assertEquals("system", messages.getJSONObject(0).getString("role"))
+        assertEquals(ProofreadPrompt.VOICE_SYSTEM, messages.getJSONObject(0).getString("content"))
+
+        for (i in ProofreadPrompt.VOICE_EXAMPLES.indices) {
+            val userMsg = messages.getJSONObject(1 + i * 2)
+            val assistantMsg = messages.getJSONObject(2 + i * 2)
+            assertEquals("user", userMsg.getString("role"))
+            assertEquals("assistant", assistantMsg.getString("role"))
+            assertEquals(ProofreadPrompt.VOICE_EXAMPLES[i].first, userMsg.getString("content"))
+            assertEquals(ProofreadPrompt.VOICE_EXAMPLES[i].second, assistantMsg.getString("content"))
+        }
+
+        val last = messages.getJSONObject(messages.length() - 1)
+        assertEquals("user", last.getString("role"))
+        assertEquals("their at the beech", last.getString("content"))
+    }
+
+    @Test
+    fun `default request keeps the typed prompt`() {
+        val json = JSONObject(ProofreadPrompt.buildRequestJson("test-model", "fix this pls"))
+        val messages = json.getJSONArray("messages")
+        assertEquals(ProofreadPrompt.SYSTEM, messages.getJSONObject(0).getString("content"))
+    }
 }

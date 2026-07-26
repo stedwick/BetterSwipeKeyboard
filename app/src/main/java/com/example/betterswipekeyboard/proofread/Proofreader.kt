@@ -13,19 +13,32 @@ import kotlinx.coroutines.guava.await
 enum class ProofreaderStatus { UNAVAILABLE, DOWNLOADING, AVAILABLE }
 
 /**
+ * What produced the text being proofread. Speech-to-text makes different
+ * errors than typing/swiping (homophones, wrong word boundaries, missing
+ * punctuation, filler false starts), so dictation gets its own treatment.
+ */
+enum class ProofreadMode { TYPED, VOICE }
+
+/**
  * Abstraction over the on-device AI proofreader (ML Kit GenAI Proofreading,
  * Gemini Nano in AICore — text never leaves the device). The interface keeps
  * a future LiteRT fallback possible and lets unit tests fake it.
  */
 interface Proofreader {
     suspend fun status(): ProofreaderStatus
-    suspend fun proofread(text: String): String
+    suspend fun proofread(text: String, mode: ProofreadMode): String
     fun close()
 }
 
 class MlKitProofreader(context: Context) : Proofreader {
 
-    private val client = Proofreading.getClient(
+    // ML Kit's ProofreadingRequest carries only the text — there is no
+    // custom-prompt hook. The sole tuning knob is ProofreaderOptions at
+    // client construction, and InputType is fixed per client, so dictation
+    // proofreading needs a second client configured with InputType.VOICE
+    // (Google tunes it for same-pronunciation mix-ups instead of
+    // nearby-key typos).
+    private val keyboardClient = Proofreading.getClient(
         ProofreaderOptions.builder(context.applicationContext)
             // KEYBOARD tunes the model for keyboard-typical typos (nearby keys).
             .setInputType(ProofreaderOptions.InputType.KEYBOARD)
@@ -33,8 +46,19 @@ class MlKitProofreader(context: Context) : Proofreader {
             .build(),
     )
 
+    private val voiceClient = Proofreading.getClient(
+        ProofreaderOptions.builder(context.applicationContext)
+            // VOICE tunes the model for speech-recognition errors (homophones).
+            .setInputType(ProofreaderOptions.InputType.VOICE)
+            .setLanguage(ProofreaderOptions.Language.ENGLISH)
+            .build(),
+    )
+
     override suspend fun status(): ProofreaderStatus =
-        when (val status = client.checkFeatureStatus().await()) {
+        // Feature status is per-ProofreaderOptions, but the keyboard client
+        // drives the UI toggle; a voice-client failure fails soft at
+        // inference time like any proofread failure.
+        when (val status = keyboardClient.checkFeatureStatus().await()) {
             FeatureStatus.AVAILABLE -> ProofreaderStatus.AVAILABLE
             FeatureStatus.DOWNLOADING -> ProofreaderStatus.DOWNLOADING
             FeatureStatus.DOWNLOADABLE -> {
@@ -51,7 +75,7 @@ class MlKitProofreader(context: Context) : Proofreader {
         }
 
     private fun downloadFeature() {
-        client.downloadFeature(object : DownloadCallback {
+        keyboardClient.downloadFeature(object : DownloadCallback {
             override fun onDownloadStarted(bytesToDownload: Long) {}
             override fun onDownloadProgress(totalBytesDownloaded: Long) {}
             override fun onDownloadCompleted() {
@@ -63,14 +87,19 @@ class MlKitProofreader(context: Context) : Proofreader {
         })
     }
 
-    override suspend fun proofread(text: String): String {
+    override suspend fun proofread(text: String, mode: ProofreadMode): String {
+        val client = when (mode) {
+            ProofreadMode.TYPED -> keyboardClient
+            ProofreadMode.VOICE -> voiceClient
+        }
         val request = ProofreadingRequest.builder(text).build()
         val result = client.runInference(request).await()
         return result.results.firstOrNull()?.text.orEmpty()
     }
 
     override fun close() {
-        client.close()
+        keyboardClient.close()
+        voiceClient.close()
     }
 
     private companion object {

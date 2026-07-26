@@ -6,6 +6,9 @@ import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 
 enum class ShiftMode { OFF, ONE_SHOT, LOCKED }
 
+/** Voice dictation state machine; transitions are driven by the service. */
+enum class VoiceState { OFF, LISTENING, PERMISSION_REQUIRED, UNAVAILABLE }
+
 /**
  * Everything the keyboard UI needs to render. When swipe typing arrives,
  * transient swipe state (trail in progress, candidate words) should be added
@@ -19,7 +22,18 @@ data class KeyboardState(
     /** Auto-proofreading toggle: while on, text is proofread after 1s of idle. */
     val proofreadAuto: Boolean = false,
     val proofreadInFlight: Boolean = false,
+    /** While not OFF, the key rows are replaced by the voice panel. */
+    val voice: VoiceState = VoiceState.OFF,
+    /** Live partial transcript shown in the voice panel while LISTENING. */
+    val voicePartial: String = "",
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF
 }
+
+/**
+ * Pure, unit-tested: the first non-blank recognition hypothesis, trimmed —
+ * or null when there is nothing worth committing.
+ */
+fun bestTranscript(candidates: List<String>?): String? =
+    candidates?.firstOrNull { it.isNotBlank() }?.trim()
