@@ -94,6 +94,7 @@ private val ToggleOff = Color(0xFFFF453A)
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
+private val KeyboardBottomClearance = 12.dp
 
 /** Swipe decodes scoring above this are too unsure to commit. */
 private const val ACCEPT_THRESHOLD = 0.6f
@@ -123,6 +124,9 @@ fun KeyboardScreen(
             .fillMaxWidth()
             .background(colors.keyboardBackground)
             .windowInsetsPadding(WindowInsets.navigationBars)
+            // Extra clearance so the system nav strip (gesture pill,
+            // hide-keyboard and IME-switcher buttons) never overlaps keys.
+            .padding(bottom = KeyboardBottomClearance)
             .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
             // ALL pointer input is handled here at the container level (taps,
             // long-presses and swipe trails) so a finger can travel across
