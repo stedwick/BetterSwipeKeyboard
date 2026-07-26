@@ -6,7 +6,13 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -20,6 +26,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.lifecycleScope
+import com.example.betterswipekeyboard.ime.bottomClearancePx
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.proofread.Proofreader
@@ -66,8 +73,18 @@ class SwipeKeyboardService : InputMethodService(),
     private var autoProofreadJob: Job? = null
     private var lastCommitWasSwipe = false
 
+    /**
+     * Real bottom inset (px) reported to the IME window: the height of the
+     * system navigation / IME strip the keyboard must stay above. Zero when
+     * no strip is present. Read by the Compose content.
+     */
+    private var bottomInsetPx by mutableStateOf(0)
+
     override fun onCreate() {
         super.onCreate()
+        // Take explicit control of window insets: the IME's SoftInputWindow
+        // does not reliably pad for the navigation/IME strip by itself.
+        window?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
@@ -110,6 +127,16 @@ class SwipeKeyboardService : InputMethodService(),
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         return ComposeView(this).apply {
+            // Measure the real occlusion at the window root: gesture strip,
+            // 3-button bar or One UI's IME strip, whichever is tallest.
+            ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+                bottomInsetPx = bottomClearancePx(
+                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures()).bottom,
+                )
+                insets
+            }
             setContent {
                 val state by viewModel.state.collectAsState()
                 KeyboardScreen(
@@ -117,6 +144,7 @@ class SwipeKeyboardService : InputMethodService(),
                     decoder = decoder,
                     onAction = ::onKeyboardAction,
                     onSettingsClick = ::openMainApp,
+                    bottomClearance = with(LocalDensity.current) { bottomInsetPx.toDp() },
                 )
             }
         }
@@ -139,7 +167,10 @@ class SwipeKeyboardService : InputMethodService(),
      * The default implementation hides the soft keyboard when a hardware
      * keyboard is attached (e.g. on emulators). We always want to show.
      */
-    override fun onEvaluateInputViewShown(): Boolean = true
+    override fun onEvaluateInputViewShown(): Boolean {
+        super.onEvaluateInputViewShown()
+        return true
+    }
 
     private fun onKeyboardAction(action: KeyboardAction) {
         when (val effect = viewModel.onAction(action)) {

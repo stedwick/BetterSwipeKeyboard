@@ -6,20 +6,26 @@ private fun letterKeys(letters: String): List<Key> =
 val QwertyLayout = KeyboardLayout(
     id = LayoutId.LETTERS,
     rows = listOf(
-        letterKeys("qwertyuiop"),
-        letterKeys("asdfghjkl"),
-        listOf(
-            Key(label = "⇧", output = KeyOutput.Shift, weight = 1.5f),
-            *letterKeys("zxcvbnm").toTypedArray(),
-            Key(label = "⌫", output = KeyOutput.Backspace, weight = 1.5f),
+        KeyRow(letterKeys("qwertyuiop")),
+        // Inset by half a key on each side so the 9 home-row keys keep the
+        // same width as the 10-key rows (iOS-style) instead of stretching.
+        KeyRow(letterKeys("asdfghjkl"), insetWeight = 0.5f),
+        KeyRow(
+            listOf(
+                Key(label = "⇧", output = KeyOutput.Shift, weight = 1.5f),
+                *letterKeys("zxcvbnm").toTypedArray(),
+                Key(label = "⌫", output = KeyOutput.Backspace, weight = 1.5f),
+            ),
         ),
-        listOf(
-            Key(label = "?123", output = KeyOutput.SwitchLayout(LayoutId.SYMBOLS), weight = 1.5f),
-            Key(label = "", output = KeyOutput.Microphone),
-            Key(label = ",", output = KeyOutput.Text(",")),
-            Key(label = "", output = KeyOutput.Text(" "), weight = 4f),
-            Key(label = ".", output = KeyOutput.Text(".")),
-            Key(label = "⏎", output = KeyOutput.Enter, weight = 1.5f),
+        KeyRow(
+            listOf(
+                Key(label = "?123", output = KeyOutput.SwitchLayout(LayoutId.SYMBOLS), weight = 1.5f),
+                Key(label = "", output = KeyOutput.Microphone),
+                Key(label = ",", output = KeyOutput.Text(",")),
+                Key(label = "", output = KeyOutput.Text(" "), weight = 4f),
+                Key(label = ".", output = KeyOutput.Text(".")),
+                Key(label = "⏎", output = KeyOutput.Enter, weight = 1.5f),
+            ),
         ),
     ),
 )

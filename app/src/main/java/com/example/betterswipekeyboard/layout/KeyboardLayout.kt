@@ -28,7 +28,18 @@ data class Key(
     val weight: Float = 1f,
 )
 
+data class KeyRow(
+    val keys: List<Key>,
+    /**
+     * Leading/trailing margin in the same weight units as [Key.weight]
+     * (0.5 = half a standard key). Used to inset short rows (e.g. the 9-key
+     * home row) so their keys stay the same width as full rows instead of
+     * stretching to fill the row.
+     */
+    val insetWeight: Float = 0f,
+)
+
 data class KeyboardLayout(
     val id: LayoutId,
-    val rows: List<List<Key>>,
+    val rows: List<KeyRow>,
 )

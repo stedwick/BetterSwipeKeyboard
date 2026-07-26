@@ -35,9 +35,11 @@ The app has two entry points declared in `app/src/main/AndroidManifest.xml`:
 
 Data flow (deliberately layered, keep it this way):
 
-1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
-   each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
-   Microphone). `QwertyLayout` and `SymbolsLayout`.
+1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = `KeyRow`s of
+   `Key`s, each with a `KeyOutput` (Text, Backspace, Enter, Shift,
+   SwitchLayout, Microphone). `KeyRow.insetWeight` indents short rows (e.g.
+   the 9-key home row) so every row spans 10 weight units and all character
+   keys render the same width. `QwertyLayout` and `SymbolsLayout`.
 2. **All gestures produce semantic actions** (`KeyboardAction`): taps,
    long-presses and swipes are handled at the container level in
    `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and
@@ -172,10 +174,15 @@ selected as the active IME (the app's setup screen has buttons for both).
   exit gesture loops on `!change.pressed`, not `changedToUp()`.
 - The restricted `AwaitPointerEventScope` forbids `coroutineScope`/`launch`;
   use `withTimeoutOrNull` loops for timers (see backspace repeat).
-- The IME window needs `navigationBars` inset padding plus a fixed 12dp
-  bottom clearance (`KeyboardBottomClearance`), or system nav buttons
-  (hide-keyboard chevron, IME switcher) overlap the bottom row on some
-  devices.
+- The IME window's SoftInputWindow does not reliably pad for the system
+  nav/IME strip (hide-keyboard chevron, IME switcher) — `navigationBars`
+  alone left the strip overlapping the bottom row on a Galaxy Z Fold 5. The
+  service calls `WindowCompat.setDecorFitsSystemWindows(window, false)` and
+  measures the real bottom inset via a `ViewCompat` listener
+  (`max(navigationBars, tappableElement, mandatorySystemGestures)` →
+  `ime/BottomInsets.kt` `bottomClearancePx`), passed to `KeyboardScreen` as
+  `bottomClearance`; a fixed 12dp (`KeyboardBottomClearance`) is added on top
+  purely as aesthetic breathing room.
 
 ## Environment quirks (adb/emulator workflow)
 
