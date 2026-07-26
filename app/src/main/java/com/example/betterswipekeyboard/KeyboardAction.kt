@@ -47,6 +47,13 @@ sealed interface KeyboardEffect {
     data class CommitText(val text: String) : KeyboardEffect
 
     /**
+     * A pasted clipboard entry. Distinct from [CommitText] because a paste
+     * must land exactly as copied: verbatim (no leading-space rules) and
+     * without triggering auto-proofreading, which could rewrite it.
+     */
+    data class PasteText(val text: String) : KeyboardEffect
+
+    /**
      * A swiped word. Distinct from [CommitText] because the service adds a
      * leading space when the field doesn't already end in whitespace.
      */

@@ -77,10 +77,12 @@ class KeyboardViewModel : ViewModel() {
 
         is KeyboardAction.PasteClip -> {
             // Unlike InsertText, clips commit verbatim: uppercasing a paste
-            // under caps lock would corrupt it. Pasting returns to letters.
+            // under caps lock would corrupt it, and PasteText skips the
+            // leading-space rules and auto-proofread for the same reason.
+            // Pasting returns to letters.
             consumeOneShot()
             _state.update { it.copy(layout = LayoutId.LETTERS) }
-            KeyboardEffect.CommitText(action.text)
+            KeyboardEffect.PasteText(action.text)
         }
 
         is KeyboardAction.DeleteClip -> {

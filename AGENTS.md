@@ -103,8 +103,10 @@ Data flow (deliberately layered, keep it this way):
   read (never `coerceToText`).
 - The 📋 utility key toggles `LayoutId.CLIPBOARD`; `ClipboardPanel.kt`
   renders outside the letter-gesture `pointerInput` scope (same pattern as
-  panels elsewhere). Tap emits `PasteClip` (commits verbatim — never
-  uppercased by caps — and returns to letters); long-press deletes.
+  panels elsewhere). Tap emits `PasteClip` (returns to letters); long-press
+  deletes. Paste reduces to `KeyboardEffect.PasteText`, which commits
+  verbatim — never uppercased by caps, no leading-space rules, and no
+  auto-proofread scheduling (a paste must stay exactly as copied).
 
 ### AI proofreading (`proofread/`)
 

@@ -189,6 +189,13 @@ class SwipeKeyboardService : InputMethodService(),
                 lastCommitWasSwipe = true
                 scheduleAutoProofread()
             }
+            is KeyboardEffect.PasteText -> {
+                // Verbatim paste: no leading-space rules, and deliberately no
+                // proofread scheduling — the user wants exactly what they
+                // copied, not an AI-rewritten version of it.
+                editor.commitText(effect.text)
+                lastCommitWasSwipe = false
+            }
             KeyboardEffect.DeleteBackward -> {
                 editor.backspace()
                 scheduleAutoProofread()

@@ -138,7 +138,7 @@ class KeyboardViewModelTest {
         vm.onAction(KeyboardAction.SwitchLayout(LayoutId.CLIPBOARD))
 
         val effect = vm.onAction(KeyboardAction.PasteClip("hello World"))
-        assertEquals(KeyboardEffect.CommitText("hello World"), effect)
+        assertEquals(KeyboardEffect.PasteText("hello World"), effect)
         assertEquals(LayoutId.LETTERS, vm.state.value.layout)
         assertEquals(ShiftMode.LOCKED, vm.state.value.shiftMode)
     }
@@ -147,7 +147,7 @@ class KeyboardViewModelTest {
     fun `paste clip consumes one shot shift`() {
         val vm = viewModel()
         vm.onAction(KeyboardAction.Shift)
-        assertEquals(KeyboardEffect.CommitText("clip"), vm.onAction(KeyboardAction.PasteClip("clip")))
+        assertEquals(KeyboardEffect.PasteText("clip"), vm.onAction(KeyboardAction.PasteClip("clip")))
         assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
     }
 
