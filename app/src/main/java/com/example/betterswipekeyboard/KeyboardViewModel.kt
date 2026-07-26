@@ -48,6 +48,10 @@ class KeyboardViewModel : ViewModel() {
 
         KeyboardAction.Enter -> KeyboardEffect.PerformEnter
 
+        // Cursor moves don't consume one-shot shift: move, then type the
+        // shifted letter.
+        is KeyboardAction.MoveCursor -> KeyboardEffect.MoveCursor(action.steps)
+
         KeyboardAction.Shift -> {
             _state.update {
                 it.copy(

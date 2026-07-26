@@ -55,6 +55,7 @@ import com.example.betterswipekeyboard.KeyboardState
 import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
 import com.example.betterswipekeyboard.VoiceState
+import com.example.betterswipekeyboard.isSpaceBar
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
@@ -108,6 +109,9 @@ private const val TRAIL_LINGER_MS = 200L
 // non-zero.
 private val KeyboardBottomClearance = 4.dp
 
+/** Horizontal travel on the space bar per cursor step (tune on-device). */
+private val SpacebarCursorStep = 14.dp
+
 /**
  * Best-guess commits above this score are too unsure. Below it we commit
  * even a weak match — a slightly-wrong word beats silence (and the AI
@@ -145,6 +149,7 @@ fun KeyboardScreen(
     val unitKeyWidth = with(LocalDensity.current) {
         unitKeyWidthPx(boxSize.width, 3.dp.toPx(), 4.dp.toPx()).toDp()
     }
+    val cursorStepPx = with(LocalDensity.current) { SpacebarCursorStep.toPx() }
 
     Box(
         modifier = Modifier
@@ -267,6 +272,15 @@ fun KeyboardScreen(
                                                     if (!change.pressed) break
                                                 }
                                                 swipeCompleted = true
+                                            } else if (isSpaceBar(downKey)) {
+                                                // Space-bar drag: cursor
+                                                // control, in either layout.
+                                                trackSpacebarDrag(
+                                                    down.id,
+                                                    down.position,
+                                                    cursorStepPx,
+                                                    onAction,
+                                                )
                                             } else {
                                                 // Drag from a non-letter key is not a swipe; swallow it.
                                                 awaitUp(down.id)

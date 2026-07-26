@@ -53,6 +53,13 @@ sealed interface KeyboardAction {
 
     /** Long-press a clipboard-history entry: delete it. */
     data class DeleteClip(val text: String) : KeyboardAction
+
+    /**
+     * Space-bar drag cursor control: move the cursor by [steps] characters
+     * relative to its current position (negative = backward). Emitted as
+     * deltas while the finger crosses step thresholds.
+     */
+    data class MoveCursor(val steps: Int) : KeyboardAction
 }
 
 /** Side effects to apply to the current InputConnection. */
@@ -73,4 +80,10 @@ sealed interface KeyboardEffect {
     data class CommitWord(val word: String) : KeyboardEffect
     data object DeleteBackward : KeyboardEffect
     data object PerformEnter : KeyboardEffect
+
+    /**
+     * Move the text cursor by [steps] characters (negative = backward).
+     * No text changes, so the service must not reschedule auto-proofread.
+     */
+    data class MoveCursor(val steps: Int) : KeyboardEffect
 }

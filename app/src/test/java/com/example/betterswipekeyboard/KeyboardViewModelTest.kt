@@ -210,4 +210,21 @@ class KeyboardViewModelTest {
         assertNull(bestTranscript(listOf("", "   ")))
         assertEquals("hello world", bestTranscript(listOf("", "  hello world ", "ignored")))
     }
+
+    @Test
+    fun `move cursor passes through as move cursor effect`() {
+        val vm = viewModel()
+        assertEquals(KeyboardEffect.MoveCursor(-1), vm.onAction(KeyboardAction.MoveCursor(-1)))
+        assertEquals(KeyboardEffect.MoveCursor(3), vm.onAction(KeyboardAction.MoveCursor(3)))
+    }
+
+    @Test
+    fun `one shot shift survives a cursor move`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        assertEquals(KeyboardEffect.MoveCursor(-2), vm.onAction(KeyboardAction.MoveCursor(-2)))
+        assertEquals(ShiftMode.ONE_SHOT, vm.state.value.shiftMode)
+        assertEquals(KeyboardEffect.CommitText("A"), vm.onAction(KeyboardAction.InsertText("a")))
+        assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
+    }
 }
