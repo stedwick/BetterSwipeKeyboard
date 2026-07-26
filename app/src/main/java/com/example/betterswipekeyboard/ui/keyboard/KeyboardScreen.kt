@@ -96,8 +96,12 @@ private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
 private val KeyboardBottomClearance = 12.dp
 
-/** Swipe decodes scoring above this are too unsure to commit. */
-private const val ACCEPT_THRESHOLD = 0.6f
+/**
+ * Best-guess commits above this score are too unsure. Below it we commit
+ * even a weak match — a slightly-wrong word beats silence (and the AI
+ * proofreader, when enabled, cleans it up a second later).
+ */
+private const val MAX_COMMIT_SCORE = 1.75f
 
 @Composable
 fun KeyboardScreen(
@@ -223,7 +227,7 @@ fun KeyboardScreen(
                             topN = 1,
                         )
                         val best = results.firstOrNull()
-                        if (best != null && best.score < ACCEPT_THRESHOLD) {
+                        if (best != null && best.score < MAX_COMMIT_SCORE) {
                             onAction(KeyboardAction.CommitWord(best.word))
                         }
                         // Let the trail linger briefly, then clear it.

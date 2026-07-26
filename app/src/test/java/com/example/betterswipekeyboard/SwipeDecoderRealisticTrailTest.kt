@@ -79,6 +79,12 @@ class SwipeDecoderRealisticTrailTest {
         assertEquals("follow", results.firstOrNull()?.word)
     }
 
+    @Test
+    fun `realistic trail with neighbor slip decodes jumps`() {
+        val results = decoder.decode(realisticTrail('j', 'u', 'm', 'p', 'w'), keyCenters, KEY_WIDTH)
+        assertEquals("jumps", results.firstOrNull()?.word)
+    }
+
     private companion object {
         const val KEY_WIDTH = 100f
     }

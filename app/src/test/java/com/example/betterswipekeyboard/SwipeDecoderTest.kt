@@ -108,6 +108,13 @@ class SwipeDecoderTest {
         assertTrue(decoder.decode(tiny, keyCenters, KEY_WIDTH).isEmpty())
     }
 
+    @Test
+    fun `neighbor slip at the end still decodes - jumpw becomes jumps`() {
+        // The user swipes j-u-m-p-w but means "jumps" (w is next to s).
+        val results = decoder.decode(trailThrough('j', 'u', 'm', 'p', 'w'), keyCenters, KEY_WIDTH)
+        assertEquals("jumps", results.top())
+    }
+
     private fun List<ScoredWord>.top(): String =
         firstOrNull()?.word ?: error("no candidates")
 
