@@ -30,6 +30,10 @@ class KeyboardGeometry {
             ?.firstOrNull { it.second.contains(point) }
             ?.first
 
+    /** Bounds of a specific key in the active layout, if registered. */
+    fun boundsOf(key: Key): Rect? =
+        boundsByLayout[activeLayout]?.firstOrNull { it.first == key }?.second
+
     /** Letter key centers (a–z of the letters layout), for the decoder. */
     fun letterCenters(): Map<Char, Vec2> =
         letterKeys().associate { (key, bounds) ->

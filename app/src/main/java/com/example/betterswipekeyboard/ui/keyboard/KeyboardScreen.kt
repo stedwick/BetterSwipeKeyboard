@@ -10,13 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -31,9 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
@@ -44,9 +42,11 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
@@ -69,7 +69,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-// Not private: EmojiPanel and ClipboardPanel (same package) render with these colors.
+// Not private: EmojiPanel, ClipboardPanel and PunctuationPopup (same package)
+// render with these colors.
 data class KeyboardColors(
     val keyboardBackground: Color,
     val keyBackground: Color,
@@ -100,23 +101,12 @@ private val ToggleOff = Color(0xFFFF453A)
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
-private val KeyboardBottomClearance = 12.dp
 
-/** Choices in the long-press popup on the period key, as a 3x3 grid. */
-private val PUNCTUATION_POPUP = listOf("!", "?", ",", ";", ":", "-", "\"", "'", ".")
-private const val PUNCTUATION_POPUP_COLUMNS = 3
-
-/** Hit-test a finger position against the punctuation popup grid (with slack). */
-private fun popupIndexAt(position: Offset, bounds: Rect?): Int {
-    val b = bounds ?: return -1
-    if (position.y < b.top - 24f || position.y > b.bottom + 160f) return -1
-    if (position.x < b.left || position.x > b.right) return -1
-    val column = ((position.x - b.left) / (b.width / PUNCTUATION_POPUP_COLUMNS)).toInt()
-        .coerceIn(0, PUNCTUATION_POPUP_COLUMNS - 1)
-    val rows = (PUNCTUATION_POPUP.size + PUNCTUATION_POPUP_COLUMNS - 1) / PUNCTUATION_POPUP_COLUMNS
-    val row = ((position.y - b.top) / (b.height / rows)).toInt().coerceIn(0, rows - 1)
-    return (row * PUNCTUATION_POPUP_COLUMNS + column).coerceIn(0, PUNCTUATION_POPUP.size - 1)
-}
+// Small aesthetic gap between the bottom key row and the system IME strip.
+// The measured inset (bottomClearance) already covers the strip itself;
+// user feedback: 12dp left too much dead space, so keep this minimal but
+// non-zero.
+private val KeyboardBottomClearance = 4.dp
 
 /**
  * Best-guess commits above this score are too unsure. Below it we commit
@@ -132,27 +122,38 @@ fun KeyboardScreen(
     onAction: (KeyboardAction) -> Unit,
     onSettingsClick: () -> Unit,
     onPermissionHelpClick: () -> Unit,
+    bottomClearance: Dp,
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val geometry = remember { KeyboardGeometry() }
 
     var boxOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
+    var boxOffsetOnScreen by remember { mutableStateOf(Offset.Zero) }
+    var boxSize by remember { mutableStateOf(Size.Zero) }
     var pressedKey by remember { mutableStateOf<Key?>(null) }
     var trailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var popupChoices by remember { mutableStateOf<List<String>?>(null) }
     var popupIndex by remember { mutableStateOf(-1) }
     var popupBounds by remember { mutableStateOf<Rect?>(null) }
+    var popupAnchor by remember { mutableStateOf<Rect?>(null) }
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
+    // Canonical character-key width: one slot of a full 10-key row. Every
+    // character key in every row uses it, so keys are the same pixel width
+    // across the whole keyboard. Zero until the container is measured — the
+    // first frame falls back to weights.
+    val unitKeyWidth = with(LocalDensity.current) {
+        unitKeyWidthPx(boxSize.width, 3.dp.toPx(), 4.dp.toPx()).toDp()
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.keyboardBackground)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            // Extra clearance so the system nav strip (gesture pill,
-            // hide-keyboard and IME-switcher buttons) never overlaps keys.
-            .padding(bottom = KeyboardBottomClearance),
+            // bottomClearance is measured by the service from the real window
+            // insets and already covers the nav/IME strip itself; only the
+            // small aesthetic gap is added on top.
+            .padding(bottom = bottomClearance + KeyboardBottomClearance),
     ) {
         Column(
             modifier = Modifier
@@ -193,7 +194,11 @@ fun KeyboardScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onGloballyPositioned { boxOffsetInWindow = it.positionInWindow() }
+                            .onGloballyPositioned {
+                                boxOffsetInWindow = it.positionInWindow()
+                                boxOffsetOnScreen = it.positionOnScreen()
+                                boxSize = it.size.toSize()
+                            }
                             // ALL pointer input for the letter/symbol rows is
                             // handled here at the container level (taps,
                             // long-presses and swipe trails) so a finger can
@@ -300,6 +305,8 @@ fun KeyboardScreen(
                                                     // Long-press period: punctuation popup with drag-select.
                                                     var selection = -1
                                                     popupChoices = PUNCTUATION_POPUP
+                                                    popupAnchor =
+                                                        downKey?.let { geometry.boundsOf(it) }
                                                     while (true) {
                                                         val event = awaitPointerEvent()
                                                         val change =
@@ -316,6 +323,7 @@ fun KeyboardScreen(
                                                     }
                                                     popupChoices = null
                                                     popupIndex = -1
+                                                    popupAnchor = null
                                                     onAction(
                                                         KeyboardAction.InsertText(
                                                             if (selection >= 0) {
@@ -366,7 +374,15 @@ fun KeyboardScreen(
                             layout.rows.forEach { row ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    // Center rows that end up narrower than
+                                    // the full 10-key row (e.g. the 9-key
+                                    // home row) instead of stretching them —
+                                    // modifier keys keep their weights and
+                                    // take the remaining space.
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        4.dp,
+                                        Alignment.CenterHorizontally,
+                                    ),
                                 ) {
                                     row.forEach { key ->
                                         KeyView(
@@ -374,7 +390,11 @@ fun KeyboardScreen(
                                             state = state,
                                             pressed = key == pressedKey,
                                             colors = colors,
-                                            modifier = Modifier.weight(key.weight),
+                                            modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
+                                                Modifier.width(unitKeyWidth)
+                                            } else {
+                                                Modifier.weight(key.weight)
+                                            },
                                             onPositioned = { coordinates ->
                                                 geometry.register(
                                                     layout.id,
@@ -409,53 +429,36 @@ fun KeyboardScreen(
                             }
                         }
 
-                        // Punctuation popup for the period long-press: a compact 3x3 grid
-                        // of key tiles anchored over the period key, within thumb reach.
+                        // Punctuation popup for the period long-press: a compact
+                        // 3x3 grid anchored just above the period key (bottom
+                        // row = most common, closest to the thumb).
                         val choices = popupChoices
-                        if (choices != null) {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(3.dp),
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(end = 8.dp, bottom = 76.dp)
-                                    .shadow(8.dp, RoundedCornerShape(10.dp))
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.keyboardBackground)
-                                    .padding(4.dp)
-                                    .onGloballyPositioned {
-                                        popupBounds = Rect(
-                                            it.positionInWindow() - boxOffsetInWindow,
-                                            it.size.toSize(),
-                                        )
+                        val anchor = popupAnchor
+                        if (choices != null && anchor != null) {
+                            val density = LocalDensity.current
+                            PunctuationPopup(
+                                choices = choices,
+                                highlightIndex = popupIndex,
+                                colors = colors,
+                                topLeft = popupTopLeft(
+                                    anchor = anchor,
+                                    popupSize = with(density) {
+                                        Size(PopupGridSize.toPx(), PopupGridSize.toPx())
                                     },
-                            ) {
-                                choices.chunked(PUNCTUATION_POPUP_COLUMNS).forEach { rowChoices ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        rowChoices.forEach { label ->
-                                            val index = choices.indexOf(label)
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(width = 48.dp, height = 48.dp)
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(
-                                                        if (index == popupIndex) {
-                                                            colors.keyBackgroundActive
-                                                        } else {
-                                                            colors.keyBackground
-                                                        },
-                                                    ),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    text = label,
-                                                    color = colors.keyText,
-                                                    fontSize = 20.sp,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                                    containerSize = boxSize,
+                                    gapPx = with(density) { PopupGapAboveKey.toPx() },
+                                    marginPx = with(density) { PopupEdgeMargin.toPx() },
+                                ),
+                                onPositioned = {
+                                    popupBounds = Rect(
+                                        // The popup is a separate overlay
+                                        // window, so compare on-screen
+                                        // coordinates, not in-window ones.
+                                        it.positionOnScreen() - boxOffsetOnScreen,
+                                        it.size.toSize(),
+                                    )
+                                },
+                            )
                         }
                     }
                 }
@@ -667,6 +670,14 @@ private fun Vec2.toOffset() = Offset(x, y)
 
 private fun Key.isLetter(): Boolean =
     (output as? KeyOutput.Text)?.text?.singleOrNull()?.isLetter() == true
+
+/**
+ * Character keys (letters, digits, punctuation — any visible single- or
+ * multi-character text output) get the fixed global width; the space bar
+ * (blank text) and modifiers keep their weights.
+ */
+private fun Key.isUnitCharacterKey(): Boolean =
+    (output as? KeyOutput.Text)?.text?.isNotBlank() == true
 
 private fun Key.tapAction(): KeyboardAction = when (val out = output) {
     is KeyOutput.Text -> KeyboardAction.InsertText(out.text)

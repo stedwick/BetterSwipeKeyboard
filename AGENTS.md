@@ -41,7 +41,10 @@ Data flow (deliberately layered, keep it this way):
 
 1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
    each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
-   Microphone). `QwertyLayout` and `SymbolsLayout`.
+   Microphone). `QwertyLayout` and `SymbolsLayout`. Character keys render at
+   one fixed global width computed in `KeyboardScreen` (`unitKeyWidthPx` in
+   `ui/keyboard/KeyWidth.kt`); rows with fewer keys are centered instead of
+   stretched, and modifier keys take the remaining space via weights.
 2. **Panels are layout modes, not layouts**: `LayoutId.EMOJI` has no
    `KeyboardLayout` — `KeyboardScreen` renders `EmojiPanel` instead of the
    letter rows. Any panel (scrollable/tappable content) must live **outside**
@@ -268,10 +271,19 @@ selected as the active IME (the app's setup screen has buttons for both).
   exit gesture loops on `!change.pressed`, not `changedToUp()`.
 - The restricted `AwaitPointerEventScope` forbids `coroutineScope`/`launch`;
   use `withTimeoutOrNull` loops for timers (see backspace repeat).
-- The IME window needs `navigationBars` inset padding plus a fixed 12dp
-  bottom clearance (`KeyboardBottomClearance`), or system nav buttons
-  (hide-keyboard chevron, IME switcher) overlap the bottom row on some
-  devices.
+- The IME window's SoftInputWindow does not reliably pad for the system
+  nav/IME strip (hide-keyboard chevron, IME switcher) — `navigationBars`
+  alone left the strip overlapping the bottom row on a Galaxy Z Fold 5. The
+  service calls `WindowCompat.setDecorFitsSystemWindows(window, false)` and
+  measures the real bottom inset via a `ViewCompat` listener
+  (`max(navigationBars, tappableElement, mandatorySystemGestures)` →
+  `ime/BottomInsets.kt` `bottomClearancePx`), passed to `KeyboardScreen` as
+  `bottomClearance`; a small fixed 4dp (`KeyboardBottomClearance`) is added
+  on top purely as an aesthetic gap (12dp left too much dead space above
+  the strip). The listener MUST be registered on the
+  window's **decor view** (plus `ViewCompat.requestApplyInsets`): the IME
+  window does not dispatch WindowInsets down to the input view, so a
+  listener on the ComposeView never fires.
 - Compose modifier order decides what `imePadding()` pads: AFTER
   `verticalScroll` it becomes part of the scrollable content (just extends
   the scroll range); BEFORE it, it shrinks the viewport — which is what a

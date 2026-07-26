@@ -13,8 +13,14 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -28,6 +34,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.lifecycleScope
+import com.example.betterswipekeyboard.ime.bottomClearancePx
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.proofread.ProofreadMode
@@ -154,8 +161,18 @@ class SwipeKeyboardService : InputMethodService(),
         }
     }
 
+    /**
+     * Real bottom inset (px) reported to the IME window: the height of the
+     * system navigation / IME strip the keyboard must stay above. Zero when
+     * no strip is present. Read by the Compose content.
+     */
+    private var bottomInsetPx by mutableStateOf(0)
+
     override fun onCreate() {
         super.onCreate()
+        // Take explicit control of window insets: the IME's SoftInputWindow
+        // does not reliably pad for the navigation/IME strip by itself.
+        window?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
@@ -208,6 +225,20 @@ class SwipeKeyboardService : InputMethodService(),
             decor.setViewTreeLifecycleOwner(this)
             decor.setViewTreeViewModelStoreOwner(this)
             decor.setViewTreeSavedStateRegistryOwner(this)
+            // Measure the real occlusion at the window root: gesture strip,
+            // 3-button bar or One UI's IME strip, whichever is tallest. The
+            // listener MUST live on the decor view — the IME window does not
+            // dispatch WindowInsets down to the input view, so a listener on
+            // the ComposeView never fires (bottomInsetPx stayed 0 forever).
+            ViewCompat.setOnApplyWindowInsetsListener(decor) { _, insets ->
+                bottomInsetPx = bottomClearancePx(
+                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures()).bottom,
+                )
+                insets
+            }
+            ViewCompat.requestApplyInsets(decor)
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
         return ComposeView(this).apply {
@@ -219,6 +250,7 @@ class SwipeKeyboardService : InputMethodService(),
                     onAction = ::onKeyboardAction,
                     onSettingsClick = ::openMainApp,
                     onPermissionHelpClick = ::openMainApp,
+                    bottomClearance = with(LocalDensity.current) { bottomInsetPx.toDp() },
                 )
             }
         }
