@@ -253,7 +253,8 @@ fun KeyboardScreen(
                             color = colors.keyText,
                         )
                     } else {
-                        UtilityKeyLabel("✨ AI proofreading", colors)
+                        val mark = if (state.proofreadAuto) "✓" else "✕"
+                        UtilityKeyLabel("✨ AI proofreading $mark", colors)
                     }
                 }
                 UtilityKey(
