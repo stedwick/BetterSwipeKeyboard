@@ -59,6 +59,19 @@ Data flow (deliberately layered, keep it this way):
   word-frequency terms. A dwell ≥ 300 ms on a key doubles its letter. Lower
   score = better; `KeyboardScreen` commits the top word when
   `score < MAX_COMMIT_SCORE` (1.75).
+- Tuning rules learned the hard way (the test suite guards these):
+  - Measure curvature/speed over **arc-length windows** (0.35 key widths),
+    never fixed point counts — real finger trails are dense and jittery, and
+    point-count windows see jitter as turns. Salient regions use hysteresis
+    (enter 0.45, exit 0.30) and collapse to their peak point.
+  - Do **not** flatten the distance cost or make LCS matching
+    neighbor-tolerant: the score's discrimination collapses and short junk
+    words ("role", "keynote", "ak") beat the intended word.
+  - Two-letter words are candidates only on trails ≤ 3.5 key widths (admits
+    "hi"/"up", keeps "ak"-style junk out of long straight swipes).
+  - "swipe" is NOT in the source google-10000-english list; it lives in the
+    manual supplement at the end of `words_en.txt`. Check coverage before
+    assuming a missing word is a decoder bug.
 - `Dictionary`: frequency-ordered word list from
   `app/src/main/assets/words_en.txt` (`word<TAB>rank` lines, ~20k words,
   lower rank = more frequent), indexed by first letter.
@@ -147,3 +160,47 @@ selected as the active IME (the app's setup screen has buttons for both).
   `openrouter.ai`.
 - The app requests only the `INTERNET` permission; the IME service is
   protected by `BIND_INPUT_METHOD`.
+
+## Android API 36 + gesture-handling gotchas
+
+- `InputMethodService.onShowSoftInput` no longer exists on API 36 — the show
+  path is `onShowInputRequested`. Don't copy older IME tutorials blindly.
+- `onEvaluateInputViewShown()` must return `true`: its default hides the
+  soft keyboard when a hardware keyboard is attached (which emulators
+  emulate), and the IME then *silently never appears*.
+- After move events are consumed, the finger-up can arrive consumed too:
+  exit gesture loops on `!change.pressed`, not `changedToUp()`.
+- The restricted `AwaitPointerEventScope` forbids `coroutineScope`/`launch`;
+  use `withTimeoutOrNull` loops for timers (see backspace repeat).
+- The IME window needs `navigationBars` inset padding plus a fixed 12dp
+  bottom clearance (`KeyboardBottomClearance`), or system nav buttons
+  (hide-keyboard chevron, IME switcher) overlap the bottom row on some
+  devices.
+
+## Environment quirks (adb/emulator workflow)
+
+- The emulator's IME keeps falling back to GBoard after reinstalls, uimode
+  changes, and force-stops. Re-run
+  `adb shell ime set com.example.betterswipekeyboard/.SwipeKeyboardService`.
+- After an emulator boot, dismiss the "System UI isn't responding" dialog
+  (tap Wait) before driving the UI.
+- `~/Library/Android/sdk` has `cmdline-tools` installed (for avdmanager/
+  sdkmanager). AVDs: `Medium_Phone_API_36.0` (daily driver),
+  `Pixel_9_Pro_API_36` (created to confirm AICore is absent on emulators).
+- `adb shell input swipe` only draws straight lines and cannot do
+  hold-then-drag, so the punctuation popup's drag-select needs a real
+  finger to verify. GBoard's stylus toolbar appears instead of our keyboard
+  whenever the IME fell back — that's the tell.
+
+## How the user likes to work
+
+- Vanilla first, fancy later; architecture must extend cleanly.
+- Bigger features: plan-mode plan → approval → implement → verify → commit.
+- **Commit after each feature** (standing instruction); the user tests
+  after; fixes get their own follow-up commits.
+- Verify empirically (emulator screenshots, adb, real device) and state
+  plainly when something could not be verified.
+- Privacy matters: prefer on-device, ZDR, honest cloud disclosure in the UI.
+- UI taste: iOS-like keyboard aesthetics, thumb reach, iterating on small
+  details (labels, colors, popup styling, long-press hints).
+
