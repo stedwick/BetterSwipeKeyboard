@@ -17,9 +17,14 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import androidx.lifecycle.lifecycleScope
+import com.example.betterswipekeyboard.proofread.MlKitProofreader
+import com.example.betterswipekeyboard.proofread.Proofreader
+import com.example.betterswipekeyboard.proofread.SentenceExtractor
 import com.example.betterswipekeyboard.swipe.Dictionary
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.ui.keyboard.KeyboardScreen
+import kotlinx.coroutines.launch
 
 /**
  * Hosts the Compose keyboard. An InputMethodService is not an Activity, so it
@@ -42,6 +47,7 @@ class SwipeKeyboardService : InputMethodService(),
 
     private lateinit var viewModel: KeyboardViewModel
     private lateinit var decoder: SwipeDecoder
+    private lateinit var proofreader: Proofreader
     private val editor = InputConnectionEditor { currentInputConnection }
 
     override fun onCreate() {
@@ -50,6 +56,10 @@ class SwipeKeyboardService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         viewModel = ViewModelProvider(this)[KeyboardViewModel::class.java]
         decoder = SwipeDecoder(Dictionary.load(assets.open("words_en.txt")))
+        proofreader = MlKitProofreader(this)
+        lifecycleScope.launch {
+            viewModel.setProofreaderStatus(proofreader.status())
+        }
     }
 
     override fun onCreateInputView(): View {
@@ -82,12 +92,43 @@ class SwipeKeyboardService : InputMethodService(),
             is KeyboardEffect.CommitText -> editor.commitText(effect.text)
             KeyboardEffect.DeleteBackward -> editor.backspace()
             KeyboardEffect.PerformEnter -> editor.enter(currentInputEditorInfo)
+            KeyboardEffect.Proofread -> runProofread()
             null -> Unit
+        }
+    }
+
+    /**
+     * Fixes the current sentence with the on-device AI proofreader. The text
+     * never leaves the device. Failures are logged and otherwise ignored —
+     * the keyboard must never depend on the AI being present.
+     */
+    private fun runProofread() {
+        if (viewModel.state.value.proofreadInFlight) return
+        viewModel.setProofreadInFlight(true)
+        lifecycleScope.launch {
+            try {
+                val before = editor.textBeforeCursor().orEmpty()
+                val sentence = SentenceExtractor.currentSentence(before)
+                if (sentence.isEmpty()) return@launch
+                val corrected = proofreader.proofread(sentence.trim())
+                if (corrected.isNotBlank() && corrected != sentence.trim()) {
+                    // Preserve the fragment's surrounding whitespace.
+                    editor.replaceBeforeCursor(
+                        sentence.length,
+                        sentence.replace(sentence.trim(), corrected),
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("SwipeKeyboard", "proofread failed", e)
+            } finally {
+                viewModel.setProofreadInFlight(false)
+            }
         }
     }
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        if (::proofreader.isInitialized) proofreader.close()
         store.clear()
         super.onDestroy()
     }

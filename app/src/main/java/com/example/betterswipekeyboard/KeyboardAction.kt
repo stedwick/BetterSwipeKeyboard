@@ -28,6 +28,9 @@ sealed interface KeyboardAction {
      * the decoder decides on).
      */
     data class CommitWord(val word: String) : KeyboardAction
+
+    /** Tap the proofread button: fix the current sentence with on-device AI. */
+    data object Proofread : KeyboardAction
 }
 
 /** Side effects to apply to the current InputConnection. */
@@ -35,4 +38,5 @@ sealed interface KeyboardEffect {
     data class CommitText(val text: String) : KeyboardEffect
     data object DeleteBackward : KeyboardEffect
     data object PerformEnter : KeyboardEffect
+    data object Proofread : KeyboardEffect
 }

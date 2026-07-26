@@ -1,6 +1,7 @@
 package com.example.betterswipekeyboard
 
 import androidx.lifecycle.ViewModel
+import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,18 @@ class KeyboardViewModel : ViewModel() {
             _state.update { it.copy(layout = action.layout) }
             null
         }
+
+        KeyboardAction.Proofread -> KeyboardEffect.Proofread
+    }
+
+    /** Called by the service after async availability checks of the AI proofreader. */
+    fun setProofreaderStatus(status: ProofreaderStatus) {
+        _state.update { it.copy(proofreader = status) }
+    }
+
+    /** Called by the service while a proofread request runs. */
+    fun setProofreadInFlight(inFlight: Boolean) {
+        _state.update { it.copy(proofreadInFlight = inFlight) }
     }
 
     private fun consumeOneShot() {

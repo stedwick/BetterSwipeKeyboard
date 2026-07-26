@@ -63,4 +63,22 @@ class KeyboardViewModelTest {
         val vm = viewModel()
         assertEquals(KeyboardEffect.CommitText("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
     }
+
+    @Test
+    fun `proofread passes through as effect without state change`() {
+        val vm = viewModel()
+        assertEquals(KeyboardEffect.Proofread, vm.onAction(KeyboardAction.Proofread))
+    }
+
+    @Test
+    fun `proofreader status updates state`() {
+        val vm = viewModel()
+        assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderStatus.UNAVAILABLE,
+            vm.state.value.proofreader)
+        vm.setProofreaderStatus(com.example.betterswipekeyboard.proofread.ProofreaderStatus.AVAILABLE)
+        assertEquals(com.example.betterswipekeyboard.proofread.ProofreaderStatus.AVAILABLE,
+            vm.state.value.proofreader)
+        vm.setProofreadInFlight(true)
+        assertEquals(true, vm.state.value.proofreadInFlight)
+    }
 }

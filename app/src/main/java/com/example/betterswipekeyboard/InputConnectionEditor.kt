@@ -35,4 +35,19 @@ class InputConnectionEditor(
             ic.commitText("\n", 1)
         }
     }
+
+    fun textBeforeCursor(maxChars: Int = 500): String? =
+        connectionProvider()?.getTextBeforeCursor(maxChars, 0)?.toString()
+
+    /** Delete [length] chars before the cursor and insert [replacement], as one edit. */
+    fun replaceBeforeCursor(length: Int, replacement: String) {
+        val ic = connectionProvider() ?: return
+        ic.beginBatchEdit()
+        try {
+            ic.deleteSurroundingText(length, 0)
+            ic.commitText(replacement, 1)
+        } finally {
+            ic.endBatchEdit()
+        }
+    }
 }

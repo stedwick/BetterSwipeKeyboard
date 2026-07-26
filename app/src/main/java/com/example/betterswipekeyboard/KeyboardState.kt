@@ -1,6 +1,7 @@
 package com.example.betterswipekeyboard
 
 import com.example.betterswipekeyboard.layout.LayoutId
+import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 
 enum class ShiftMode { OFF, ONE_SHOT, LOCKED }
 
@@ -12,6 +13,8 @@ enum class ShiftMode { OFF, ONE_SHOT, LOCKED }
 data class KeyboardState(
     val shiftMode: ShiftMode = ShiftMode.OFF,
     val layout: LayoutId = LayoutId.LETTERS,
+    val proofreader: ProofreaderStatus = ProofreaderStatus.UNAVAILABLE,
+    val proofreadInFlight: Boolean = false,
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF
