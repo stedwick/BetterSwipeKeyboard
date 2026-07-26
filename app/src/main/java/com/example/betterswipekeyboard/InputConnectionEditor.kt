@@ -69,5 +69,15 @@ class InputConnectionEditor(
             } else {
                 " $word"
             }
+
+        /**
+         * Pure, unit-tested: should a tapped string get a leading space after
+         * a swiped word? Only letters earn the space — never punctuation
+         * ("time," not "time ,") and never the space bar itself (no doubles).
+         */
+        fun needsSpaceAfterSwipe(beforeCursor: String?, text: String): Boolean =
+            text.firstOrNull()?.isLetter() == true &&
+                !beforeCursor.isNullOrEmpty() &&
+                !beforeCursor.last().isWhitespace()
     }
 }

@@ -63,6 +63,7 @@ class SwipeKeyboardService : InputMethodService(),
 
     private val editor = InputConnectionEditor { currentInputConnection }
     private var autoProofreadJob: Job? = null
+    private var lastCommitWasSwipe = false
 
     override fun onCreate() {
         super.onCreate()
@@ -135,11 +136,24 @@ class SwipeKeyboardService : InputMethodService(),
     private fun onKeyboardAction(action: KeyboardAction) {
         when (val effect = viewModel.onAction(action)) {
             is KeyboardEffect.CommitText -> {
-                editor.commitText(effect.text)
+                // Mode change swipe → tap starts a new word (letters only).
+                if (lastCommitWasSwipe &&
+                    InputConnectionEditor.needsSpaceAfterSwipe(
+                        editor.textBeforeCursor(maxChars = 1),
+                        effect.text,
+                    )
+                ) {
+                    editor.commitText(" " + effect.text)
+                } else {
+                    editor.commitText(effect.text)
+                }
+                lastCommitWasSwipe = false
                 scheduleAutoProofread()
             }
             is KeyboardEffect.CommitWord -> {
+                // commitWord inserts the leading space for tap → swipe itself.
                 editor.commitWord(effect.word)
+                lastCommitWasSwipe = true
                 scheduleAutoProofread()
             }
             KeyboardEffect.DeleteBackward -> {
