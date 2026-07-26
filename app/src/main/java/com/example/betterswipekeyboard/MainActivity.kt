@@ -51,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
+import com.example.betterswipekeyboard.swipe.parseCustomWords
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
 import kotlinx.coroutines.delay
 
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
 fun SetupScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val keyStore = remember { ApiKeyStore(context) }
+    val wordStore = remember { CustomWordStore(context) }
     var testText by remember { mutableStateOf("") }
     var apiKeyInput by remember { mutableStateOf("") }
     var savedKey by remember { mutableStateOf(keyStore.apiKey) }
@@ -89,6 +91,12 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> micGranted = granted }
+    // The box IS the source of truth: pre-filled with the stored words, one
+    // per line; saving replaces the whole set.
+    var customWordsInput by remember {
+        mutableStateOf(wordStore.load().joinToString("\n"))
+    }
+    var savedWordCount by remember { mutableStateOf<Int?>(null) }
 
     // Auto-scroll the focused text field above the soft keyboard: imePadding
     // only shrinks the viewport, and Compose's built-in focus relocation
@@ -97,7 +105,7 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     // arrives, the layout just never scrolls).
     val scrollState = rememberScrollState()
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    val requesters = remember { Array(2) { BringIntoViewRequester() } }
+    val requesters = remember { Array(3) { BringIntoViewRequester() } }
     var focusedField by remember { mutableIntStateOf(-1) }
     LaunchedEffect(imeBottom, focusedField) {
         if (imeBottom > 0 && focusedField >= 0) {
@@ -246,6 +254,43 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             color = if (savedKey != null) KeySavedGreen else Color.Unspecified,
             style = MaterialTheme.typography.bodySmall,
         )
+
+        Text(
+            text = stringResource(R.string.custom_words_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            text = stringResource(R.string.custom_words_description),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+            value = customWordsInput,
+            onValueChange = { customWordsInput = it },
+            label = { Text(stringResource(R.string.custom_words_hint)) },
+            minLines = 4,
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(requesters[2])
+                .onFocusChanged { focusedField = if (it.isFocused) 2 else -1 },
+        )
+        Button(
+            onClick = {
+                // Parse, normalize and show back what was actually understood.
+                val words = parseCustomWords(customWordsInput)
+                wordStore.save(words)
+                customWordsInput = words.joinToString("\n")
+                savedWordCount = words.size
+            },
+        ) {
+            Text(stringResource(R.string.save_words))
+        }
+        savedWordCount?.let { count ->
+            Text(
+                text = stringResource(R.string.custom_words_saved, count),
+                color = KeySavedGreen,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         OutlinedTextField(
             value = testText,

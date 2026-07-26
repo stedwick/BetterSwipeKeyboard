@@ -17,4 +17,9 @@
     <string name="mic_permission_granted">✓ Microphone permission granted</string>
     <string name="mic_permission_denied">Microphone permission not granted — voice typing is off. If the system dialog no longer appears, enable the permission in system Settings.</string>
     <string name="grant_mic_permission">Grant microphone permission</string>
+    <string name="custom_words_title">Custom swipe words</string>
+    <string name="custom_words_description">Words the swipe decoder should know (names, jargon, slang). Type or paste them separated by anything — spaces, commas, newlines all work. They are used for swipe typing only and never leave the device.</string>
+    <string name="custom_words_hint">e.g. kimi, naruto, philip</string>
+    <string name="save_words">Save words</string>
+    <string name="custom_words_saved">✓ %1$d custom words saved — active next time the keyboard opens</string>
 </resources>
