@@ -115,6 +115,26 @@ class SwipeDecoderTest {
         assertEquals("jumps", results.top())
     }
 
+    @Test
+    fun `two letter word up decodes on a short swipe`() {
+        val results = decoder.decode(trailThrough('u', 'p'), keyCenters, KEY_WIDTH)
+        assertEquals("up", results.top())
+    }
+
+    @Test
+    fun `two letter word hi decodes on a short swipe`() {
+        val results = decoder.decode(trailThrough('h', 'i'), keyCenters, KEY_WIDTH)
+        assertEquals("hi", results.top())
+    }
+
+    @Test
+    fun `two letter abbreviations stay excluded on long trails`() {
+        // a→k is a 7-key-wide straight line: "ak" must not beat "ask".
+        val results = decoder.decode(trailThrough('a', 'k'), keyCenters, KEY_WIDTH)
+        assertEquals("ask", results.top())
+        assertTrue(results.none { it.word.length == 2 })
+    }
+
     private fun List<ScoredWord>.top(): String =
         firstOrNull()?.word ?: error("no candidates")
 

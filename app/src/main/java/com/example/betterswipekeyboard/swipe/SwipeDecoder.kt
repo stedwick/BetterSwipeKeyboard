@@ -64,7 +64,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         for (first in firstLetters) {
             for (entry in dictionary.startingWith(first)) {
                 val word = entry.word
-                if (word.length < MIN_WORD_LENGTH || word.last() !in lastLetters) continue
+                if (!wordLengthAllowed(word.length, trailLength, keyWidth)) continue
+                if (word.last() !in lastLetters) continue
                 if (word.any { it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
                     keyCenters, keyWidth, trailLength)
@@ -73,6 +74,15 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         }
         return scored.sortedBy { it.score }.take(topN)
     }
+
+    /**
+     * Two-letter words are allowed only for short swipes (the finger barely
+     * traveled). On longer trails, abbreviations like "ak" otherwise outrank
+     * real words — that is why the minimum used to be a flat 3.
+     */
+    private fun wordLengthAllowed(length: Int, trailLength: Float, keyWidth: Float): Boolean =
+        length >= MIN_WORD_LENGTH ||
+            (length == 2 && trailLength <= TWO_LETTER_MAX_TRAIL_KEYS * keyWidth)
 
     // ------------------------------------------------------------------
     // Scoring
@@ -303,6 +313,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         /** Swiping is not worth it for very short words; they are tapped. */
         const val MIN_WORD_LENGTH = 3
+
+        /** Two-letter words are allowed only on trails this short (key widths). */
+        const val TWO_LETTER_MAX_TRAIL_KEYS = 3.5f
 
         /** Extra cost multiplier applied at fully-salient points. */
         const val SALIENCE_WEIGHT = 2f
