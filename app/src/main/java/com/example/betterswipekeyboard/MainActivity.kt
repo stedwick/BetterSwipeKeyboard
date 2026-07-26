@@ -78,11 +78,15 @@ fun SetupScreen(modifier: Modifier = Modifier) {
         }
 
         Text(
+            text = stringResource(R.string.proofreader_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
             text = stringResource(
                 R.string.proofreader_description,
                 OpenRouterProofreader.MODEL,
             ),
-            style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.bodySmall,
         )
         if (inputVisible) {
             OutlinedTextField(
