@@ -10,6 +10,8 @@ entirely in Kotlin with Jetpack Compose. Its two headline features:
 
 - **Swipe (glide) typing**: a custom decoder maps a finger trail over the
   QWERTY keys to the most likely dictionary word.
+- **Voice input**: the microphone key dictates via the built-in
+  `SpeechRecognizer`, with a voice-tuned AI cleanup pass after dictation.
 - **AI proofreading**: an on-device Gemini Nano proofreader (ML Kit GenAI),
   with an OpenRouter cloud fallback, fixes the current sentence after 1
   second of typing inactivity.
@@ -31,7 +33,9 @@ The app has two entry points declared in `app/src/main/AndroidManifest.xml`:
   owns the `SwipeDecoder`, the proofreaders, and all `InputConnection`
   interaction.
 - `MainActivity` — a setup screen: buttons to enable/pick the IME, an
-  OpenRouter API key field, and a test text field.
+  OpenRouter API key field, a test text field, and the `RECORD_AUDIO`
+  runtime-permission request for voice input (an IME service cannot show
+  the system permission dialog — only an Activity can).
 
 Data flow (deliberately layered, keep it this way):
 
@@ -140,6 +144,32 @@ Data flow (deliberately layered, keep it this way):
   `ApiKeyStore` (acceptable for a personal app; noted in code as
   not production-grade).
 
+### Voice input
+
+- The microphone key emits `KeyboardAction.ToggleVoice`; the **service**
+  decides start/stop (permission + `SpeechRecognizer.isRecognitionAvailable`
+  checks are Android concerns) and drives `VoiceState` (OFF / LISTENING /
+  PERMISSION_REQUIRED / UNAVAILABLE) in `KeyboardState` via ViewModel
+  setters. While not OFF, the key rows are replaced by a minimal
+  `VoicePanel`, and `KeyboardScreen`'s container gesture loop swallows all
+  touches — the `KeyboardGeometry` rects are stale while the panel is up and
+  must not produce phantom text.
+- `SpeechRecognizer` is created lazily and destroyed on the main thread;
+  `onFinishInputView`/`onWindowHidden` cancel any active session so the mic
+  is never held after the keyboard hides. Only final results are committed
+  (via `editor.commitWord`, so leading-space and voice-proofread scheduling
+  come free); partials only update the panel.
+- Dictated text is proofread with `ProofreadMode.VOICE` 1 s after the
+  transcript commit, through the same debounce and never-clobber guard as
+  typed text. ML Kit's `ProofreadingRequest` has **no custom-prompt hook** —
+  the only tuning is `ProofreaderOptions.InputType` per client, so
+  `MlKitProofreader` holds a second client configured with
+  `InputType.VOICE` (tuned for homophone/same-sound errors). The
+  OpenRouter path instead uses the voice few-shot prompt
+  (`ProofreadPrompt.VOICE_SYSTEM`/`VOICE_EXAMPLES`). `selectBackend` is
+  unchanged: voice proofreading uses whichever backend is active, and none
+  when there is no backend.
+
 ## Build and test commands
 
 Requires `local.properties` with `sdk.dir` pointing at an Android SDK (SDK
@@ -209,8 +239,10 @@ selected as the active IME (the app's setup screen has buttons for both).
 - The OpenRouter API key is user-entered and stored unencrypted
   (SharedPreferences). Never log it or send it anywhere besides
   `openrouter.ai`.
-- The app requests only the `INTERNET` permission; the IME service is
-  protected by `BIND_INPUT_METHOD`.
+- The app requests the `INTERNET` and `RECORD_AUDIO` permissions; the IME
+  service is protected by `BIND_INPUT_METHOD`. `RECORD_AUDIO` is requested
+  at runtime from `MainActivity` only; dictation audio goes to the system
+  speech recognizer, never to our own code or network layer.
 - Clipboard history is recorded from `ClipboardManager` but never leaves
   the device (no network, in-memory only, never persisted). Clips flagged
   `ClipDescription.EXTRA_IS_SENSITIVE` (password managers, password
@@ -254,6 +286,11 @@ selected as the active IME (the app's setup screen has buttons for both).
   hold-then-drag, so the punctuation popup's drag-select needs a real
   finger to verify. GBoard's stylus toolbar appears instead of our keyboard
   whenever the IME fell back — that's the tell.
+- Voice input needs a speech recognizer (Play services image) and the AVD's
+  "host microphone" enabled; `SpeechRecognizer.isRecognitionAvailable` is
+  false on bare images, which surfaces as the keyboard's UNAVAILABLE panel.
+  Real dictation (and the ML Kit `InputType.VOICE` proofread, since AICore
+  is absent on emulators) can only be verified on a real device.
 
 ## How the user likes to work
 

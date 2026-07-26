@@ -1,14 +1,18 @@
 package com.example.betterswipekeyboard
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -74,6 +78,17 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     var apiKeyInput by remember { mutableStateOf("") }
     var savedKey by remember { mutableStateOf(keyStore.apiKey) }
     var inputVisible by remember { mutableStateOf(savedKey == null) }
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    // Runtime permissions can only be requested from an Activity — the
+    // keyboard's permission panel routes the user here to grant it.
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> micGranted = granted }
 
     // Auto-scroll the focused text field above the soft keyboard: imePadding
     // only shrinks the viewport, and Compose's built-in focus relocation
@@ -134,6 +149,32 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.pick_keyboard))
+        }
+
+        Text(
+            text = stringResource(R.string.voice_input_title),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(
+            text = stringResource(R.string.voice_input_description),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = stringResource(
+                if (micGranted) R.string.mic_permission_granted
+                else R.string.mic_permission_denied
+            ),
+            color = if (micGranted) KeySavedGreen else Color.Unspecified,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (!micGranted) {
+            Button(
+                onClick = {
+                    micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                },
+            ) {
+                Text(stringResource(R.string.grant_mic_permission))
+            }
         }
 
         Text(

@@ -177,4 +177,37 @@ class KeyboardViewModelTest {
         assertNull(vm.onAction(KeyboardAction.DeleteClip("a")))
         assertEquals(listOf("b"), vm.state.value.clipboard.map { it.text })
     }
+
+    @Test
+    fun `toggle voice produces no editor effect and no state change`() {
+        val vm = viewModel()
+        val before = vm.state.value
+        assertNull(vm.onAction(KeyboardAction.ToggleVoice))
+        assertEquals(before, vm.state.value)
+    }
+
+    @Test
+    fun `voice state setters drive the voice panel state`() {
+        val vm = viewModel()
+        assertEquals(VoiceState.OFF, vm.state.value.voice)
+
+        vm.setVoiceState(VoiceState.LISTENING)
+        assertEquals(VoiceState.LISTENING, vm.state.value.voice)
+
+        vm.setVoicePartial("hello wor")
+        assertEquals("hello wor", vm.state.value.voicePartial)
+
+        // Leaving LISTENING clears the partial transcript.
+        vm.setVoiceState(VoiceState.OFF)
+        assertEquals(VoiceState.OFF, vm.state.value.voice)
+        assertEquals("", vm.state.value.voicePartial)
+    }
+
+    @Test
+    fun `best transcript picks first non-blank candidate trimmed`() {
+        assertNull(bestTranscript(null))
+        assertNull(bestTranscript(emptyList()))
+        assertNull(bestTranscript(listOf("", "   ")))
+        assertEquals("hello world", bestTranscript(listOf("", "  hello world ", "ignored")))
+    }
 }

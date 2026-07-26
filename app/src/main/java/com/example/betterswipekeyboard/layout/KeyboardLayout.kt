@@ -17,7 +17,7 @@ sealed interface KeyOutput {
     data object Shift : KeyOutput
     data class SwitchLayout(val layout: LayoutId) : KeyOutput
 
-    /** Voice input key (inert until voice input is implemented). */
+    /** Voice input key: starts/stops dictation via the built-in speech recognizer. */
     data object Microphone : KeyOutput
 }
 

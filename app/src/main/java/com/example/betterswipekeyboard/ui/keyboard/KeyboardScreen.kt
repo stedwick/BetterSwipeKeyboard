@@ -54,6 +54,7 @@ import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.KeyboardState
 import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
+import com.example.betterswipekeyboard.VoiceState
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
@@ -130,6 +131,7 @@ fun KeyboardScreen(
     decoder: SwipeDecoder,
     onAction: (KeyboardAction) -> Unit,
     onSettingsClick: () -> Unit,
+    onPermissionHelpClick: () -> Unit,
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val geometry = remember { KeyboardGeometry() }
@@ -164,10 +166,19 @@ fun KeyboardScreen(
                 onAction = onAction,
                 onSettingsClick = onSettingsClick,
             )
-            when (state.layout) {
-                LayoutId.EMOJI -> EmojiPanel(colors = colors, onAction = onAction)
+            when {
+                // While dictating, the voice panel replaces the key rows, so
+                // there is no stale key geometry to hit-test against.
+                state.voice != VoiceState.OFF -> VoicePanel(
+                    state = state,
+                    colors = colors,
+                    onToggleVoice = { onAction(KeyboardAction.ToggleVoice) },
+                    onPermissionHelpClick = onPermissionHelpClick,
+                )
 
-                LayoutId.CLIPBOARD -> ClipboardPanel(
+                state.layout == LayoutId.EMOJI -> EmojiPanel(colors = colors, onAction = onAction)
+
+                state.layout == LayoutId.CLIPBOARD -> ClipboardPanel(
                     colors = colors,
                     entries = state.clipboard,
                     onAction = onAction,
@@ -523,6 +534,78 @@ private fun UtilityRow(
             modifier = Modifier.weight(1f),
         ) {
             UtilityKeyLabel("⚙", colors)
+/** Matches the height of the four key rows, so the IME window doesn't jump. */
+private val VoicePanelHeight = 226.dp
+
+/**
+ * Replaces the key rows while [VoiceState] is not OFF: a mic icon, a status
+ * line, the live partial transcript, and a single Done / close / help
+ * button. Deliberately minimal — no waveform, no cancel button.
+ */
+@Composable
+private fun VoicePanel(
+    state: KeyboardState,
+    colors: KeyboardColors,
+    onToggleVoice: () -> Unit,
+    onPermissionHelpClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(VoicePanelHeight),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_mic),
+            contentDescription = "Voice input",
+            tint = if (state.voice == VoiceState.LISTENING) ToggleOn else colors.keyText,
+            modifier = Modifier.size(32.dp),
+        )
+        Text(
+            text = when (state.voice) {
+                VoiceState.LISTENING -> "Listening…"
+                VoiceState.PERMISSION_REQUIRED ->
+                    "Microphone permission needed — grant it in the app"
+                VoiceState.UNAVAILABLE -> "Voice typing not available on this device"
+                VoiceState.OFF -> ""
+            },
+            color = colors.keyText,
+            fontSize = 15.sp,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (state.voice == VoiceState.LISTENING && state.voicePartial.isNotEmpty()) {
+            Text(
+                text = state.voicePartial,
+                color = colors.keyText.copy(alpha = 0.6f),
+                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .height(40.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(colors.keyBackground)
+                .clickable(
+                    onClick = when (state.voice) {
+                        VoiceState.PERMISSION_REQUIRED -> onPermissionHelpClick
+                        else -> onToggleVoice
+                    },
+                )
+                .padding(horizontal = 24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = when (state.voice) {
+                    VoiceState.LISTENING -> "Done"
+                    VoiceState.PERMISSION_REQUIRED -> "Open app"
+                    else -> "Close"
+                },
+                color = colors.keyText,
+                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
@@ -583,7 +666,7 @@ private fun Key.tapAction(): KeyboardAction = when (val out = output) {
     KeyOutput.Enter -> KeyboardAction.Enter
     KeyOutput.Shift -> KeyboardAction.Shift
     is KeyOutput.SwitchLayout -> KeyboardAction.SwitchLayout(out.layout)
-    KeyOutput.Microphone -> KeyboardAction.Noop
+    KeyOutput.Microphone -> KeyboardAction.ToggleVoice
 }
 
 @Composable
