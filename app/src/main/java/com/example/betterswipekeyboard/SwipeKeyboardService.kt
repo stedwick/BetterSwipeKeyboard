@@ -124,12 +124,12 @@ class SwipeKeyboardService : InputMethodService(),
             decor.setViewTreeLifecycleOwner(this)
             decor.setViewTreeViewModelStoreOwner(this)
             decor.setViewTreeSavedStateRegistryOwner(this)
-        }
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-        return ComposeView(this).apply {
             // Measure the real occlusion at the window root: gesture strip,
-            // 3-button bar or One UI's IME strip, whichever is tallest.
-            ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+            // 3-button bar or One UI's IME strip, whichever is tallest. The
+            // listener MUST live on the decor view — the IME window does not
+            // dispatch WindowInsets down to the input view, so a listener on
+            // the ComposeView never fires (bottomInsetPx stayed 0 forever).
+            ViewCompat.setOnApplyWindowInsetsListener(decor) { _, insets ->
                 bottomInsetPx = bottomClearancePx(
                     insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
                     insets.getInsets(WindowInsetsCompat.Type.tappableElement()).bottom,
@@ -137,6 +137,10 @@ class SwipeKeyboardService : InputMethodService(),
                 )
                 insets
             }
+            ViewCompat.requestApplyInsets(decor)
+        }
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        return ComposeView(this).apply {
             setContent {
                 val state by viewModel.state.collectAsState()
                 KeyboardScreen(

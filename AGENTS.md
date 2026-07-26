@@ -183,7 +183,10 @@ selected as the active IME (the app's setup screen has buttons for both).
   (`max(navigationBars, tappableElement, mandatorySystemGestures)` →
   `ime/BottomInsets.kt` `bottomClearancePx`), passed to `KeyboardScreen` as
   `bottomClearance`; a fixed 12dp (`KeyboardBottomClearance`) is added on top
-  purely as aesthetic breathing room.
+  purely as aesthetic breathing room. The listener MUST be registered on the
+  window's **decor view** (plus `ViewCompat.requestApplyInsets`): the IME
+  window does not dispatch WindowInsets down to the input view, so a
+  listener on the ComposeView never fires.
 
 ## Environment quirks (adb/emulator workflow)
 
