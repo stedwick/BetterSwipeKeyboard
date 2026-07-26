@@ -59,7 +59,10 @@ class KeyboardViewModel : ViewModel() {
             null
         }
 
-        KeyboardAction.Proofread -> KeyboardEffect.Proofread
+        KeyboardAction.ToggleProofread -> {
+            _state.update { it.copy(proofreadAuto = !it.proofreadAuto) }
+            null
+        }
     }
 
     /** Called by the service after async availability checks of the AI proofreader. */

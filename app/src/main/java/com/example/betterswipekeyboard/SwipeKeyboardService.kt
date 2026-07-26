@@ -29,6 +29,8 @@ import com.example.betterswipekeyboard.proofread.selectBackend
 import com.example.betterswipekeyboard.swipe.Dictionary
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.ui.keyboard.KeyboardScreen
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -60,6 +62,7 @@ class SwipeKeyboardService : InputMethodService(),
     private var activeProofreader: Proofreader? = null
 
     private val editor = InputConnectionEditor { currentInputConnection }
+    private var autoProofreadJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -131,11 +134,33 @@ class SwipeKeyboardService : InputMethodService(),
 
     private fun onKeyboardAction(action: KeyboardAction) {
         when (val effect = viewModel.onAction(action)) {
-            is KeyboardEffect.CommitText -> editor.commitText(effect.text)
-            KeyboardEffect.DeleteBackward -> editor.backspace()
-            KeyboardEffect.PerformEnter -> editor.enter(currentInputEditorInfo)
-            KeyboardEffect.Proofread -> runProofread()
+            is KeyboardEffect.CommitText -> {
+                editor.commitText(effect.text)
+                scheduleAutoProofread()
+            }
+            KeyboardEffect.DeleteBackward -> {
+                editor.backspace()
+                scheduleAutoProofread()
+            }
+            KeyboardEffect.PerformEnter -> {
+                editor.enter(currentInputEditorInfo)
+                scheduleAutoProofread()
+            }
             null -> Unit
+        }
+    }
+
+    /**
+     * Auto-proofreading debounce: every text change restarts a 1-second
+     * timer; the proofread fires only after a full second of typing
+     * inactivity (so at most once per second, never mid-thought).
+     */
+    private fun scheduleAutoProofread() {
+        if (!viewModel.state.value.proofreadAuto) return
+        autoProofreadJob?.cancel()
+        autoProofreadJob = lifecycleScope.launch {
+            delay(AUTO_PROOFREAD_DEBOUNCE_MS)
+            runProofread()
         }
     }
 
@@ -154,7 +179,15 @@ class SwipeKeyboardService : InputMethodService(),
                 val sentence = SentenceExtractor.currentSentence(before)
                 if (sentence.isEmpty()) return@launch
                 val corrected = proofreader.proofread(sentence.trim())
-                if (corrected.isNotBlank() && corrected != sentence.trim()) {
+                // The user may have kept typing while the request was in
+                // flight; never clobber newer text.
+                val latest = SentenceExtractor.currentSentence(
+                    editor.textBeforeCursor().orEmpty(),
+                )
+                if (latest == sentence &&
+                    corrected.isNotBlank() &&
+                    corrected != sentence.trim()
+                ) {
                     // Preserve the fragment's surrounding whitespace.
                     editor.replaceBeforeCursor(
                         sentence.length,
@@ -175,5 +208,9 @@ class SwipeKeyboardService : InputMethodService(),
         if (::openRouterProofreader.isInitialized) openRouterProofreader.close()
         store.clear()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val AUTO_PROOFREAD_DEBOUNCE_MS = 1000L
     }
 }

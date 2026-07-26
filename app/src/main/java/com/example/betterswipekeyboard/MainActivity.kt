@@ -52,6 +52,7 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     var testText by remember { mutableStateOf("") }
     var apiKeyInput by remember { mutableStateOf("") }
     var savedKey by remember { mutableStateOf(keyStore.apiKey) }
+    var inputVisible by remember { mutableStateOf(savedKey == null) }
 
     Column(
         modifier = modifier
@@ -79,33 +80,49 @@ fun SetupScreen(modifier: Modifier = Modifier) {
             text = "AI proofreader (cloud)",
             style = MaterialTheme.typography.titleSmall,
         )
-        OutlinedTextField(
-            value = apiKeyInput,
-            onValueChange = { apiKeyInput = it },
-            label = { Text(stringResource(R.string.api_key_hint)) },
-            visualTransformation = PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (inputVisible) {
+            OutlinedTextField(
+                value = apiKeyInput,
+                onValueChange = { apiKeyInput = it },
+                label = { Text(stringResource(R.string.api_key_hint)) },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    keyStore.save(apiKeyInput)
-                    savedKey = keyStore.apiKey
-                    apiKeyInput = ""
-                },
-                enabled = apiKeyInput.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.save_key))
+            if (inputVisible) {
+                Button(
+                    onClick = {
+                        keyStore.save(apiKeyInput)
+                        savedKey = keyStore.apiKey
+                        apiKeyInput = ""
+                        inputVisible = false
+                    },
+                    enabled = apiKeyInput.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.save_key))
+                }
             }
             if (savedKey != null) {
                 OutlinedButton(
                     onClick = {
                         keyStore.clear()
                         savedKey = null
+                        inputVisible = true
                     },
                 ) {
                     Text(stringResource(R.string.clear_key))
+                }
+                if (!inputVisible) {
+                    OutlinedButton(
+                        onClick = {
+                            apiKeyInput = savedKey.orEmpty()
+                            inputVisible = true
+                        },
+                    ) {
+                        Text(stringResource(R.string.change_key))
+                    }
                 }
             }
         }

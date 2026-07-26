@@ -65,9 +65,13 @@ class KeyboardViewModelTest {
     }
 
     @Test
-    fun `proofread passes through as effect without state change`() {
+    fun `proofread toggle flips auto state without editor effect`() {
         val vm = viewModel()
-        assertEquals(KeyboardEffect.Proofread, vm.onAction(KeyboardAction.Proofread))
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertNull(vm.onAction(KeyboardAction.ToggleProofread))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertNull(vm.onAction(KeyboardAction.ToggleProofread))
+        assertEquals(false, vm.state.value.proofreadAuto)
     }
 
     @Test

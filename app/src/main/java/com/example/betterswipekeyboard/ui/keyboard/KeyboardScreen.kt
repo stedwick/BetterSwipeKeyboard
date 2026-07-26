@@ -54,7 +54,6 @@ import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
-import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
@@ -69,9 +68,6 @@ private val KeyBackground = Color(0xFF3A3A3C)
 private val KeyBackgroundActive = Color(0xFF6E6E73)
 private val KeyText = Color(0xFFF2F2F7)
 private val TrailColor = Color(0xFF64D2FF)
-private val StatusReady = Color(0xFF30D158)
-private val StatusBusy = Color(0xFFFFD60A)
-private val StatusOff = Color(0xFF8E8E93)
 
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
@@ -218,10 +214,40 @@ fun KeyboardScreen(
                 .padding(horizontal = 3.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            ProofreaderBar(
-                state = state,
-                onProofread = { onAction(KeyboardAction.Proofread) },
-            )
+            // Utility row: sparkly AI proofreader, emoji, microphone.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                UtilityKey(
+                    onClick = { onAction(KeyboardAction.ToggleProofread) },
+                    enabled = state.proofreader == ProofreaderStatus.AVAILABLE,
+                    active = state.proofreadAuto,
+                    modifier = Modifier.weight(2f),
+                ) {
+                    if (state.proofreadInFlight) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = KeyText,
+                        )
+                    } else {
+                        UtilityKeyLabel("✨ AI proofreading")
+                    }
+                }
+                UtilityKey(
+                    onClick = { /* TODO: emoji panel */ },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    UtilityKeyLabel("😀")
+                }
+                UtilityKey(
+                    onClick = { /* TODO: voice input */ },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    UtilityKeyLabel("🎤")
+                }
+            }
             layout.rows.forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -270,65 +296,35 @@ fun KeyboardScreen(
 
 private enum class GestureOutcome { TAP, DRAG }
 
-/**
- * Slim status row above the keys: always shows whether the on-device AI
- * proofreader is active, and hosts the proofread button when it is.
- */
+/** A key in the utility row above the letter rows. */
 @Composable
-private fun ProofreaderBar(
-    state: KeyboardState,
-    onProofread: () -> Unit,
+private fun UtilityKey(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    content: @Composable () -> Unit,
 ) {
-    val (dotColor, label) = when {
-        state.proofreader == ProofreaderStatus.DOWNLOADING ->
-            StatusBusy to "AI proofreader downloading…"
-        state.proofreaderBackend == ProofreaderBackend.ON_DEVICE ->
-            StatusReady to "AI proofreader ready (on-device)"
-        state.proofreaderBackend == ProofreaderBackend.CLOUD ->
-            StatusReady to "AI proofreader ready (cloud — text leaves device)"
-        else ->
-            StatusOff to "AI proofreader unavailable (no device AI, no API key)"
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Box(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (active) KeyBackgroundActive else KeyBackground)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(dotColor),
-        )
-        Text(
-            text = label,
-            color = KeyText.copy(alpha = 0.7f),
-            fontSize = 12.sp,
-            modifier = Modifier.weight(1f),
-        )
-        if (state.proofreader == ProofreaderStatus.AVAILABLE) {
-            if (state.proofreadInFlight) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = KeyText,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(KeyBackground)
-                        .clickable(onClick = onProofread)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                ) {
-                    Text(text = "✨ Fix sentence", color = KeyText, fontSize = 12.sp)
-                }
-            }
-        }
+        content()
     }
+}
+
+@Composable
+private fun UtilityKeyLabel(text: String) {
+    Text(
+        text = text,
+        color = KeyText,
+        fontSize = 15.sp,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 private suspend fun AwaitPointerEventScope.awaitUp(id: PointerId) {
