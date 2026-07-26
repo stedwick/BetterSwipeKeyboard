@@ -22,6 +22,9 @@ sealed interface KeyboardAction {
 
     data class SwitchLayout(val layout: LayoutId) : KeyboardAction
 
+    /** A key with no behavior yet (e.g. microphone). */
+    data object Noop : KeyboardAction
+
     /**
      * Reserved for future swipe typing: a whole word decoded from a glide
      * trail, committed as a single unit (followed by any trailing separator

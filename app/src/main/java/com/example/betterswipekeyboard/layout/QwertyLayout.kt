@@ -15,8 +15,9 @@ val QwertyLayout = KeyboardLayout(
         ),
         listOf(
             Key(label = "?123", output = KeyOutput.SwitchLayout(LayoutId.SYMBOLS), weight = 1.5f),
+            Key(label = "", output = KeyOutput.Microphone),
             Key(label = ",", output = KeyOutput.Text(",")),
-            Key(label = "", output = KeyOutput.Text(" "), weight = 5f),
+            Key(label = "", output = KeyOutput.Text(" "), weight = 4f),
             Key(label = ".", output = KeyOutput.Text(".")),
             Key(label = "⏎", output = KeyOutput.Enter, weight = 1.5f),
         ),

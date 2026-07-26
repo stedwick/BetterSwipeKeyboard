@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,12 +44,14 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.KeyboardState
+import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
@@ -96,6 +99,18 @@ private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
 private val KeyboardBottomClearance = 12.dp
 
+/** Choices in the long-press popup on the period key. */
+private val PUNCTUATION_POPUP = listOf("!", "?", ",", ";", ":", "-", "\"", "'")
+
+/** Hit-test a finger position against the punctuation popup (with slack). */
+private fun popupIndexAt(position: Offset, bounds: Rect?): Int {
+    val b = bounds ?: return -1
+    if (position.y < b.top - 24f || position.y > b.bottom + 160f) return -1
+    if (position.x < b.left || position.x > b.right) return -1
+    val index = ((position.x - b.left) / (b.width / PUNCTUATION_POPUP.size)).toInt()
+    return index.coerceIn(0, PUNCTUATION_POPUP.size - 1)
+}
+
 /**
  * Best-guess commits above this score are too unsure. Below it we commit
  * even a weak match — a slightly-wrong word beats silence (and the AI
@@ -121,6 +136,9 @@ fun KeyboardScreen(
     var boxOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
     var pressedKey by remember { mutableStateOf<Key?>(null) }
     var trailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
+    var popupChoices by remember { mutableStateOf<List<String>?>(null) }
+    var popupIndex by remember { mutableStateOf(-1) }
+    var popupBounds by remember { mutableStateOf<Rect?>(null) }
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
 
@@ -215,6 +233,33 @@ fun KeyboardScreen(
                                 awaitUp(down.id)
                             }
 
+                            is KeyOutput.Text -> {
+                                if ((downKey.output as KeyOutput.Text).text == ".") {
+                                    // Long-press period: punctuation popup with drag-select.
+                                    var selection = -1
+                                    popupChoices = PUNCTUATION_POPUP
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change =
+                                            event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (change.positionChange() != Offset.Zero) {
+                                            selection = popupIndexAt(change.position, popupBounds)
+                                            popupIndex = selection
+                                        }
+                                        if (!change.pressed) break
+                                    }
+                                    popupChoices = null
+                                    popupIndex = -1
+                                    onAction(
+                                        KeyboardAction.InsertText(
+                                            if (selection >= 0) PUNCTUATION_POPUP[selection] else ".",
+                                        ),
+                                    )
+                                } else {
+                                    awaitUp(down.id)
+                                }
+                            }
+
                             else -> awaitUp(down.id)
                         }
                     }
@@ -283,13 +328,6 @@ fun KeyboardScreen(
                     UtilityKeyLabel("😀", colors)
                 }
                 UtilityKey(
-                    onClick = { /* TODO: voice input */ },
-                    colors = colors,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    UtilityKeyLabel("🎤", colors)
-                }
-                UtilityKey(
                     onClick = onSettingsClick,
                     colors = colors,
                     modifier = Modifier.weight(1f),
@@ -338,6 +376,41 @@ fun KeyboardScreen(
                         strokeWidth = trailStrokeWidth,
                         cap = StrokeCap.Round,
                     )
+                }
+            }
+        }
+
+        // Punctuation popup for the period long-press.
+        val choices = popupChoices
+        if (choices != null) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 72.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.keyBackground)
+                    .onGloballyPositioned {
+                        popupBounds = Rect(
+                            it.positionInWindow() - boxOffsetInWindow,
+                            it.size.toSize(),
+                        )
+                    },
+            ) {
+                choices.forEachIndexed { index, label ->
+                    Box(
+                        modifier = Modifier
+                            .size(width = 44.dp, height = 48.dp)
+                            .background(
+                                if (index == popupIndex) {
+                                    colors.keyBackgroundActive
+                                } else {
+                                    Color.Transparent
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                    }
                 }
             }
         }
@@ -402,6 +475,7 @@ private fun Key.tapAction(): KeyboardAction = when (val out = output) {
     KeyOutput.Enter -> KeyboardAction.Enter
     KeyOutput.Shift -> KeyboardAction.Shift
     is KeyOutput.SwitchLayout -> KeyboardAction.SwitchLayout(out.layout)
+    KeyOutput.Microphone -> KeyboardAction.Noop
 }
 
 @Composable
@@ -427,13 +501,22 @@ private fun KeyView(
             .background(background),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = key.displayLabel(state),
-            color = colors.keyText,
-            fontSize = if (key.output is KeyOutput.Text) 20.sp else 15.sp,
-            fontWeight = if (isShiftActive) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        if (key.output is KeyOutput.Microphone) {
+            Icon(
+                painter = painterResource(R.drawable.ic_mic),
+                contentDescription = "Voice input",
+                tint = colors.keyText,
+                modifier = Modifier.size(20.dp),
+            )
+        } else {
+            Text(
+                text = key.displayLabel(state),
+                color = colors.keyText,
+                fontSize = if (key.output is KeyOutput.Text) 20.sp else 15.sp,
+                fontWeight = if (isShiftActive) FontWeight.Bold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 

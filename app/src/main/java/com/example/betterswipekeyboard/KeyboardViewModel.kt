@@ -70,6 +70,8 @@ class KeyboardViewModel : ViewModel() {
             _state.update { it.copy(proofreadAuto = !it.proofreadAuto) }
             null
         }
+
+        KeyboardAction.Noop -> null
     }
 
     /** Called by the service after async availability checks of the AI proofreader. */
