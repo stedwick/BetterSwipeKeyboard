@@ -1,5 +1,6 @@
 package com.example.betterswipekeyboard.ui.keyboard
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -311,15 +312,46 @@ fun KeyboardScreen(
                                             // Phase 2 (long-press): repeat / caps-lock until finger lifts.
                                             is KeyOutput.Backspace -> {
                                                 onAction(KeyboardAction.Backspace)
+                                                // Fixed-cadence repeat: fire at
+                                                // BACKSPACE_REPEAT_MS boundaries,
+                                                // not BACKSPACE_REPEAT_MS after
+                                                // each step returns. Every step
+                                                // makes synchronous Binder
+                                                // round-trips into the target
+                                                // app; adding that latency to
+                                                // the clock both slowed the
+                                                // repeat and made it stutter
+                                                // with the app's response jitter.
+                                                // A step that overruns its slot
+                                                // fires again as soon as the IPC
+                                                // returns (nextRepeatAt reset to
+                                                // now — no catch-up bursts).
+                                                var nextRepeatAt =
+                                                    SystemClock.uptimeMillis() +
+                                                        BACKSPACE_REPEAT_MS
                                                 var up = false
                                                 while (!up) {
+                                                    // Await even when behind
+                                                    // schedule (1 ms floor) so a
+                                                    // finger-up that arrived
+                                                    // during the IPC is seen
+                                                    // before the next delete.
+                                                    val waitMs =
+                                                        (nextRepeatAt -
+                                                            SystemClock.uptimeMillis())
+                                                            .coerceAtLeast(1)
                                                     val event =
-                                                        withTimeoutOrNull(BACKSPACE_REPEAT_MS) {
+                                                        withTimeoutOrNull(waitMs) {
                                                             awaitPointerEvent()
                                                         }
                                                     if (event == null) {
                                                         // Timed out while still held: repeat.
                                                         onAction(KeyboardAction.Backspace)
+                                                        nextRepeatAt += BACKSPACE_REPEAT_MS
+                                                        val now = SystemClock.uptimeMillis()
+                                                        if (nextRepeatAt < now) {
+                                                            nextRepeatAt = now
+                                                        }
                                                     } else {
                                                         val change = event.changes
                                                             .firstOrNull { it.id == down.id }

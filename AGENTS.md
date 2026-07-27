@@ -63,7 +63,12 @@ Data flow (deliberately layered, keep it this way):
    one place. Backspace is grapheme-cluster-aware
    (`precedingGraphemeLength`, `java.text.BreakIterator`): never delete a
    single UTF-16 unit — emoji are surrogate pairs and deleting one unit
-   leaves a U+FFFD replacement char.
+   leaves a U+FFFD replacement char. Every InputConnection call is a
+   synchronous Binder round-trip into the target app, so the held-backspace
+   repeat keeps them minimal: a "delete streak" (reset by any other edit)
+   skips the per-step `getSelectedText` check after the first step, and the
+   repeat clock in `KeyboardScreen` fires at fixed 50 ms boundaries instead
+   of 50 ms after each step's IPC returned.
 6. **Space-bar drag = cursor control** (`SpacebarCursor.kt` +
    `ui/keyboard/SpacebarCursorDrag.kt`): a horizontal drag on the space bar
    emits `MoveCursor` step deltas (net displacement, 14.dp per step), which
@@ -176,7 +181,9 @@ Data flow (deliberately layered, keep it this way):
   around every gesture (a swipe produces no actions until finger-up), a
   touch cancels the timer, and finger-up reschedules it only when the
   dirty flag says text changed since the last proofread attempt (no
-  wasted API calls after no-op gestures).
+  wasted API calls after no-op gestures). Typed-mode scheduling during
+  a gesture is deferred to finger-up (`gestureActive`), so a held
+  backspace doesn't cancel + relaunch the job on every repeat step.
 - `SentenceExtractor.currentWindow` pulls the current fragment *plus the
   previous sentence* from text before the cursor, so a continuation
   fragment ("and bought ...") can be merged back into a sentence an
