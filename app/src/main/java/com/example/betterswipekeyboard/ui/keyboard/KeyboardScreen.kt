@@ -72,6 +72,7 @@ import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
+import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -334,6 +335,12 @@ fun KeyboardScreen(
                                     }
 
                                     var swipeCompleted = false
+                                    // Index into trail of the first point on
+                                    // a letter key; -1 while the drag has not
+                                    // touched one. The trail (visual and
+                                    // decode alike) starts there — the prefix
+                                    // is approach, not word.
+                                    var trailStart = -1
                                     when (outcome) {
                                         GestureOutcome.TAP -> when {
                                             // Utility-row tap, re-dispatched
@@ -363,14 +370,27 @@ fun KeyboardScreen(
                                                 // slack strip), modifier keys
                                                 // (shift/numbers/mic/enter/
                                                 // backspace) and the utility
-                                                // row. Off-key starts are just
-                                                // trail before the first
-                                                // letter basin; junk trails
-                                                // (e.g. a drag that stays on
-                                                // one modifier) are filtered
-                                                // by MAX_COMMIT_SCORE. Only
-                                                // the space bar itself keeps
-                                                // cursor drag.
+                                                // row. Off-key starts used to
+                                                // be just trail before the
+                                                // first letter basin — but
+                                                // that prefix poisons the
+                                                // decoder's letter alignment,
+                                                // so the trail only BEGINS at
+                                                // the first point on a letter
+                                                // key (firstLetterContact-
+                                                // Index). Junk trails that do
+                                                // reach a letter are filtered
+                                                // by MAX_COMMIT_SCORE; a drag
+                                                // that never touches a letter
+                                                // is no swipe at all —
+                                                // nothing drawn, nothing
+                                                // decoded. Only the space bar
+                                                // itself keeps cursor drag.
+                                                val letterRects = geometry.letterRects()
+                                                trailStart = firstLetterContactIndex(
+                                                    trail.map { it.position },
+                                                    letterRects,
+                                                )
                                                 while (true) {
                                                     val event = awaitPointerEvent()
                                                     val change = event.changes
@@ -381,8 +401,21 @@ fun KeyboardScreen(
                                                             change.position.toVec2(),
                                                             change.uptimeMillis,
                                                         )
+                                                        if (trailStart < 0) {
+                                                            trailStart =
+                                                                firstLetterContactIndex(
+                                                                    trail.map { it.position },
+                                                                    letterRects,
+                                                                )
+                                                        }
                                                         trailPoints =
-                                                            trail.map { it.position.toOffset() }
+                                                            if (trailStart >= 0) {
+                                                                trail.subList(
+                                                                    trailStart, trail.size,
+                                                                ).map { it.position.toOffset() }
+                                                            } else {
+                                                                emptyList()
+                                                            }
                                                         pressedKey =
                                                             geometry.keyAt(change.position)
                                                         change.consume()
@@ -392,7 +425,9 @@ fun KeyboardScreen(
                                                     // `pressed`, not `changedToUp()`.
                                                     if (!change.pressed) break
                                                 }
-                                                swipeCompleted = true
+                                                // Only a trail that reached a
+                                                // letter key is a swipe attempt.
+                                                swipeCompleted = trailStart >= 0
                                             } else if (isSpaceBar(downKey)) {
                                                 // Space-bar drag: cursor
                                                 // control, in either layout.
@@ -515,6 +550,11 @@ fun KeyboardScreen(
                                     pressedUtility = null
 
                                     if (swipeCompleted) {
+                                        // Decode the TRIMMED trail (from the
+                                        // first letter-key point — the same
+                                        // points the visual trail drew), never
+                                        // the off-letter approach prefix.
+                                        val decodedTrail = trail.subList(trailStart, trail.size).toList()
                                         // Read the decoder at gesture time: the
                                         // service may have rebuilt it with new
                                         // custom words since this composition
@@ -525,12 +565,12 @@ fun KeyboardScreen(
                                         // records the runners-up for tuning;
                                         // only the top word is ever committed.
                                         val results = decoderProvider().decode(
-                                            trail = trail.toList(),
+                                            trail = decodedTrail,
                                             keyCenters = keyCenters,
                                             keyWidth = keyWidth,
                                             topN = 5,
                                         )
-                                        onSwipeDecoded(trail.toList(), keyCenters, keyWidth, results)
+                                        onSwipeDecoded(decodedTrail, keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
                                         if (best != null && best.score < MAX_COMMIT_SCORE) {
                                             onAction(KeyboardAction.CommitWord(best.word))

@@ -57,8 +57,13 @@ Data flow (deliberately layered, keep it this way):
    long-presses and swipes are handled at the container level in
    `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and
    every user intent becomes a `KeyboardAction`. On the letters layout a
-   DRAG from anywhere except the space bar starts a swipe trail (letter
-   keys, dead space, modifier keys, utility row); taps on the gesture-mode
+   DRAG from anywhere except the space bar may start a swipe (letter
+   keys, dead space, modifier keys, utility row), but the trail — visual
+   and decode alike — only begins at the first point on a letter key
+   (`firstLetterContactIndex` in `swipe/TrailTrim.kt`; the off-letter
+   prefix is approach, not word, and would poison the decoder's letter
+   alignment). A drag that never touches a letter is not a swipe:
+   nothing drawn, nothing decoded. Taps on the gesture-mode
    utility row are re-dispatched semantically in the loop
    (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
    `onSettingsClick` callback). The symbols layout keeps no decoding: a
