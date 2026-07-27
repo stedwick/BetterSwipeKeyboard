@@ -109,7 +109,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 val word = entry.word
                 if (word.length < MIN_WORD_LENGTH) continue
                 if (word.last() !in lastLetters) continue
-                if (word.any { it !in keyCenters }) continue
+                if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
                     keyCenters, keyWidth, trailLength)
                 if (score.isFinite()) scored += ScoredWord(word, score)
@@ -132,7 +132,13 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keyWidth: Float,
         trailLength: Float,
     ): Float {
-        val keys = word.map { keyCenters.getValue(it) }
+        // Apostrophe words match LETTERS ONLY: the apostrophe has no key,
+        // contributes zero geometry, and stays verbatim in the committed
+        // word. Using the letter count everywhere (not word.length) keeps
+        // per-letter means undiluted and leaves frequency as the ONLY
+        // tie-breaker between same-letter candidates (mothers/mother's).
+        val letters = swipeLetters(word)
+        val keys = letters.map { keyCenters.getValue(it) }
 
         // Term 1: ordered letter→trail alignment. The forward scan matches
         // each letter at the minimum of the FIRST approach basin (distance
@@ -202,9 +208,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // a perfect score for free: the denominator floor removes the
         // structural lcs/length = 1.0 advantage that once let abbreviations
         // like "ak" beat real words on straight trails.
-        val lcs = lcsLength(salientKeys, word.toList())
+        val lcs = lcsLength(salientKeys, letters.toList())
         val missedSalient = salientKeys.size - lcs
-        val alignmentScore = lcs.toFloat() / max(word.length, ALIGNMENT_MIN_DENOMINATOR)
+        val alignmentScore = lcs.toFloat() / max(letters.length, ALIGNMENT_MIN_DENOMINATOR)
 
         val frequencyBonus = (ln(dictionary.maxRank + 1.0) - ln(rank.toDouble())) /
             ln(dictionary.maxRank + 1.0)
@@ -215,7 +221,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             alignmentScore * ALIGNMENT_WEIGHT +
             missedSalient * MISSED_SALIENT_WEIGHT -
             frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
-            word.length * LENGTH_BONUS_PER_LETTER +
+            letters.length * LENGTH_BONUS_PER_LETTER +
             unexplainedTail * TAIL_ARC_WEIGHT
     }
 

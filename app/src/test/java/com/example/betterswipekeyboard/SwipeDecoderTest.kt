@@ -166,6 +166,72 @@ class SwipeDecoderTest {
         }
     }
 
+    @Test
+    fun `mothers trail yields the possessive mother's`() {
+        // Same letters, near-tied frequency (mothers zipf 4.32, mother's
+        // 4.37): geometry is identical, so frequency is the ONLY
+        // tie-breaker — this pins both the letter-only matching and the
+        // letter-count length bonus (an apostrophe-paid bonus would be
+        // 15x the frequency gap and decide wrongly).
+        val results = decoder.decode(trailThrough('m', 'o', 't', 'h', 'e', 'r', 's'), keyCenters, KEY_WIDTH)
+        assertEquals("mother's", results.top())
+    }
+
+    @Test
+    fun `dont trail yields the contraction don't`() {
+        // Contractions come free: "don't" outranks "dont" (zipf 6.20 vs
+        // 4.74) and no other d-o-n-t letter sequence competes.
+        val results = decoder.decode(trailThrough('d', 'o', 'n', 't'), keyCenters, KEY_WIDTH)
+        assertEquals("don't", results.top())
+    }
+
+    @Test
+    fun `its trail arbitrates it's over its`() {
+        // The most visible frequency-arbitration decision: "it's" (6.33)
+        // outranks "its" (6.14), as approved by Philip. (Top-1 on this
+        // trail is the pre-existing crossed-letter winner "is" — a
+        // separate, older behavior this feature does not touch; the pin
+        // is on the apostrophe arbitration.)
+        val results = decoder.decode(trailThrough('i', 't', 's'), keyCenters, KEY_WIDTH)
+        val scores = results.associate { it.word to it.score }
+        assertTrue("it's" in scores && "its" in scores)
+        assertTrue(scores.getValue("it's") < scores.getValue("its"))
+    }
+
+    @Test
+    fun `us trail yields us, not u's`() {
+        // "u's" IS in the dictionary (zipf 2.53) with the same letters —
+        // frequency (us 6.04) must crush it. Regression lock.
+        val results = decoder.decode(trailThrough('u', 's'), keyCenters, KEY_WIDTH)
+        assertEquals("us", results.top())
+        val scores = results.associate { it.word to it.score }
+        if ("u's" in scores) {
+            assertTrue(scores.getValue("us") < scores.getValue("u's"))
+        }
+    }
+
+    @Test
+    fun `up trail yields up, not up's`() {
+        // "up's" (zipf 2.57) is in the dictionary but ends at s, so the
+        // endpoint gate excludes it on a u→p trail; the lock guards
+        // against gate regressions.
+        val results = decoder.decode(trailThrough('u', 'p'), keyCenters, KEY_WIDTH)
+        assertEquals("up", results.top())
+    }
+
+    @Test
+    fun `dogs trail arbitrates the plural over dog's`() {
+        // Arbitration is per-word, not a blanket possessive preference:
+        // the plural beats the possessive where it is genuinely more
+        // frequent (dogs 4.77 vs dog's 3.61). (Top-1 on this trail is
+        // "does", a pre-existing plain-word competitor; the pin is on
+        // the plural-vs-possessive decision.)
+        val results = decoder.decode(trailThrough('d', 'o', 'g', 's'), keyCenters, KEY_WIDTH)
+        val scores = results.associate { it.word to it.score }
+        assertTrue("dogs" in scores && "dog's" in scores)
+        assertTrue(scores.getValue("dogs") < scores.getValue("dog's"))
+    }
+
     private fun List<ScoredWord>.top(): String =
         firstOrNull()?.word ?: error("no candidates")
 
