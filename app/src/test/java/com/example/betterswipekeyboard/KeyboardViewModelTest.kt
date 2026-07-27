@@ -227,4 +227,75 @@ class KeyboardViewModelTest {
         assertEquals(KeyboardEffect.CommitText("A"), vm.onAction(KeyboardAction.InsertText("a")))
         assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
     }
+
+    @Test
+    fun `backspace right after a swipe deletes the whole word`() {
+        val vm = viewModel()
+        assertEquals(KeyboardEffect.CommitWord("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+        assertEquals(false, vm.state.value.lastCommitWasSwipe)
+    }
+
+    @Test
+    fun `backspace after a tap deletes one character`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.InsertText("a"))
+        assertEquals(KeyboardEffect.DeleteBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `held backspace deletes the word first then characters`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+        assertEquals(KeyboardEffect.DeleteBackward, vm.onAction(KeyboardAction.Backspace))
+        assertEquals(KeyboardEffect.DeleteBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `another swipe re-arms the swipe flag`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        vm.onAction(KeyboardAction.Backspace) // consumes the flag
+        vm.onAction(KeyboardAction.CommitWord("world"))
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `gesture markers around a swipe do not clear the swipe flag`() {
+        // A real swipe is GestureStarted, CommitWord, GestureEnded — and a
+        // backspace tap is GestureStarted, Backspace, GestureEnded, so the
+        // markers must not touch the flag or the feature never fires.
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.GestureStarted)
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        vm.onAction(KeyboardAction.GestureEnded)
+        vm.onAction(KeyboardAction.GestureStarted)
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+        vm.onAction(KeyboardAction.GestureEnded)
+    }
+
+    @Test
+    fun `any other input action clears the swipe flag`() {
+        val clearingActions = listOf(
+            KeyboardAction.InsertText("a"),
+            KeyboardAction.Enter,
+            KeyboardAction.MoveCursor(-1),
+            KeyboardAction.SwitchLayout(LayoutId.SYMBOLS),
+            KeyboardAction.Shift,
+            KeyboardAction.PasteClip("clip"),
+            KeyboardAction.ToggleProofread,
+        )
+        for (action in clearingActions) {
+            val vm = viewModel()
+            vm.onAction(KeyboardAction.CommitWord("hello"))
+            vm.onAction(action)
+            assertEquals(
+                "after $action",
+                KeyboardEffect.DeleteBackward,
+                vm.onAction(KeyboardAction.Backspace),
+            )
+        }
+    }
 }

@@ -57,6 +57,30 @@ class InputConnectionEditor(
         ic.deleteSurroundingText(precedingGraphemeLength(before), 0)
     }
 
+    /**
+     * Deletes the word a swipe just committed (KeyboardEffect
+     * .DeleteWordBackward): one read of the text before the cursor, one
+     * delete — the same minimal Binder traffic as a char [backspace]. A
+     * live selection wins, as in [backspace]: the selection IS what the
+     * user wants gone, and its presence means the cursor context changed
+     * since the swipe. Joins the delete streak either way, so a
+     * held-backspace repeat (first step word, rest chars) skips the
+     * selection check on the char steps.
+     */
+    fun deleteWordBackward() {
+        val ic = connectionProvider() ?: return
+        if (!ic.getSelectedText(0).isNullOrEmpty()) {
+            deleteStreak = true
+            ic.commitText("", 1)
+            return
+        }
+        deleteStreak = true
+        // Capped read; swiped words are nowhere near this long. A clipped
+        // window degrades to deleting a word suffix, never wrong text.
+        val before = textBeforeCursor(maxChars = WORD_DELETE_MAX_CHARS)
+        ic.deleteSurroundingText(precedingWordLength(before), 0)
+    }
+
     fun enter(editorInfo: EditorInfo?) {
         deleteStreak = false
         val ic = connectionProvider() ?: return
@@ -104,6 +128,9 @@ class InputConnectionEditor(
     }
 
     companion object {
+        /** How much text [deleteWordBackward] reads to measure the word. */
+        private const val WORD_DELETE_MAX_CHARS = 128
+
         /** Pure, unit-tested: the word plus a leading space iff one is needed. */
         fun withLeadingSpace(beforeCursor: String?, word: String): String =
             if (beforeCursor.isNullOrEmpty() || beforeCursor.last().isWhitespace()) {
@@ -147,6 +174,37 @@ class InputConnectionEditor(
             } else {
                 textBeforeCursor.length - boundary
             }
+        }
+
+        /**
+         * Pure, unit-tested: UTF-16 length of the trailing word at the end
+         * of [textBeforeCursor], plus the run of spaces/tabs between it and
+         * the previous word — but never a newline. Swipe commits
+         * auto-insert one leading space ([withLeadingSpace]: "hello" +
+         * swipe → "hello world"), so consuming the space(s) returns the
+         * cursor to the pre-swipe state ("hello"). A newline is always
+         * user-typed — commitWord adds no space after whitespace — and must
+         * survive the word delete ("hello\nworld" → "hello\n").
+         *
+         * Boundaries come from [java.text.BreakIterator]'s word instance
+         * (pure JVM, no Android deps), which never splits a surrogate pair
+         * or grapheme cluster — a trailing emoji is deleted whole or left
+         * alone, never halved into a U+FFFD. Returns 0 when there is
+         * nothing to delete, so callers can pass the result straight to
+         * `deleteSurroundingText`.
+         */
+        fun precedingWordLength(textBeforeCursor: String?): Int {
+            if (textBeforeCursor.isNullOrEmpty()) return 0
+            val iterator = java.text.BreakIterator.getWordInstance()
+            iterator.setText(textBeforeCursor)
+            var start = iterator.preceding(textBeforeCursor.length)
+            if (start == java.text.BreakIterator.DONE) return 0
+            while (start > 0 &&
+                (textBeforeCursor[start - 1] == ' ' || textBeforeCursor[start - 1] == '\t')
+            ) {
+                start--
+            }
+            return textBeforeCursor.length - start
         }
     }
 }
