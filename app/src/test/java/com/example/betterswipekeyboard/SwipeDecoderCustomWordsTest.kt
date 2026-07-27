@@ -13,9 +13,11 @@ import kotlin.random.Random
  * Custom words (user-added via the setup screen) must be swipable, and
  * adding them must not distort decoding of common built-in words.
  *
- * "kimi" is deliberately absent from words_en.txt, and no common English
- * word follows the k→i→m→i key path, so the trail has no built-in
- * competitor.
+ * "kijimi" is deliberately absent from words_en.txt, and no common English
+ * word follows the k→i→j→i→m→i key path, so the trail has no built-in
+ * competitor. (This used to be "kimi", but the wordfreq-based dictionary
+ * now contains it at rank ~22k — a built-in word would make the first test
+ * vacuous.)
  */
 class SwipeDecoderCustomWordsTest {
 
@@ -63,9 +65,9 @@ class SwipeDecoderCustomWordsTest {
 
     @Test
     fun `custom word not in the built-in dictionary decodes first`() {
-        val results = decoderWith("kimi")
-            .decode(realisticTrail('k', 'i', 'm', 'i'), keyCenters, KEY_WIDTH)
-        assertEquals("kimi", results.firstOrNull()?.word)
+        val results = decoderWith("kijimi")
+            .decode(realisticTrail('k', 'i', 'j', 'i', 'm', 'i'), keyCenters, KEY_WIDTH)
+        assertEquals("kijimi", results.firstOrNull()?.word)
     }
 
     @Test
