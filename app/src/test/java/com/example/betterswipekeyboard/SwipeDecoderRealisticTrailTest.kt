@@ -5,6 +5,7 @@ import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import kotlin.math.sin
@@ -83,6 +84,25 @@ class SwipeDecoderRealisticTrailTest {
     fun `realistic trail with neighbor slip decodes jumps`() {
         val results = decoder.decode(realisticTrail('j', 'u', 'm', 'p', 'w'), keyCenters, KEY_WIDTH)
         assertEquals("jumps", results.firstOrNull()?.word)
+    }
+
+    @Test
+    fun `realistic s w i p e trail decodes swipe, not swapped`() {
+        // Real-world regression from the old unordered scorer: "swapped"
+        // parked its letters anywhere (A next to S, double-P on one pass,
+        // D under E) and beat "swipe" (-0.202 vs +0.067). Ordered
+        // alignment + line conformance kill it: after S→W the trail heads
+        // to I, the opposite direction of A, so "swapped"'s A matches far
+        // off-trail and its S→W→A legs violate line conformance.
+        // NOTE: this branch's word list has "swipe" (manual supplement)
+        // but not "swapped" yet (main's rebuilt list has both) — the
+        // score comparison activates once the dictionary branch merges.
+        val results = decoder.decode(realisticTrail('s', 'w', 'i', 'p', 'e'), keyCenters, KEY_WIDTH)
+        assertEquals("swipe", results.firstOrNull()?.word)
+        val scores = results.associate { it.word to it.score }
+        if ("swapped" in scores) {
+            assertTrue(scores.getValue("swipe") < scores.getValue("swapped"))
+        }
     }
 
     private companion object {
