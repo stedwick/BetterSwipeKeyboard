@@ -1,5 +1,6 @@
 package com.example.betterswipekeyboard
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -32,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
+import com.example.betterswipekeyboard.swipe.SwipeTrailCapture
 import com.example.betterswipekeyboard.swipe.parseCustomWords
 import com.example.betterswipekeyboard.ui.theme.BetterSwipeKeyboardTheme
 import kotlinx.coroutines.delay
@@ -301,5 +304,50 @@ fun SetupScreen(modifier: Modifier = Modifier) {
                 .bringIntoViewRequester(requesters[1])
                 .onFocusChanged { focusedField = if (it.isFocused) 1 else -1 },
         )
+
+        // Debug-only swipe trail recording (decoder tuning aid). Debug
+        // builds only, off by default; see SwipeTrailCapture for the
+        // privacy rules. The IME service reads the flag from prefs when the
+        // keyboard next opens.
+        if (BuildConfig.DEBUG) {
+            SwipeTrailCapture.init(context.filesDir, context.getExternalFilesDir(null))
+            val capturePrefs = remember {
+                context.getSharedPreferences(
+                    SwipeTrailCapture.PREFS_NAME, Context.MODE_PRIVATE,
+                )
+            }
+            var captureOn by remember {
+                mutableStateOf(
+                    capturePrefs.getBoolean(SwipeTrailCapture.KEY_ENABLED, false),
+                )
+            }
+            Text(
+                text = stringResource(R.string.trail_capture_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = stringResource(R.string.trail_capture_description),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Switch(
+                    checked = captureOn,
+                    onCheckedChange = { on ->
+                        captureOn = on
+                        capturePrefs.edit()
+                            .putBoolean(SwipeTrailCapture.KEY_ENABLED, on)
+                            .apply()
+                        SwipeTrailCapture.enabled = on
+                    },
+                )
+                Text(stringResource(R.string.trail_capture_toggle))
+            }
+            OutlinedButton(onClick = { SwipeTrailCapture.clear() }) {
+                Text(stringResource(R.string.trail_capture_clear))
+            }
+        }
     }
 }

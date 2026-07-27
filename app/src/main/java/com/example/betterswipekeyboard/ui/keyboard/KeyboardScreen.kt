@@ -66,6 +66,8 @@ import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
+import com.example.betterswipekeyboard.swipe.MAX_COMMIT_SCORE
+import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
@@ -136,13 +138,6 @@ private val SpacebarCursorStep = 14.dp
  */
 private val SpacebarTopHitInset = 6.dp
 
-/**
- * Best-guess commits above this score are too unsure. Below it we commit
- * even a weak match — a slightly-wrong word beats silence (and the AI
- * proofreader, when enabled, cleans it up two seconds later).
- */
-private const val MAX_COMMIT_SCORE = 1.75f
-
 @Composable
 fun KeyboardScreen(
     state: KeyboardState,
@@ -151,6 +146,11 @@ fun KeyboardScreen(
     onSettingsClick: () -> Unit,
     onPermissionHelpClick: () -> Unit,
     bottomClearance: Dp,
+    // Debug trail capture (SwipeTrailCapture): called with the trail, key
+    // geometry and decoder results after every completed swipe. No-op by
+    // default; the service wires it up for decoder tuning.
+    onSwipeDecoded: (List<TimedPoint>, Map<Char, Vec2>, Float, List<ScoredWord>) -> Unit =
+        { _, _, _, _ -> },
 ) {
     val colors = if (isSystemInDarkTheme()) DarkKeyboardColors else LightKeyboardColors
     val geometry = remember { KeyboardGeometry() }
@@ -448,12 +448,18 @@ fun KeyboardScreen(
                                         // service may have rebuilt it with new
                                         // custom words since this composition
                                         // was created.
+                                        val keyCenters = geometry.letterCenters()
+                                        val keyWidth = geometry.keyWidth()
+                                        // topN > 1 so the debug trail capture
+                                        // records the runners-up for tuning;
+                                        // only the top word is ever committed.
                                         val results = decoderProvider().decode(
                                             trail = trail.toList(),
-                                            keyCenters = geometry.letterCenters(),
-                                            keyWidth = geometry.keyWidth(),
-                                            topN = 1,
+                                            keyCenters = keyCenters,
+                                            keyWidth = keyWidth,
+                                            topN = 5,
                                         )
+                                        onSwipeDecoded(trail.toList(), keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
                                         if (best != null && best.score < MAX_COMMIT_SCORE) {
                                             onAction(KeyboardAction.CommitWord(best.word))

@@ -87,22 +87,59 @@ Data flow (deliberately layered, keep it this way):
 
 - `SwipeDecoder` (pure Kotlin, no Android deps): SHARK-style scoring — every
   plausible dictionary word is scored against the trail instead of
-  reconstructing letters from the trail. Salient points (high curvature or
-  low speed) mark deliberate motion; an LCS alignment between salient keys
-  and the candidate word drives the score, plus distance, trail-length and
-  word-frequency terms. A dwell ≥ 300 ms on a key doubles its letter. Lower
-  score = better; `KeyboardScreen` commits the top word when
-  `score < MAX_COMMIT_SCORE` (1.75).
+  reconstructing letters from the trail. Three ORDERED geometric terms make
+  the word's ideal key-to-key path explain the trail in sequence (this is
+  what separates same-start/end words like "my" vs "mummy"):
+  1. Ordered letter alignment: each letter matches at the minimum of the
+     FIRST approach basin after the previous letter's match
+     (`LETTER_DEPART_KEYS` 0.5 ends a basin). Never a global argmin —
+     jitter decides which of two visits to the same key wins, and a stolen
+     match cascades every following letter off the trail ("follow"
+     regressed to "flow" until first-basin matching). Crossed letters
+     ("swipe"'s i) match cheaply on the passing trail.
+  2. Line conformance (SHARK2's tunnel): trail points between two matched
+     letters must follow the key-to-key segment; free inside 0.5
+     key-widths, linear to a 2.0 saturation cap, hard cull at 1.75
+     key-widths (FUTO's legacy decoder). A correctly traced word scores
+     ~zero at ANY trail length — that is why no trail-length gate exists.
+  3. Backtrack penalty: trail steps opposing the current leg's direction
+     cost their length — a zigzag word's reversal leg (M→U→M) on a
+     straight trail.
+  Plus: salient points (high curvature or low speed) mark deliberate
+  motion; an LCS alignment between salient keys and the word, a trail-vs-
+  ideal path-length term (Swype's per-word "expected path length"), a
+  unigram frequency prior, and a small per-letter length bonus (FUTO's
+  β·L). A dwell ≥ 300 ms on a key doubles its letter. Lower score =
+  better; `KeyboardScreen` commits the top word when
+  `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
+  trails — correct swipes at normal speed land up to ~1.8).
 - Tuning rules learned the hard way (the test suite guards these):
   - Measure curvature/speed over **arc-length windows** (0.35 key widths),
     never fixed point counts — real finger trails are dense and jittery, and
     point-count windows see jitter as turns. Salient regions use hysteresis
     (enter 0.45, exit 0.30) and collapse to their peak point.
-  - Do **not** flatten the distance cost or make LCS matching
-    neighbor-tolerant: the score's discrimination collapses and short junk
-    words ("role", "keynote", "ak") beat the intended word.
-  - Two-letter words are candidates only on trails ≤ 3.5 key widths (admits
-    "hi"/"up", keeps "ak"-style junk out of long straight swipes).
+  - Keep matching **ordered and rigid** — no elastic/DTW-style warping and
+    no neighbor-tolerant LCS: SHARK2 tried elasticity and ripped it out
+    (it destroys discrimination in a crowded template space), and our own
+    history agrees (short junk like "role", "keynote" beat intended words
+    when matching was tolerant).
+  - **No trail-length gates.** The old two-letter gate (≤ 3.5 key widths)
+    was deleted: two-letter words compete like any other. Straight-trail
+    ties (e.g. "ak" vs "ask" on a straight A→K line — both tunnel
+    perfectly) are decided by word frequency plus the small per-letter
+    length bonus, per the signed-off rule: on a genuinely straight trail
+    the obvious frequent short word wins. The LCS alignment denominator
+    floors at 3 (`ALIGNMENT_MIN_DENOMINATOR`) so two-letter words no
+    longer get a free perfect alignment — that structural bias is why
+    "ak" once beat "ask".
+  - Geometric costs are per-letter / per-point MEANS (length-normalized by
+    construction; FUTO's γ-exponent normalization is for summed CTC costs
+    and does not apply), plus the per-letter bonus
+    `LENGTH_BONUS_PER_LETTER` (0.02) against residual short-word bias.
+  - Constants marked "tuning starting point" in `SwipeDecoder` come from
+    SHARK2 (tunnel radius), FUTO's legacy decoder (cull) and Sivek & Riley
+    (saturation) — validate them against real trails recorded with
+    `SwipeTrailCapture` before treating them as settled.
   - "swipe" is NOT in the source google-10000-english list; it lives in the
     manual supplement at the end of `words_en.txt`. Check coverage before
     assuming a missing word is a decoder bug.
@@ -369,6 +406,13 @@ selected as the active IME (the app's setup screen has buttons for both).
   false on bare images, which surfaces as the keyboard's UNAVAILABLE panel.
   Real dictation (and the ML Kit `InputType.VOICE` proofread, since AICore
   is absent on emulators) can only be verified on a real device.
+- Debug builds can record real swipe trails for decoder tuning: toggle
+  "Record swipe trails" in the app's setup screen (debug-only, off by
+  default, local only — see `swipe/SwipeTrailCapture.kt`), then pull
+  `adb pull /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl`
+  (external app-specific storage — platform-tools 37 removed `adb run-as`,
+  so internal storage is unreachable on production devices). Each line is
+  one swipe: key geometry, timed trail points, decoder top-5.
 
 ## How the user likes to work
 

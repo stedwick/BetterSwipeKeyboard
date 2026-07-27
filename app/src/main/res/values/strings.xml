@@ -22,4 +22,8 @@
     <string name="custom_words_hint">e.g. kimi, naruto, philip</string>
     <string name="save_words">Save words</string>
     <string name="custom_words_saved">✓ %1$d custom words saved — active next time the keyboard opens</string>
+    <string name="trail_capture_title">Swipe trail recording (debug)</string>
+    <string name="trail_capture_description">Records every swipe (trail + key geometry + decoder results) to a local file for decoder tuning. The file never leaves the device by itself. Pull it with: adb pull /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl — turn off and clear when done.</string>
+    <string name="trail_capture_toggle">Record swipe trails</string>
+    <string name="trail_capture_clear">Clear recorded trails</string>
 </resources>
