@@ -112,7 +112,12 @@ Data flow (deliberately layered, keep it this way):
   β·L). A dwell ≥ 300 ms on a key doubles its letter. Lower score =
   better; `KeyboardScreen` commits the top word when
   `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
-  trails — correct swipes at normal speed land up to ~1.8).
+  trails — correct swipes at normal speed land up to ~1.8). A failed
+  swipe (no candidate below the cutoff) commits nothing and flashes the
+  trail yellow, fading out over ~400 ms (`FailedSwipeFlash` /
+  `FAILED_TRAIL_FADE_MS` in `KeyboardScreen.kt`, segment alpha in
+  `ui/keyboard/TrailFade.kt`) — jQuery-highlight-style "seen but
+  rejected" feedback, purely cosmetic and never input-capturing.
 - Tuning rules learned the hard way (the test suite guards these):
   - Measure curvature/speed over **arc-length windows** (0.35 key widths),
     never fixed point counts — real finger trails are dense and jittery, and
