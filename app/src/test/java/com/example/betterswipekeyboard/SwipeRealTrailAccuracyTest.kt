@@ -132,7 +132,7 @@ class SwipeRealTrailAccuracyTest {
          * the planned frequency-weight tuning lands. Set 2 rose 25 -> 26
          * under the same dictionary and is ratcheted up per the rule.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 5
-        const val MIN_COMMITTED_CORRECT_SET2 = 26
+        const val MIN_COMMITTED_CORRECT_SET1 = 11
+        const val MIN_COMMITTED_CORRECT_SET2 = 32
     }
 }
