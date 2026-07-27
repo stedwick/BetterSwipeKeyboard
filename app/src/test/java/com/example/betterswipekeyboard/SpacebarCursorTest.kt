@@ -1,5 +1,7 @@
 package com.example.betterswipekeyboard
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.QwertyLayout
@@ -66,5 +68,29 @@ class SpacebarCursorTest {
         assertFalse(isSpaceBar(Key(label = "⌫", output = KeyOutput.Backspace)))
         assertFalse(isSpaceBar(Key(label = "⇧", output = KeyOutput.Shift)))
         assertFalse(isSpaceBar(null))
+    }
+
+    // A 300x40 px space bar at (10, 100).
+    private val bar = Rect(10f, 100f, 310f, 140f)
+
+    @Test
+    fun `hit rect keeps the sides and bottom of the visual rect`() {
+        val hit = spacebarHitRect(bar, 12f)
+        assertEquals(bar.left, hit.left, 0.001f)
+        assertEquals(bar.right, hit.right, 0.001f)
+        assertEquals(bar.bottom, hit.bottom, 0.001f)
+    }
+
+    @Test
+    fun `hit rect excludes the top slack strip`() {
+        val hit = spacebarHitRect(bar, 12f)
+        assertFalse(hit.contains(Offset(160f, 105f))) // 5 px into the strip
+        assertTrue(hit.contains(Offset(160f, 113f))) // just below the inset
+    }
+
+    @Test
+    fun `an inset taller than the key accepts nothing`() {
+        val hit = spacebarHitRect(bar, 1000f)
+        assertFalse(hit.contains(Offset(160f, 120f)))
     }
 }
