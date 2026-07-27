@@ -84,6 +84,7 @@ class SwipeRealTrailAccuracyTest {
             val intent = intents.getValue(i)
             val results = decoder.decode(trail, keyCenters, keyWidth, topN = 5)
             val intentRank = results.indexOfFirst { it.word == intent }
+            val intentScore = results.getOrNull(intentRank)?.score
             val top = results.firstOrNull()
             val committed = top?.takeIf { it.score < MAX_COMMIT_SCORE }
             if (intent == "-") {
@@ -98,12 +99,13 @@ class SwipeRealTrailAccuracyTest {
             if (top?.word == intent) topCorrect++
             if (committed?.word == intent) committedCorrect++
             println(
-                "#%-3d intent=%-10s top=%-11s (%6.2f) intentRank=%-3s committed=%-11s %s".format(
+                "#%-3d intent=%-10s top=%-11s (%6.2f) intentRank=%-3s intentScore=%6s committed=%-11s %s".format(
                     i,
                     intent,
                     top?.word ?: "-",
                     top?.score ?: Float.NaN,
                     if (intentRank < 0) "out" else "#${intentRank + 1}",
+                    intentScore?.let { "%.2f".format(it) } ?: "-",
                     committed?.word ?: "(none)",
                     if (committed?.word == intent) "OK" else "MISS",
                 ),
@@ -130,7 +132,7 @@ class SwipeRealTrailAccuracyTest {
          * the planned frequency-weight tuning lands. Set 2 rose 25 -> 26
          * under the same dictionary and is ratcheted up per the rule.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 5
-        const val MIN_COMMITTED_CORRECT_SET2 = 26
+        const val MIN_COMMITTED_CORRECT_SET1 = 11
+        const val MIN_COMMITTED_CORRECT_SET2 = 32
     }
 }

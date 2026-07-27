@@ -566,11 +566,31 @@ class SwipeDecoder(private val dictionary: Dictionary) {
          * keys the finger merely CROSSES as salient (sloppy aim, genuine
          * small turns), so a heavy weight lets impostor words containing
          * those crossed keys ("officer" for "over", "ther" for "the") beat
-         * the intended word — 0.6 per key outweighed even the maximum
-         * frequency bonus (0.35). Halved so one crossed key costs less than
-         * a strong frequency advantage.
+         * the intended word — 0.6 per key outweighed the frequency bonus
+         * (then capped at 0.35). Halved so one crossed key costs less than
+         * a strong frequency advantage. Kept at 0.3 when the frequency
+         * weight was later raised to 3.0: the crossed-key class is exactly
+         * the impostors the stronger prior should overrule.
          */
         const val MISSED_SALIENT_WEIGHT = 0.3f
-        const val FREQUENCY_WEIGHT = 0.35f
+
+        /**
+         * Scale of the unigram frequency prior (Zipf: the bonus is linear
+         * in -ln rank, full weight at rank 1, zero at the list tail).
+         * Calibrated to the 56k wordfreq candidate pool: with the old 20k
+         * list, "in the dictionary" implicitly meant "somewhat common", so
+         * 0.35 sufficed as a tie-breaker. The 56k pool admits thousands of
+         * long-tail words (names, nonce spellings) whose letters tunnel a
+         * sloppy real-hand trail as well as the intended word — measured
+         * geometry edges on captured trails run 0.1-0.8, far past any
+         * 0.35-capped prior — so the prior must carry that discrimination:
+         * on ambiguous trails the frequent word wins, per the signed-off
+         * straight-trail rule. 3.0 recovered all six common-word
+         * regressions of the dictionary swap (very/quick/brown/jumps/over/
+         * lazy back over vey/wick/brien/humps/iver/krazy). The ceiling is
+         * empirical: at 3.5, rank-5 "of" beats "pizzas" on its own trail —
+         * raw frequency starts overwhelming shape. Stop at 3.0.
+         */
+        const val FREQUENCY_WEIGHT = 3.0f
     }
 }
