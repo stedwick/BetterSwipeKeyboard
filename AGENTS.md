@@ -71,10 +71,16 @@ Data flow (deliberately layered, keep it this way):
    of 50 ms after each step's IPC returned.
 6. **Space-bar drag = cursor control** (`SpacebarCursor.kt` +
    `ui/keyboard/SpacebarCursorDrag.kt`): a horizontal drag on the space bar
-   emits `MoveCursor` step deltas (net displacement, 14.dp per step), which
+   emits `MoveCursor` step deltas (net displacement), which
    `InputConnectionEditor.moveCursor` applies as D-pad key events so the
    target app handles grapheme clusters, selection collapse and clamping.
-   Cursor moves consume no one-shot shift and schedule no auto-proofread.
+   Scrubbing is velocity-sensitive: the travel per step shrinks with the
+   EMA-smoothed finger velocity (`spacebarStepSize` zones — 14.dp/char
+   below 200 dp/s, 8.dp mid, 4.dp above 800 dp/s, tuning starting points),
+   and the accumulator is re-anchored on every zone change
+   (`rebaseCursorAnchor`) so already-emitted steps never re-divide
+   retroactively. Cursor moves consume no one-shot shift and schedule no
+   auto-proofread.
    The space bar's touch-acceptance area is inset from the top
    (`SpacebarTopHitInset` in `KeyboardScreen.kt`, hit-testing only — the
    visual key and the stored geometry rects are unchanged), and the slack

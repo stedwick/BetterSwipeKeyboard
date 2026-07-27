@@ -93,4 +93,56 @@ class SpacebarCursorTest {
         val hit = spacebarHitRect(bar, 1000f)
         assertFalse(hit.contains(Offset(160f, 120f)))
     }
+
+    @Test
+    fun `step size zones keep slow drags at the legacy feel`() {
+        assertEquals(SPACEBAR_STEP_SLOW_DP, spacebarStepSize(0f), 1e-6f)
+        assertEquals(SPACEBAR_STEP_SLOW_DP, spacebarStepSize(199.9f), 1e-6f)
+        assertEquals(SPACEBAR_STEP_SLOW_DP, spacebarStepSize(14f), 1e-6f)
+    }
+
+    @Test
+    fun `step size zone boundaries are sharp and ordered`() {
+        assertEquals(SPACEBAR_STEP_MID_DP, spacebarStepSize(200f), 1e-6f)
+        assertEquals(SPACEBAR_STEP_MID_DP, spacebarStepSize(799.9f), 1e-6f)
+        assertEquals(SPACEBAR_STEP_FAST_DP, spacebarStepSize(800f), 1e-6f)
+        assertEquals(SPACEBAR_STEP_FAST_DP, spacebarStepSize(5000f), 1e-6f)
+        assertTrue(SPACEBAR_STEP_SLOW_DP > SPACEBAR_STEP_MID_DP)
+        assertTrue(SPACEBAR_STEP_MID_DP > SPACEBAR_STEP_FAST_DP)
+    }
+
+    @Test
+    fun `velocity smoothing converges and damps jitter`() {
+        // Constant 1000 px/s samples pull the EMA to ~1000.
+        var v = 0f
+        repeat(10) { v = smoothVelocity(v, 1000f, SPACEBAR_VELOCITY_EMA_ALPHA) }
+        assertEquals(1000f, v, 10f)
+        // One jitter spike from rest moves the average by only alpha.
+        assertEquals(
+            400f,
+            smoothVelocity(0f, 1000f, SPACEBAR_VELOCITY_EMA_ALPHA),
+            1e-6f,
+        )
+    }
+
+    @Test
+    fun `rebasing the anchor keeps emitted steps continuous`() {
+        // 20 steps emitted at 14 px/step; at x = 280 the zone switches to
+        // 8 px/step — the step count at the switch point must not move.
+        val anchor = rebaseCursorAnchor(positionX = 280f, emittedSteps = 20, stepPx = 8f)
+        assertEquals(20, dragCursorSteps(280f - anchor, 8f))
+    }
+
+    @Test
+    fun `after a zone change only remaining displacement uses the new rate`() {
+        // Classic bug: re-dividing the whole drag at the new rate. Drag
+        // 280 px at 14 px/step = 20 steps; switch to 8 px/step and continue
+        // 80 px further = exactly 10 more steps, not 45 total.
+        val emitted = dragCursorSteps(280f, 14f)
+        val anchor = rebaseCursorAnchor(280f, emitted, 8f)
+        assertEquals(emitted + 10, dragCursorSteps(360f - anchor, 8f))
+        // And direction reversal at the new rate still nets out.
+        assertEquals(emitted, dragCursorSteps(280f - anchor, 8f))
+        assertEquals(emitted - 5, dragCursorSteps(240f - anchor, 8f))
+    }
 }

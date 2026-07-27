@@ -126,8 +126,10 @@ private val KeyboardBottomClearance = 4.dp
  */
 val KeyboardContentHeight = 226.dp
 
-/** Horizontal travel on the space bar per cursor step (tune on-device). */
-private val SpacebarCursorStep = 14.dp
+// Space-bar cursor scrubbing is velocity-sensitive: the per-step travel
+// lives in SpacebarCursor.kt (spacebarStepSize, SPACEBAR_STEP_SLOW_DP =
+// today's 14.dp feel); the gesture loop passes the density ratio.
+
 
 /**
  * How far the space bar's touch-acceptance area is shrunk from its top edge
@@ -173,7 +175,7 @@ fun KeyboardScreen(
     val unitKeyWidth = with(LocalDensity.current) {
         unitKeyWidthPx(boxSize.width, 3.dp.toPx(), 4.dp.toPx()).toDp()
     }
-    val cursorStepPx = with(LocalDensity.current) { SpacebarCursorStep.toPx() }
+    val pxPerDp = LocalDensity.current.density
     val spacebarTopInsetPx = with(LocalDensity.current) { SpacebarTopHitInset.toPx() }
 
     Box(
@@ -333,7 +335,8 @@ fun KeyboardScreen(
                                                 trackSpacebarDrag(
                                                     down.id,
                                                     down.position,
-                                                    cursorStepPx,
+                                                    down.uptimeMillis,
+                                                    pxPerDp,
                                                     onAction,
                                                 )
                                             } else {
