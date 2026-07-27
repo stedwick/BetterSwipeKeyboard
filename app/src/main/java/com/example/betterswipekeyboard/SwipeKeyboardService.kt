@@ -113,6 +113,14 @@ class SwipeKeyboardService : InputMethodService(),
     /** True when text was committed/deleted since the last proofread attempt. */
     private var textDirtySinceProofread = false
 
+    /**
+     * True between GestureStarted and GestureEnded. While a gesture runs,
+     * typed-mode proofread scheduling is deferred to GestureEnded — a held
+     * backspace would otherwise cancel + relaunch the timer job on every
+     * repeat step.
+     */
+    private var gestureActive = false
+
     // Created lazily on first mic tap (must be created/destroyed on the main
     // thread — the service's callbacks already are).
     private var speechRecognizer: SpeechRecognizer? = null
@@ -293,10 +301,12 @@ class SwipeKeyboardService : InputMethodService(),
         // Finger-up restarts the timer only when there is un-proofread
         // text — no wasted API calls after no-op gestures.
         if (action is KeyboardAction.GestureStarted) {
+            gestureActive = true
             autoProofreadJob?.cancel()
         }
-        if (action is KeyboardAction.GestureEnded && textDirtySinceProofread) {
-            scheduleAutoProofread()
+        if (action is KeyboardAction.GestureEnded) {
+            gestureActive = false
+            if (textDirtySinceProofread) scheduleAutoProofread()
         }
         // Voice start/stop is decided here (permission + availability checks
         // are Android concerns); the ViewModel just records the outcome.
@@ -388,6 +398,11 @@ class SwipeKeyboardService : InputMethodService(),
      */
     private fun scheduleAutoProofread(mode: ProofreadMode = ProofreadMode.TYPED) {
         if (!viewModel.state.value.proofreadAuto) return
+        // Typed-mode scheduling during a gesture is deferred: GestureEnded
+        // schedules when the dirty flag is set. Without this, a held
+        // backspace cancels + relaunches the job on every repeat step.
+        // Voice commits run outside gestures and schedule immediately.
+        if (gestureActive && mode == ProofreadMode.TYPED) return
         autoProofreadJob?.cancel()
         autoProofreadJob = lifecycleScope.launch {
             delay(AUTO_PROOFREAD_DEBOUNCE_MS)

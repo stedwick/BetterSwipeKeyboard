@@ -13,7 +13,19 @@ import kotlin.math.abs
 class InputConnectionEditor(
     private val connectionProvider: () -> InputConnection?,
 ) {
+    /**
+     * True while consecutive [backspace] calls run with no other edit in
+     * between. During such a streak (the held-backspace repeat) the
+     * selection check is skipped: either there was no selection when the
+     * streak started, or the first backspace already deleted it — a new
+     * selection cannot appear while the finger stays on the key. Skipping
+     * it removes one synchronous Binder round-trip per repeat step. Reset
+     * by every other editing method.
+     */
+    private var deleteStreak = false
+
     fun commitText(text: String) {
+        deleteStreak = false
         connectionProvider()?.commitText(text, 1)
     }
 
@@ -23,6 +35,7 @@ class InputConnectionEditor(
      * start of the field).
      */
     fun commitWord(word: String) {
+        deleteStreak = false
         val before = textBeforeCursor(maxChars = 1)
         commitText(withLeadingSpace(before, word))
     }
@@ -30,10 +43,12 @@ class InputConnectionEditor(
     fun backspace() {
         val ic = connectionProvider() ?: return
         // Deleting a selection removes the whole selection, not just one char.
-        if (!ic.getSelectedText(0).isNullOrEmpty()) {
+        if (!deleteStreak && !ic.getSelectedText(0).isNullOrEmpty()) {
+            deleteStreak = true
             ic.commitText("", 1)
             return
         }
+        deleteStreak = true
         // Delete the previous extended grapheme cluster, not one UTF-16 code
         // unit: emoji are surrogate pairs (or longer ZWJ sequences), and
         // deleting a single unit leaves a lone surrogate that renders as
@@ -43,6 +58,7 @@ class InputConnectionEditor(
     }
 
     fun enter(editorInfo: EditorInfo?) {
+        deleteStreak = false
         val ic = connectionProvider() ?: return
         val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
@@ -62,6 +78,7 @@ class InputConnectionEditor(
      * grapheme math for the same guarantees.
      */
     fun moveCursor(steps: Int) {
+        deleteStreak = false
         val ic = connectionProvider() ?: return
         val code = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(abs(steps)) {
@@ -75,6 +92,7 @@ class InputConnectionEditor(
 
     /** Delete [length] chars before the cursor and insert [replacement], as one edit. */
     fun replaceBeforeCursor(length: Int, replacement: String) {
+        deleteStreak = false
         val ic = connectionProvider() ?: return
         ic.beginBatchEdit()
         try {
