@@ -22,6 +22,15 @@ data class TimedPoint(val position: Vec2, val tMillis: Long)
 data class ScoredWord(val word: String, val score: Float)
 
 /**
+ * Best-guess commits at or above this score are too unsure. Below it we
+ * commit even a weak match — a slightly-wrong word beats silence (and the
+ * AI proofreader, when enabled, cleans it up a second later). Single
+ * source of truth: KeyboardScreen applies it at commit time, the
+ * real-trail accuracy harness applies it in tests.
+ */
+const val MAX_COMMIT_SCORE = 1.75f
+
+/**
  * Decodes a swipe trail into the most likely dictionary words.
  *
  * Approach (SHARK-style): instead of reconstructing letters from the trail

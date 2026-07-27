@@ -64,6 +64,7 @@ import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
+import com.example.betterswipekeyboard.swipe.MAX_COMMIT_SCORE
 import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
@@ -125,13 +126,6 @@ val KeyboardContentHeight = 226.dp
 
 /** Horizontal travel on the space bar per cursor step (tune on-device). */
 private val SpacebarCursorStep = 14.dp
-
-/**
- * Best-guess commits above this score are too unsure. Below it we commit
- * even a weak match — a slightly-wrong word beats silence (and the AI
- * proofreader, when enabled, cleans it up a second later).
- */
-private const val MAX_COMMIT_SCORE = 1.75f
 
 @Composable
 fun KeyboardScreen(
