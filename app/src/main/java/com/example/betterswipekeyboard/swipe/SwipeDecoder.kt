@@ -67,7 +67,11 @@ const val MAX_COMMIT_SCORE = 1.8f
  * Deliberate user motion is weighted as stronger evidence: trail points
  * with high curvature or low speed are *salient points*; the key sequence
  * under them must align with the word (LCS), misses cost extra, and a
- * dwell ≥ [DWELL_DOUBLE_MS] doubles a letter ("follow"'s second L).
+ * dwell ≥ [DWELL_DOUBLE_MS] doubles a letter ("follow"'s second L). The
+ * touch-down/lift-off anchors are evidence-free hardcoded salience, so the
+ * distance term skips their salience multiplier, and a mid-trail region
+ * that is merely slow (not curved) counts as a deliberate key visit only
+ * if the finger actually lingered on it.
  *
  * The remaining terms: trail length vs the word's ideal key-to-key path
  * length (Swype's "expected path length" — per word, never a global gate),
@@ -89,8 +93,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     ): List<ScoredWord> {
         if (trail.size < 3 || keyWidth <= 0f) return emptyList()
 
-        val salience = computeSalience(trail, keyWidth)
-        val salientKeys = salientKeySequence(trail, salience, keyCenters, keyWidth)
+        val (salience, slowDominates) = computeSalience(trail, keyWidth)
+        val salientKeys = salientKeySequence(trail, salience, slowDominates, keyCenters, keyWidth)
         val trailLength = polylineLength(trail.map { it.position })
         val start = trail.first().position
         val end = trail.last().position
@@ -161,7 +165,15 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 }
             }
             matchIndices[i] = bestIdx
-            distanceCost += (sqrt(bestSq) / keyWidth) * (1f + SALIENCE_WEIGHT * salience[bestIdx])
+            // Endpoint salience is hardcoded (see computeSalience), not
+            // measured, so it must not amplify the distance cost of a
+            // letter matching the trail's first/last point: real lift-offs
+            // land 0.5-1.5 key-widths off the intended key, and the
+            // multiplier punished exactly those genuine matches.
+            val salienceMultiplier =
+                if (bestIdx == 0 || bestIdx == trail.size - 1) 1f
+                else 1f + SALIENCE_WEIGHT * salience[bestIdx]
+            distanceCost += (sqrt(bestSq) / keyWidth) * salienceMultiplier
             // Letters after the trail's end (clamp) match its last point at
             // full distance — a word longer than the trail must pay for it.
             searchFrom = min(bestIdx + 1, trail.size - 1)
@@ -186,6 +198,22 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         }
         val unexplainedTail =
             min(max(0f, tailArc - TAIL_ARC_FREE_KEYS * keyWidth), TAIL_ARC_CAP_KEYS * keyWidth) / keyWidth
+
+        // Unexplained head: the mirror of the tail above — trail arc BEFORE
+        // the first letter's match. A word whose first letter matches
+        // mid-trail ("it" inside an "out" swipe, matched on the crossing i)
+        // ignores the opening stretch; the intended word's first letter
+        // matches at/near the touch-down and pays nothing. The free slack
+        // is smaller than the tail's: touch-down aim is far better than
+        // lift-off aim (the finger starts on the key deliberately; the
+        // TAIL comment's 0.5-1.5 key-width residue is a lift-off
+        // phenomenon), so only the usual touch-down jitter is free.
+        var headArc = 0f
+        for (p in 0 until matchIndices[0]) {
+            headArc += trail[p].position.distanceTo(trail[p + 1].position)
+        }
+        val unexplainedHead =
+            min(max(0f, headArc - HEAD_ARC_FREE_KEYS * keyWidth), HEAD_ARC_CAP_KEYS * keyWidth) / keyWidth
 
         // Terms 2+3: per-leg line conformance and backtrack penalty. A word
         // whose trail ever leaves the key-to-key corridor by more than
@@ -216,7 +244,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             missedSalient * MISSED_SALIENT_WEIGHT -
             frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
             word.length * LENGTH_BONUS_PER_LETTER +
-            unexplainedTail * TAIL_ARC_WEIGHT
+            unexplainedTail * TAIL_ARC_WEIGHT +
+            unexplainedHead * HEAD_ARC_WEIGHT
     }
 
     /**
@@ -312,15 +341,23 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     // ------------------------------------------------------------------
 
     /**
-     * Curvature + slowness per trail point. Real fingers produce dense, noisy
-     * points, so both are measured over a fixed ARC LENGTH window (a fraction
-     * of a key width) rather than a fixed point count — jitter cancels out
-     * over the window and genuine turns remain.
+     * Curvature + slowness per trail point, plus a per-point flag telling
+     * WHICH of the two dominates. Real fingers produce dense, noisy points,
+     * so both are measured over a fixed ARC LENGTH window (a fraction of a
+     * key width) rather than a fixed point count — jitter cancels out over
+     * the window and genuine turns remain. The flag matters downstream: a
+     * genuine TURN is deliberate motion at any speed, but a slow patch is
+     * only deliberate if the finger actually lingered (a brief slowdown
+     * over a crossed key is just aim noise — see salientKeySequence).
      */
-    private fun computeSalience(trail: List<TimedPoint>, keyWidth: Float): FloatArray {
+    private fun computeSalience(
+        trail: List<TimedPoint>,
+        keyWidth: Float,
+    ): Pair<FloatArray, BooleanArray> {
         val n = trail.size
         val salience = FloatArray(n)
-        if (n < 3) return salience
+        val slowDominates = BooleanArray(n)
+        if (n < 3) return salience to slowDominates
 
         val arc = FloatArray(n) // cumulative arc length
         for (i in 1 until n) {
@@ -348,10 +385,16 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             val slowness = (1f - speed / (avgSpeed + 1e-6f)).coerceIn(0f, 1f)
 
             salience[i] = max(curvature, slowness)
+            slowDominates[i] = slowness > curvature
         }
+        // Hardcoded endpoint anchors: touch-down/lift-off keys are treated
+        // as deliberate with zero measured evidence, so the word has
+        // something to align against at the trail ends. Because the evidence
+        // is fake, it must not amplify COSTS: the distance term skips the
+        // salience multiplier at endpoint match indices (see score()).
         salience[0] = 0.5f
         salience[n - 1] = 0.5f
-        return salience
+        return salience to slowDominates
     }
 
     /**
@@ -364,10 +407,23 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      * [DWELL_DOUBLE_MS] or more) emits its key TWICE — this is how "follow"
      * earns its second L from a single pass over the L key. A merely slow
      * pass keeps moving and does not double.
+     *
+     * Two kinds of regions get extra scrutiny:
+     * - A region touching the trail's start/end is the touch-down/lift-off
+     *   anchor; its salience is the hardcoded 0.5, not measured motion, so
+     *   the region's own peak is jitter — the key is anchored to the actual
+     *   first/last trail point instead.
+     * - A mid-trail region dominated by SLOWNESS (not curvature) counts as
+     *   a deliberate key visit only if the finger lingered at least
+     *   [SLOW_REGION_MIN_DWELL_MS]: a slight slowdown over a crossed key is
+     *   aim noise, and without the gate a "dog" swipe that hesitates over F
+     *   decodes as "fog". A curvature region needs no dwell — a genuine
+     *   turn is deliberate at any speed.
      */
     private fun salientKeySequence(
         trail: List<TimedPoint>,
         salience: FloatArray,
+        slowDominates: BooleanArray,
         keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
     ): List<Char> {
@@ -403,9 +459,15 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             i = j + 1
         }
 
-        val result = mutableListOf<Char>()
+        val keys = mutableListOf<Char>()
         for (region in regions) {
-            val position = trail[region.peak].position
+            val endpoint = region.from == 0 || region.to == n - 1
+            val anchor = when {
+                region.from == 0 -> 0
+                region.to == n - 1 -> n - 1
+                else -> region.peak
+            }
+            val position = trail[anchor].position
             val nearest = keyCenters.minByOrNull { it.value.distanceTo(position) } ?: continue
             if (nearest.value.distanceTo(position) > SALIENT_KEY_RADIUS * keyWidth) continue
 
@@ -425,12 +487,17 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 dwell += trail[p + 1].tMillis - trail[p].tMillis
                 p++
             }
+
+            if (!endpoint && slowDominates[region.peak] && dwell < SLOW_REGION_MIN_DWELL_MS) {
+                continue
+            }
+
             val desired = if (dwell >= DWELL_DOUBLE_MS) 2 else 1
 
-            val alreadyThere = if (result.lastOrNull() == nearest.key) 1 else 0
-            repeat(desired - alreadyThere) { result += nearest.key }
+            val alreadyThere = if (keys.lastOrNull() == nearest.key) 1 else 0
+            repeat(desired - alreadyThere) { keys += nearest.key }
         }
-        return result
+        return keys
     }
 
     // ------------------------------------------------------------------
@@ -501,6 +568,17 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** A region must stay within this radius to count as a hesitation. */
         const val STATIONARY_RADIUS_KEYS = 0.25f
 
+        /**
+         * A mid-trail salient region dominated by slowness (not curvature)
+         * must dwell at least this long to count as a deliberate key visit.
+         * Far below [DWELL_DOUBLE_MS]: doubling a letter needs a genuine
+         * stop, but merely COUNTING the key just needs the slowdown to not
+         * be a brief aim-noise dip. Calibrated on captured real-hand
+         * trails: the slowdown that flipped "dog" to "fog" lingered well
+         * under 60 ms, genuine key visits linger longer.
+         */
+        const val SLOW_REGION_MIN_DWELL_MS = 60L
+
         /** Curvature/speed are measured over this many key-widths of trail. */
         const val CURVATURE_WINDOW_KEYS = 0.35f
 
@@ -545,6 +623,25 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** Weight of the unexplained-tail charge (per key-width past the
          * free slack). */
         const val TAIL_ARC_WEIGHT = 1f
+
+        /**
+         * Trail arc before the first letter's match that is free of charge —
+         * absorbs normal touch-down jitter (see score() for why this is arc
+         * length, and why the slack is smaller than [TAIL_ARC_FREE_KEYS]:
+         * touch-down aim is much better than lift-off aim). Tuning starting
+         * point.
+         */
+        const val HEAD_ARC_FREE_KEYS = 0.5f
+
+        /**
+         * The unexplained-head charge saturates here (same saturation
+         * rationale as [TAIL_ARC_CAP_KEYS]).
+         */
+        const val HEAD_ARC_CAP_KEYS = 2.0f
+
+        /** Weight of the unexplained-head charge (per key-width past the
+         * free slack). */
+        const val HEAD_ARC_WEIGHT = 1f
 
         /** The alignment bonus denominator never goes below this, so a
          * two-letter word cannot score a free perfect alignment. */

@@ -139,8 +139,16 @@ class SwipeRealTrailAccuracyTest {
          * frequency prior and the filter compound (set 1 beats either
          * branch alone: 11 freq-only, 7 filter-only). Set-1 floor raised
          * 11 -> 12, earned.
+         *
+         * feature/endpoint-b3g (endpoint evidence grading: endpoint
+         * re-anchoring, mid-trail dwell gate, no salience multiplier at
+         * endpoint match indices, unexplained-head charge): set 1 #12
+         * "jumps" fixed (the head charge sinks "humps", whose H basin
+         * sits past the touch-down). Set-1 floor raised 12 -> 13, earned.
+         * Set 2 unchanged at 32 — the endpoint classes this package
+         * targets were already held by the frequency prior there.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 12
+        const val MIN_COMMITTED_CORRECT_SET1 = 13
         const val MIN_COMMITTED_CORRECT_SET2 = 32
     }
 }
