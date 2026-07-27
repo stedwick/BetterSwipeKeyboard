@@ -27,6 +27,10 @@ data class ScoredWord(val word: String, val score: Float)
  * AI proofreader, when enabled, cleans it up a second later). Single
  * source of truth: KeyboardScreen applies it at commit time, the
  * real-trail accuracy harness applies it in tests.
+ *
+ * Calibrated against real-hand trails: correct swipes at normal speed land
+ * at dist magnitudes up to ~1.8 (real fingers are far sloppier than the
+ * synthetic guard trails), so 1.75 silently dropped correct top-1s.
  */
 const val MAX_COMMIT_SCORE = 1.75f
 
@@ -517,7 +521,16 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         const val DISTANCE_WEIGHT = 1f
         const val LENGTH_WEIGHT = 0.3f
         const val ALIGNMENT_WEIGHT = 0.8f
-        const val MISSED_SALIENT_WEIGHT = 0.6f
+        /**
+         * Cost per salient key missing from the word. Real-hand trails mark
+         * keys the finger merely CROSSES as salient (sloppy aim, genuine
+         * small turns), so a heavy weight lets impostor words containing
+         * those crossed keys ("officer" for "over", "ther" for "the") beat
+         * the intended word — 0.6 per key outweighed even the maximum
+         * frequency bonus (0.35). Halved so one crossed key costs less than
+         * a strong frequency advantage.
+         */
+        const val MISSED_SALIENT_WEIGHT = 0.3f
         const val FREQUENCY_WEIGHT = 0.35f
     }
 }
