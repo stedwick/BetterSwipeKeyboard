@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.ln
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 data class Vec2(val x: Float, val y: Float) {
@@ -23,16 +24,45 @@ data class ScoredWord(val word: String, val score: Float)
 /**
  * Decodes a swipe trail into the most likely dictionary words.
  *
- * Approach (SHARK-style, simplified): instead of reconstructing letters from
- * the trail directly, every plausible dictionary word is scored against the
- * trail. Each letter of a word only needs *some* trail point near its key —
- * so keys crossed mid-sweep are ignored, and doubled letters match a single
- * pass over one key.
+ * Approach (SHARK-style): instead of reconstructing letters from the trail
+ * directly, every plausible dictionary word is scored against the trail.
+ * Three geometric terms, all ordered — the word's letters must explain the
+ * trail IN SEQUENCE, which is what separates words that share start and end
+ * keys but differ in path shape ("my" straight vs "mummy" zigzag):
  *
- * Deliberate user motion is weighted as stronger evidence: trail points with
- * high curvature (direction change) or low speed are *salient points*. The
- * key sequence under the salient points must align with the candidate word
- * (LCS alignment), and letter mismatches at salient points cost extra.
+ * 1. Ordered letter alignment: letter i matches at the minimum of the
+ *    first approach basin (closest approach, then departure) AFTER
+ *    letter i-1's match — never a global argmin, which lets jitter steal
+ *    matches across repeated visits to the same key. A letter crossed
+ *    mid-sweep ("swipe"'s i) still finds a cheap match on the passing
+ *    trail, but a letter the trail never visits (the second M of "mummy"
+ *    on a straight M→Y swipe) must match far off the trail and pays for it.
+ *    Doubled letters still match a single pass over one key.
+ * 2. Line conformance (SHARK2's "tunnel"): between two consecutive matched
+ *    letters, the trail should follow the straight key-to-key segment.
+ *    Off-segment distance within [TUNNEL_RADIUS_KEYS] is free (users cut
+ *    corners mid-word), beyond it costs linearly up to a saturation cap,
+ *    and any single point past [CONFORMANCE_CULL_KEYS] rejects the word.
+ *    A correctly traced word scores ~zero regardless of trail LENGTH —
+ *    which is why no word-length gate is needed: "am" on a long straight
+ *    A→M trail tunnels perfectly, while a zigzag trail can no longer be
+ *    explained by a two-letter word spanning its endpoints.
+ * 3. Backtrack penalty: trail steps whose direction opposes the current
+ *    key-to-key leg (a zigzag word's reversal leg, e.g. M→U→M) accumulate
+ *    cost proportional to the backwards distance traveled.
+ *
+ * Deliberate user motion is weighted as stronger evidence: trail points
+ * with high curvature or low speed are *salient points*; the key sequence
+ * under them must align with the word (LCS), misses cost extra, and a
+ * dwell ≥ [DWELL_DOUBLE_MS] doubles a letter ("follow"'s second L).
+ *
+ * The remaining terms: trail length vs the word's ideal key-to-key path
+ * length (Swype's "expected path length" — per word, never a global gate),
+ * a unigram frequency prior, and a small per-letter length bonus (FUTO's
+ * rescoring) that counters the structural advantage short words have when
+ * geometry ties. On a straight trail, words whose keys lie on the line
+ * genuinely tie geometrically; frequency + the length bonus break the tie,
+ * so the obvious frequent word wins.
  *
  * Pure Kotlin with no Android dependencies so it is fully unit-testable.
  */
@@ -64,25 +94,16 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         for (first in firstLetters) {
             for (entry in dictionary.startingWith(first)) {
                 val word = entry.word
-                if (!wordLengthAllowed(word.length, trailLength, keyWidth)) continue
+                if (word.length < MIN_WORD_LENGTH) continue
                 if (word.last() !in lastLetters) continue
                 if (word.any { it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
                     keyCenters, keyWidth, trailLength)
-                scored += ScoredWord(word, score)
+                if (score.isFinite()) scored += ScoredWord(word, score)
             }
         }
         return scored.sortedBy { it.score }.take(topN)
     }
-
-    /**
-     * Two-letter words are allowed only for short swipes (the finger barely
-     * traveled). On longer trails, abbreviations like "ak" otherwise outrank
-     * real words — that is why the minimum used to be a flat 3.
-     */
-    private fun wordLengthAllowed(length: Int, trailLength: Float, keyWidth: Float): Boolean =
-        length >= MIN_WORD_LENGTH ||
-            (length == 2 && trailLength <= TWO_LETTER_MAX_TRAIL_KEYS * keyWidth)
 
     // ------------------------------------------------------------------
     // Scoring
@@ -98,43 +119,159 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keyWidth: Float,
         trailLength: Float,
     ): Float {
-        // Per-letter distance to the nearest trail point, weighted by that
-        // point's salience: being far from a *deliberate* turn hurts more
-        // than being far from a fast sweep.
+        val keys = word.map { keyCenters.getValue(it) }
+
+        // Term 1: ordered letter→trail alignment. The forward scan matches
+        // each letter at the minimum of the FIRST approach basin (distance
+        // falls to a minimum, then rises past LETTER_DEPART_KEYS: the visit
+        // is over). A global argmin would be wrong — jitter decides which of
+        // two visits to the same key wins, and a later visit steals the
+        // match, cascading every following letter off the trail. A letter
+        // crossed mid-sweep ("swipe"'s i) still finds a cheap basin on the
+        // passing trail; a letter the trail never visits (the second M of
+        // "mummy" on a straight M→Y swipe) matches far off the trail and
+        // pays for it. Doubled letters still match a single pass.
+        val matchIndices = IntArray(keys.size)
         var distanceCost = 0f
-        for (letter in word) {
-            val center = keyCenters.getValue(letter)
-            var best = Float.MAX_VALUE
-            var bestWeight = 1f
-            trail.forEachIndexed { i, point ->
-                val d = point.position.distanceTo(center)
-                if (d < best) {
-                    best = d
-                    bestWeight = 1f + SALIENCE_WEIGHT * salience[i]
+        var searchFrom = 0
+        for (i in keys.indices) {
+            val center = keys[i]
+            var bestIdx = searchFrom
+            var bestSq = sqDist(trail[searchFrom].position, center)
+            for (p in searchFrom + 1 until trail.size) {
+                val sq = sqDist(trail[p].position, center)
+                if (sq < bestSq) {
+                    bestSq = sq
+                    bestIdx = p
+                } else if (sqrt(sq) - sqrt(bestSq) > LETTER_DEPART_KEYS * keyWidth) {
+                    break // departed the basin: the visit to this key is over
                 }
             }
-            distanceCost += (best / keyWidth) * bestWeight
+            matchIndices[i] = bestIdx
+            distanceCost += (sqrt(bestSq) / keyWidth) * (1f + SALIENCE_WEIGHT * salience[bestIdx])
+            // Letters after the trail's end (clamp) match its last point at
+            // full distance — a word longer than the trail must pay for it.
+            searchFrom = min(bestIdx + 1, trail.size - 1)
         }
-        distanceCost /= word.length
+        distanceCost /= keys.size
+
+        // Terms 2+3: per-leg line conformance and backtrack penalty. A word
+        // whose trail ever leaves the key-to-key corridor by more than
+        // CONFORMANCE_CULL_KEYS is rejected outright.
+        val legCost = legCosts(keys, matchIndices, trail, keyWidth) ?: return Float.POSITIVE_INFINITY
 
         // Trail length should roughly match the word's ideal key-to-key path.
-        val idealLength = polylineLength(word.map { keyCenters.getValue(it) })
+        val idealLength = polylineLength(keys)
         val lengthPenalty = abs(trailLength - idealLength) / (idealLength + keyWidth)
 
         // The keys under the user's deliberate turns/slowdowns should appear
-        // in the word, in order (longest common subsequence).
+        // in the word, in order (longest common subsequence). A two-letter
+        // word can explain at most two deliberate points, so it must not get
+        // a perfect score for free: the denominator floor removes the
+        // structural lcs/length = 1.0 advantage that once let abbreviations
+        // like "ak" beat real words on straight trails.
         val lcs = lcsLength(salientKeys, word.toList())
         val missedSalient = salientKeys.size - lcs
-        val alignmentScore = lcs.toFloat() / word.length
+        val alignmentScore = lcs.toFloat() / max(word.length, ALIGNMENT_MIN_DENOMINATOR)
 
         val frequencyBonus = (ln(dictionary.maxRank + 1.0) - ln(rank.toDouble())) /
             ln(dictionary.maxRank + 1.0)
 
         return distanceCost * DISTANCE_WEIGHT +
+            legCost +
             lengthPenalty * LENGTH_WEIGHT -
             alignmentScore * ALIGNMENT_WEIGHT +
             missedSalient * MISSED_SALIENT_WEIGHT -
-            frequencyBonus.toFloat() * FREQUENCY_WEIGHT
+            frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
+            word.length * LENGTH_BONUS_PER_LETTER
+    }
+
+    /**
+     * Combined line-conformance and backtrack cost over the word's legs
+     * (the trail intervals between consecutive matched letters), or null
+     * when the trail leaves the key-to-key corridor by more than
+     * [CONFORMANCE_CULL_KEYS] — the word cannot explain this trail.
+     *
+     * Conformance: per trail point, distance to the leg's straight
+     * key-to-key segment; free inside the tunnel, linear beyond, saturating
+     * at [CONFORMANCE_CAP_KEYS] so one wild excursion cannot dominate
+     * (Gboard's saturating spatial cost). Averaged per point, so the cost
+     * is independent of trail LENGTH — a long straight trail inside the
+     * corridor scores the same as a short one.
+     *
+     * Backtrack: trail steps moving against the leg's direction accumulate
+     * their length (opposite = full step length, perpendicular = nothing).
+     * Jitter contributes little because its steps are tiny; a zigzag
+     * word's reversal leg on a straight trail is long and fully opposed.
+     */
+    private fun legCosts(
+        keys: List<Vec2>,
+        matchIndices: IntArray,
+        trail: List<TimedPoint>,
+        keyWidth: Float,
+    ): Float? {
+        val tunnel = TUNNEL_RADIUS_KEYS * keyWidth
+        val cap = CONFORMANCE_CAP_KEYS * keyWidth
+        val cull = CONFORMANCE_CULL_KEYS * keyWidth
+        var conformanceSum = 0f
+        var conformancePoints = 0
+        var backtrack = 0f
+
+        for (leg in 0 until keys.size - 1) {
+            val from = matchIndices[leg]
+            val to = matchIndices[leg + 1]
+            val a = keys[leg]
+            val b = keys[leg + 1]
+            val legX = b.x - a.x
+            val legY = b.y - a.y
+            val legLenSq = legX * legX + legY * legY
+
+            for (p in from..to) {
+                val d = pointToSegment(trail[p].position, a, b, legX, legY, legLenSq)
+                if (d > cull) return null
+                conformanceSum += if (d <= tunnel) 0f else min(d, cap) - tunnel
+                conformancePoints++
+            }
+
+            if (legLenSq > 1e-6f) {
+                val legLen = sqrt(legLenSq)
+                for (p in from until to) {
+                    val stepX = trail[p + 1].position.x - trail[p].position.x
+                    val stepY = trail[p + 1].position.y - trail[p].position.y
+                    val stepLen = sqrt(stepX * stepX + stepY * stepY)
+                    if (stepLen < 1e-6f) continue
+                    val cosine = (stepX * legX + stepY * legY) / (stepLen * legLen)
+                    if (cosine < 0f) backtrack += stepLen * (-cosine)
+                }
+            }
+        }
+
+        val conformance = if (conformancePoints == 0) 0f
+        else conformanceSum / conformancePoints / keyWidth
+        return conformance * CONFORMANCE_WEIGHT + (backtrack / keyWidth) * BACKTRACK_WEIGHT
+    }
+
+    /** Squared distance, for argmin loops that only need ordering. */
+    private fun sqDist(a: Vec2, b: Vec2): Float {
+        val dx = a.x - b.x
+        val dy = a.y - b.y
+        return dx * dx + dy * dy
+    }
+
+    /** Distance from p to the segment a→b (b−a passed precomputed). */
+    private fun pointToSegment(
+        p: Vec2,
+        a: Vec2,
+        b: Vec2,
+        abX: Float,
+        abY: Float,
+        abLenSq: Float,
+    ): Float {
+        if (abLenSq < 1e-6f) return p.distanceTo(a) // doubled letter: segment is a point
+        val t = (((p.x - a.x) * abX + (p.y - a.y) * abY) / abLenSq).coerceIn(0f, 1f)
+        val dx = p.x - (a.x + t * abX)
+        val dy = p.y - (a.y + t * abY)
+        return sqrt(dx * dx + dy * dy)
     }
 
     // ------------------------------------------------------------------
@@ -311,11 +448,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** How long the finger must linger on a key for a doubled letter. */
         const val DWELL_DOUBLE_MS = 300L
 
-        /** Swiping is not worth it for very short words; they are tapped. */
-        const val MIN_WORD_LENGTH = 3
-
-        /** Two-letter words are allowed only on trails this short (key widths). */
-        const val TWO_LETTER_MAX_TRAIL_KEYS = 3.5f
+        /** One-letter swipes are taps; every shorter word is excluded. */
+        const val MIN_WORD_LENGTH = 2
 
         /** Extra cost multiplier applied at fully-salient points. */
         const val SALIENCE_WEIGHT = 2f
@@ -323,11 +457,53 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /** A salient point counts as an intended key within this radius. */
         const val SALIENT_KEY_RADIUS = 0.7f
 
+        /**
+         * A letter's visit ends once the trail has departed this many
+         * key-widths past its closest approach (first-basin matching — see
+         * score()). Larger = more tolerance for overshoot-and-return, but
+         * weaker shape discrimination. Tuning starting point.
+         */
+        const val LETTER_DEPART_KEYS = 0.5f
+
         /** A region must stay within this radius to count as a hesitation. */
         const val STATIONARY_RADIUS_KEYS = 0.25f
 
         /** Curvature/speed are measured over this many key-widths of trail. */
         const val CURVATURE_WINDOW_KEYS = 0.35f
+
+        // Tuning starting points below — sources noted per constant; they
+        // still need validation against real recorded trails.
+
+        /**
+         * Off-path distance within this many key-widths is free (users cut
+         * corners mid-word). SHARK2's tunnel was "one key radius".
+         */
+        const val TUNNEL_RADIUS_KEYS = 0.5f
+
+        /** Per-point conformance cost saturates here (Gboard: Sivek & Riley). */
+        const val CONFORMANCE_CAP_KEYS = 2.0f
+
+        /** A single trail point this far off its leg rejects the word
+         * (FUTO's legacy decoder culls at ~1.8 key-widths). */
+        const val CONFORMANCE_CULL_KEYS = 1.75f
+
+        /** Weight of the line-conformance term — the primary shape signal. */
+        const val CONFORMANCE_WEIGHT = 1f
+
+        /** Weight of backwards-travel distance along a leg. */
+        const val BACKTRACK_WEIGHT = 1f
+
+        /** The alignment bonus denominator never goes below this, so a
+         * two-letter word cannot score a free perfect alignment. */
+        const val ALIGNMENT_MIN_DENOMINATOR = 3
+
+        /**
+         * Per-letter score bonus (FUTO's β·L term): counters the structural
+         * advantage short words have when geometry ties. Kept small so word
+         * frequency dominates the tie-break, per the signed-off rule: on a
+         * genuinely straight trail the obvious frequent short word wins.
+         */
+        const val LENGTH_BONUS_PER_LETTER = 0.02f
 
         const val DISTANCE_WEIGHT = 1f
         const val LENGTH_WEIGHT = 0.3f

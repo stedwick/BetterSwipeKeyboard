@@ -128,11 +128,42 @@ class SwipeDecoderTest {
     }
 
     @Test
-    fun `two letter abbreviations stay excluded on long trails`() {
-        // a→k is a 7-key-wide straight line: "ak" must not beat "ask".
+    fun `my beats mummy on a straight m to y trail`() {
+        // The straight M→Y diagonal passes within ~0.7 key-widths of U, but
+        // "mummy" needs the trail to zigzag M→U→M→Y — ordered alignment and
+        // line conformance must reject it even though every one of its
+        // letters is near SOME trail point (the old unordered scorer's bug).
+        val results = decoder.decode(trailThrough('m', 'y'), keyCenters, KEY_WIDTH)
+        assertEquals("my", results.top())
+    }
+
+    @Test
+    fun `mummy wins on a zigzag m u m y trail`() {
+        val results = decoder.decode(trailThrough('m', 'u', 'm', 'y'), keyCenters, KEY_WIDTH)
+        assertEquals("mummy", results.top())
+    }
+
+    @Test
+    fun `am wins on a long straight a to m trail`() {
+        // A→M spans ~7 key-widths: no trail-length gate may exclude the
+        // obvious word when the trail is straight (both endpoint keys aim
+        // true and the trail never leaves the A→M corridor).
+        val results = decoder.decode(trailThrough('a', 'm'), keyCenters, KEY_WIDTH)
+        assertEquals("am", results.top())
+    }
+
+    @Test
+    fun `ak still loses to ask on the straight a to k trail`() {
+        // Both words tunnel perfectly on this straight home-row trail, so
+        // the tie is broken by frequency (ask rank 723 vs ak rank 4917)
+        // plus the length bonus — the mechanism that replaced the old
+        // two-letter trail-length gate.
         val results = decoder.decode(trailThrough('a', 'k'), keyCenters, KEY_WIDTH)
         assertEquals("ask", results.top())
-        assertTrue(results.none { it.word.length == 2 })
+        val scores = results.associate { it.word to it.score }
+        if ("ak" in scores) {
+            assertTrue(scores.getValue("ask") < scores.getValue("ak"))
+        }
     }
 
     private fun List<ScoredWord>.top(): String =
