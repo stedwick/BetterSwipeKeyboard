@@ -75,6 +75,13 @@ Data flow (deliberately layered, keep it this way):
    `InputConnectionEditor.moveCursor` applies as D-pad key events so the
    target app handles grapheme clusters, selection collapse and clamping.
    Cursor moves consume no one-shot shift and schedule no auto-proofread.
+   The space bar's touch-acceptance area is inset from the top
+   (`SpacebarTopHitInset` in `KeyboardScreen.kt`, hit-testing only — the
+   visual key and the stored geometry rects are unchanged), and the slack
+   strip counts as "no key": drags starting there (or in any dead space of
+   the letters layout) collect a swipe trail, so an overshoot word-swipe
+   starting just above the space bar decodes instead of being eaten by the
+   cursor drag. Junk gap trails are filtered by `MAX_COMMIT_SCORE`.
 
 ### Swipe decoding (`swipe/`)
 

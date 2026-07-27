@@ -58,6 +58,7 @@ import com.example.betterswipekeyboard.R
 import com.example.betterswipekeyboard.ShiftMode
 import com.example.betterswipekeyboard.VoiceState
 import com.example.betterswipekeyboard.isSpaceBar
+import com.example.betterswipekeyboard.spacebarHitRect
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
@@ -127,6 +128,15 @@ val KeyboardContentHeight = 226.dp
 private val SpacebarCursorStep = 14.dp
 
 /**
+ * How far the space bar's touch-acceptance area is shrunk from its top edge
+ * (hit-testing only — the visual key and the stored geometry rects are
+ * unchanged). A word-swipe that starts a few px above the space bar — thumb
+ * overshoot aiming at the bottom letter row — must become a letter swipe,
+ * not a space-bar cursor drag that swallows the gesture. Tune on-device.
+ */
+private val SpacebarTopHitInset = 6.dp
+
+/**
  * Best-guess commits above this score are too unsure. Below it we commit
  * even a weak match — a slightly-wrong word beats silence (and the AI
  * proofreader, when enabled, cleans it up two seconds later).
@@ -164,6 +174,7 @@ fun KeyboardScreen(
         unitKeyWidthPx(boxSize.width, 3.dp.toPx(), 4.dp.toPx()).toDp()
     }
     val cursorStepPx = with(LocalDensity.current) { SpacebarCursorStep.toPx() }
+    val spacebarTopInsetPx = with(LocalDensity.current) { SpacebarTopHitInset.toPx() }
 
     Box(
         modifier = Modifier
@@ -239,7 +250,22 @@ fun KeyboardScreen(
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
                                     onAction(KeyboardAction.GestureStarted)
-                                    val downKey = geometry.keyAt(down.position)
+                                    // Space-bar overshoot slack: a down in
+                                    // the bar's top slack strip counts as
+                                    // "no key", so an overshoot word-swipe
+                                    // starting there collects a trail (see
+                                    // the DRAG branch) instead of being
+                                    // eaten by the space-bar cursor drag.
+                                    // Missing rect (can't happen for a
+                                    // registered key) keeps the space bar.
+                                    val hitKey = geometry.keyAt(down.position)
+                                    val downKey = hitKey?.takeUnless {
+                                        isSpaceBar(it) &&
+                                            geometry.boundsOf(it)?.let { rect ->
+                                                spacebarHitRect(rect, spacebarTopInsetPx)
+                                                    .contains(down.position)
+                                            } == false
+                                    }
                                     pressedKey = downKey
                                     val trail = mutableListOf(
                                         TimedPoint(down.position.toVec2(), down.uptimeMillis),
@@ -269,9 +295,16 @@ fun KeyboardScreen(
 
                                         GestureOutcome.DRAG ->
                                             if (layout.id == LayoutId.LETTERS &&
-                                                downKey?.isLetter() == true
+                                                (downKey == null || downKey.isLetter())
                                             ) {
-                                                // Phase 2 (swipe): collect the trail until finger lifts.
+                                                // Phase 2 (swipe): collect the
+                                                // trail until finger lifts.
+                                                // Drags starting on dead space
+                                                // (key gaps, the space bar's top
+                                                // slack strip) collect a trail
+                                                // too — overshoot swipes must
+                                                // decode; MAX_COMMIT_SCORE
+                                                // filters junk trails.
                                                 while (true) {
                                                     val event = awaitPointerEvent()
                                                     val change = event.changes

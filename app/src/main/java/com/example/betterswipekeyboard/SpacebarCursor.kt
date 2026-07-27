@@ -1,5 +1,6 @@
 package com.example.betterswipekeyboard
 
+import androidx.compose.ui.geometry.Rect
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 
@@ -16,6 +17,23 @@ import com.example.betterswipekeyboard.layout.KeyOutput
  */
 fun isSpaceBar(key: Key?): Boolean =
     (key?.output as? KeyOutput.Text)?.text == " "
+
+/**
+ * The space bar's touch-acceptance rect: its visual rect with the top edge
+ * inset by [topInsetPx]. A word-swipe starting a few px above the space bar
+ * (thumb overshoot aiming at the bottom letter row) must become a letter
+ * swipe, not a space-bar cursor drag — so space-bar taps and drags are
+ * hit-tested against this shrunken rect, while the visual key and the
+ * stored decoder geometry keep the true bounds. Clamped to an empty rect
+ * (top == bottom, contains nothing) when the inset exceeds the key height.
+ */
+fun spacebarHitRect(visualRect: Rect, topInsetPx: Float): Rect =
+    Rect(
+        visualRect.left,
+        (visualRect.top + topInsetPx).coerceAtMost(visualRect.bottom),
+        visualRect.right,
+        visualRect.bottom,
+    )
 
 /**
  * Net horizontal finger displacement → cursor steps (truncating, signed).
