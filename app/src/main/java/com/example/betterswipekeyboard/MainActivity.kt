@@ -349,5 +349,11 @@ fun SetupScreen(modifier: Modifier = Modifier) {
                 Text(stringResource(R.string.trail_capture_clear))
             }
         }
+
+        // License attribution for the bundled wordfreq word list (NOTICE).
+        Text(
+            text = stringResource(R.string.dictionary_credit),
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
