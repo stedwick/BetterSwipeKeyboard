@@ -27,9 +27,9 @@ import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.clipboard.ClipEntry
 import com.example.betterswipekeyboard.layout.LayoutId
 
-// Matches the letter-rows block (4 x 52dp rows + 3 x 6dp gaps) so switching
-// between letters and the clipboard panel never resizes the IME window.
-private val ClipboardPanelHeight = 226.dp
+// The panel pins to KeyboardContentHeight (KeyboardScreen.kt, same package)
+// so switching between letters and the clipboard panel never resizes the
+// IME window.
 
 /**
  * The clipboard-history panel: recent clips newest first, tap to paste
@@ -52,7 +52,7 @@ fun ClipboardPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(ClipboardPanelHeight),
+            .height(KeyboardContentHeight),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (entries.isEmpty()) {

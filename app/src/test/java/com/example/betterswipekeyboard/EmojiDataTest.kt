@@ -1,6 +1,7 @@
 package com.example.betterswipekeyboard
 
 import com.example.betterswipekeyboard.layout.EmojiCategories
+import com.example.betterswipekeyboard.layout.categoryJumpIndex
 import com.example.betterswipekeyboard.layout.categoryStartIndex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -52,6 +53,28 @@ class EmojiDataTest {
         for (i in 1 until EmojiCategories.size) {
             val diff = categoryStartIndex(EmojiCategories, i) - categoryStartIndex(EmojiCategories, i - 1)
             assertEquals(1 + EmojiCategories[i - 1].emojis.size, diff)
+        }
+    }
+
+    @Test
+    fun `jump index adds fixed leading items without suggestions`() {
+        // "Categories" label + category bar = 2 full-span leading items.
+        EmojiCategories.indices.forEach { i ->
+            assertEquals(
+                categoryStartIndex(EmojiCategories, i) + 2,
+                categoryJumpIndex(EmojiCategories, hasSuggestions = false, categoryIndex = i),
+            )
+        }
+    }
+
+    @Test
+    fun `jump index adds suggestion label and row when suggestions visible`() {
+        // Plus "Suggestions" label + suggestion row = 4 leading items.
+        EmojiCategories.indices.forEach { i ->
+            assertEquals(
+                categoryStartIndex(EmojiCategories, i) + 4,
+                categoryJumpIndex(EmojiCategories, hasSuggestions = true, categoryIndex = i),
+            )
         }
     }
 }

@@ -152,6 +152,14 @@ Data flow (deliberately layered, keep it this way):
   hides when empty; the panel height is fixed, so the row never resizes
   the IME window. Suggestion taps commit via the same
   `KeyboardAction.InsertText` path as grid taps.
+- `EmojiPanel` is ONE scroll surface: a single `LazyVerticalGrid` holds
+  the suggestion block (label + row, only while suggestions exist), the
+  "Categories" label, the category bar, and all sections as items; only
+  the ABC/backspace bottom bar is pinned. Category jumps therefore
+  depend on whether suggestions are visible — use
+  `categoryJumpIndex(categories, hasSuggestions, index)` (pure, tested
+  in `EmojiDataTest`), never `categoryStartIndex` plus a hardcoded
+  offset; the two must stay in sync with the grid's item order.
 
 ### AI proofreading (`proofread/`)
 

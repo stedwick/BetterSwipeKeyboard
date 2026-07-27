@@ -28,20 +28,21 @@ import androidx.compose.ui.unit.sp
 import com.example.betterswipekeyboard.KeyboardAction
 import com.example.betterswipekeyboard.layout.EmojiCategories
 import com.example.betterswipekeyboard.layout.LayoutId
-import com.example.betterswipekeyboard.layout.categoryStartIndex
+import com.example.betterswipekeyboard.layout.categoryJumpIndex
 import kotlinx.coroutines.launch
 
-// Matches the letter-rows block (4 x 52dp rows + 3 x 6dp gaps) so switching
-// between letters and emoji never resizes the IME window.
-private val EmojiPanelHeight = 226.dp
+// The panel pins to KeyboardContentHeight (KeyboardScreen.kt, same package)
+// so switching between letters and emoji never resizes the IME window.
 private const val GRID_COLUMNS = 8
 
 /**
- * The emoji panel: an optional suggestion row (keyword-matched from the
- * text before the cursor, hidden when there are no matches), a category
- * bar, a single scrollable grid of all categories (Gboard-style
- * jump-to-section, no per-category pages), and a bottom bar with ABC
- * (back to letters) and backspace.
+ * The emoji panel: ONE scroll surface (a single grid) holding the optional
+ * suggestion block (keyword-matched from the text before the cursor,
+ * hidden when there are no matches), the "Categories" label, the category
+ * bar, and all emoji sections back to back (Gboard-style jump-to-section,
+ * no per-category pages) — plus a fixed bottom bar with ABC (back to
+ * letters) and backspace. Unlike Gboard, the category bar scrolls away
+ * with the content; only the bottom bar is pinned.
  *
  * Rendered as a sibling of the letter gesture container, never inside it:
  * the panel needs its own scroll/click handling and a swipe over the grid
@@ -61,65 +62,14 @@ fun EmojiPanel(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(EmojiPanelHeight),
+            .height(KeyboardContentHeight),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Suggestion row: keyword-matched emoji for the text before the
-        // cursor, hidden entirely when there is nothing to suggest. The
-        // panel height stays fixed — the weighted grid below absorbs the
-        // row, so the IME window never resizes when it appears. Tapping a
-        // suggestion commits exactly like a grid tap.
-        if (suggestions.isNotEmpty()) {
-            SectionLabel(text = "Suggestions", colors = colors)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                suggestions.forEach { emoji ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(colors.keyBackground)
-                            .clickable { onAction(KeyboardAction.InsertText(emoji)) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(text = emoji, fontSize = 22.sp)
-                    }
-                }
-            }
-        }
-
-        // Category bar: tap an icon to jump the grid to that section.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            EmojiCategories.forEachIndexed { index, category ->
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(32.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.keyBackground)
-                        .clickable {
-                            scope.launch {
-                                gridState.animateScrollToItem(
-                                    categoryStartIndex(EmojiCategories, index),
-                                )
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(text = category.icon, fontSize = 16.sp)
-                }
-            }
-        }
-
-        // One grid, all categories back to back, each with a full-span
-        // header. Item order must match categoryStartIndex's accounting
-        // (1 header + N emojis per category) or jumps land mid-section.
+        // ONE scroll surface: the suggestion block (when present), the
+        // Categories label, the category bar and every emoji section are
+        // items of a single grid, so scrolling uses the whole panel. The
+        // full-span leading items must match categoryJumpIndex's
+        // accounting exactly, or category jumps land mid-list.
         LazyVerticalGrid(
             columns = GridCells.Fixed(GRID_COLUMNS),
             state = gridState,
@@ -129,6 +79,67 @@ fun EmojiPanel(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // Suggestion row: keyword-matched emoji for the text before
+            // the cursor, hidden entirely (label and all) when there is
+            // nothing to suggest. Tapping a suggestion commits exactly
+            // like a grid tap.
+            if (suggestions.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    SectionLabel(text = "Suggestions", colors = colors)
+                }
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        suggestions.forEach { emoji ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(colors.keyBackground)
+                                    .clickable { onAction(KeyboardAction.InsertText(emoji)) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(text = emoji, fontSize = 22.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Category bar: tap an icon to jump the grid to that section.
+            // It deliberately scrolls away with the content (one scroll
+            // surface, per request) instead of staying pinned like Gboard.
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SectionLabel(text = "Categories", colors = colors)
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    EmojiCategories.forEachIndexed { index, category ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(colors.keyBackground)
+                                .clickable {
+                                    scope.launch {
+                                        gridState.animateScrollToItem(
+                                            categoryJumpIndex(
+                                                EmojiCategories,
+                                                suggestions.isNotEmpty(),
+                                                index,
+                                            ),
+                                        )
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(text = category.icon, fontSize = 16.sp)
+                        }
+                    }
+                }
+            }
+
             EmojiCategories.forEach { category ->
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     SectionLabel(
