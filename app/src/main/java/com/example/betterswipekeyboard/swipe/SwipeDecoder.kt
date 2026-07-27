@@ -168,6 +168,25 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         }
         distanceCost /= keys.size
 
+        // Unexplained tail: trail arc length AFTER the last letter's
+        // match. A word that tunnels only a PREFIX of the trail ("mit"
+        // inside a "mother" swipe, "serif" inside "served") parks its
+        // last letter mid-trail and ignores the rest. The intended
+        // word's last letter matches at/near the trail end and pays
+        // nothing — even when the finger UNDERSHOOTS, because the basin
+        // then clamps to the trail's last point and the tail arc is 0.
+        // That is what makes this safe where an endpoint-DISTANCE cost
+        // was not: real lift-offs land 0.5-1.5 key-widths from the last
+        // key, so endpoint residue punished intended words exactly like
+        // impostors (tried on real trails, reverted — twice). The free
+        // slack absorbs genuine overshoot past the last key.
+        var tailArc = 0f
+        for (p in matchIndices[matchIndices.size - 1] until trail.size - 1) {
+            tailArc += trail[p].position.distanceTo(trail[p + 1].position)
+        }
+        val unexplainedTail =
+            min(max(0f, tailArc - TAIL_ARC_FREE_KEYS * keyWidth), TAIL_ARC_CAP_KEYS * keyWidth) / keyWidth
+
         // Terms 2+3: per-leg line conformance and backtrack penalty. A word
         // whose trail ever leaves the key-to-key corridor by more than
         // CONFORMANCE_CULL_KEYS is rejected outright.
@@ -196,7 +215,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             alignmentScore * ALIGNMENT_WEIGHT +
             missedSalient * MISSED_SALIENT_WEIGHT -
             frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
-            word.length * LENGTH_BONUS_PER_LETTER
+            word.length * LENGTH_BONUS_PER_LETTER +
+            unexplainedTail * TAIL_ARC_WEIGHT
     }
 
     /**
@@ -505,6 +525,26 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         /** Weight of backwards-travel distance along a leg. */
         const val BACKTRACK_WEIGHT = 1f
+
+        /**
+         * Trail arc past the last letter's match that is free of charge —
+         * absorbs genuine overshoot past the last key (see score() for why
+         * this is arc length and not endpoint distance). Tuning starting
+         * point.
+         */
+        const val TAIL_ARC_FREE_KEYS = 1.5f
+
+        /**
+         * The unexplained-tail charge saturates here (same saturation
+         * rationale as [CONFORMANCE_CAP_KEYS]): on wandering trails every
+         * candidate's last basin ends mid-trail, and an unbounded linear
+         * charge destroyed score calibration (correct words at 10+).
+         */
+        const val TAIL_ARC_CAP_KEYS = 2.0f
+
+        /** Weight of the unexplained-tail charge (per key-width past the
+         * free slack). */
+        const val TAIL_ARC_WEIGHT = 1f
 
         /** The alignment bonus denominator never goes below this, so a
          * two-letter word cannot score a free perfect alignment. */

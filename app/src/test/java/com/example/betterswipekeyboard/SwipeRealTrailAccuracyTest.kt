@@ -120,6 +120,6 @@ class SwipeRealTrailAccuracyTest {
     private companion object {
         /** Best achieved so far per set — raise on every win, never lower. */
         const val MIN_COMMITTED_CORRECT_SET1 = 11
-        const val MIN_COMMITTED_CORRECT_SET2 = 23
+        const val MIN_COMMITTED_CORRECT_SET2 = 25
     }
 }
