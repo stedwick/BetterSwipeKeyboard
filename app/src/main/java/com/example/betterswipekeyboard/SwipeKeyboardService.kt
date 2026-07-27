@@ -189,7 +189,7 @@ class SwipeKeyboardService : InputMethodService(),
         openRouterProofreader = OpenRouterProofreader(apiKeyStore)
         clipboardManager = getSystemService(ClipboardManager::class.java)
         clipboardManager.addPrimaryClipChangedListener(clipChangedListener)
-        SwipeTrailCapture.init(filesDir)
+        SwipeTrailCapture.init(filesDir, getExternalFilesDir(null))
         lifecycleScope.launch { refreshProofreader() }
     }
 

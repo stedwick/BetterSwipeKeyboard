@@ -310,7 +310,7 @@ fun SetupScreen(modifier: Modifier = Modifier) {
         // privacy rules. The IME service reads the flag from prefs when the
         // keyboard next opens.
         if (BuildConfig.DEBUG) {
-            SwipeTrailCapture.init(context.filesDir)
+            SwipeTrailCapture.init(context.filesDir, context.getExternalFilesDir(null))
             val capturePrefs = remember {
                 context.getSharedPreferences(
                     SwipeTrailCapture.PREFS_NAME, Context.MODE_PRIVATE,

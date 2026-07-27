@@ -394,8 +394,10 @@ selected as the active IME (the app's setup screen has buttons for both).
 - Debug builds can record real swipe trails for decoder tuning: toggle
   "Record swipe trails" in the app's setup screen (debug-only, off by
   default, local only — see `swipe/SwipeTrailCapture.kt`), then pull
-  `adb run-as com.example.betterswipekeyboard cat files/swipe_trails.jsonl`.
-  Each line is one swipe: key geometry, timed trail points, decoder top-5.
+  `adb pull /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl`
+  (external app-specific storage — platform-tools 37 removed `adb run-as`,
+  so internal storage is unreachable on production devices). Each line is
+  one swipe: key geometry, timed trail points, decoder top-5.
 
 ## How the user likes to work
 

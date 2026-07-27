@@ -57,4 +57,52 @@ class SwipeTrailCaptureTest {
         assertEquals("a\"b\\c", JSONObject(line).getJSONArray("results")
             .getJSONArray(0).getString(0))
     }
+
+    @Test
+    fun `init migrates a legacy internal log into the external file`() {
+        val internal = createTempDir(suffix = "internal")
+        val external = createTempDir(suffix = "external")
+        try {
+            val legacy = java.io.File(internal, SwipeTrailCapture.LOG_FILE_NAME)
+            legacy.writeText("{\"ts\":1}\n")
+
+            SwipeTrailCapture.init(internal, external)
+
+            val externalLog = java.io.File(external, SwipeTrailCapture.LOG_FILE_NAME)
+            assertTrue("legacy file must be deleted after migration", !legacy.exists())
+            assertEquals("{\"ts\":1}\n", externalLog.readText())
+
+            // New records go to the external file, appended after migrated lines.
+            SwipeTrailCapture.enabled = true
+            SwipeTrailCapture.record(
+                trail = listOf(TimedPoint(Vec2(1f, 2f), 0L)),
+                keyCenters = mapOf('a' to Vec2(1f, 2f)),
+                keyWidth = 100f,
+                results = listOf(ScoredWord("a", 0f)),
+            )
+            val lines = externalLog.readText().lines().filter { it.isNotBlank() }
+            assertEquals(2, lines.size)
+            assertTrue(lines[0].contains("\"ts\":1"))
+            assertTrue(lines[1].contains("\"trail\""))
+        } finally {
+            SwipeTrailCapture.enabled = false
+            SwipeTrailCapture.clear()
+            internal.deleteRecursively()
+            external.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `init without external storage falls back to the internal file`() {
+        val internal = createTempDir(suffix = "internal")
+        try {
+            val legacy = java.io.File(internal, SwipeTrailCapture.LOG_FILE_NAME)
+            legacy.writeText("{\"ts\":2}\n")
+            SwipeTrailCapture.init(internal, null)
+            assertTrue("no external dir: internal log must be kept", legacy.exists())
+            SwipeTrailCapture.clear()
+        } finally {
+            internal.deleteRecursively()
+        }
+    }
 }
