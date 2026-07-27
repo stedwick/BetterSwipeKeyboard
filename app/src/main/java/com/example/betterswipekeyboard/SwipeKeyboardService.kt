@@ -47,6 +47,7 @@ import com.example.betterswipekeyboard.proofread.SentenceExtractor
 import com.example.betterswipekeyboard.proofread.selectBackend
 import com.example.betterswipekeyboard.swipe.Dictionary
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
+import com.example.betterswipekeyboard.swipe.SwipeTrailCapture
 import com.example.betterswipekeyboard.ui.keyboard.KeyboardScreen
 import java.util.Locale
 import kotlinx.coroutines.Job
@@ -188,6 +189,7 @@ class SwipeKeyboardService : InputMethodService(),
         openRouterProofreader = OpenRouterProofreader(apiKeyStore)
         clipboardManager = getSystemService(ClipboardManager::class.java)
         clipboardManager.addPrimaryClipChangedListener(clipChangedListener)
+        SwipeTrailCapture.init(filesDir)
         lifecycleScope.launch { refreshProofreader() }
     }
 
@@ -255,6 +257,7 @@ class SwipeKeyboardService : InputMethodService(),
                     onSettingsClick = ::openMainApp,
                     onPermissionHelpClick = ::openMainApp,
                     bottomClearance = with(LocalDensity.current) { bottomInsetPx.toDp() },
+                    onSwipeDecoded = SwipeTrailCapture::record,
                 )
             }
         }
@@ -272,6 +275,10 @@ class SwipeKeyboardService : InputMethodService(),
         // only when the stored word string actually changed. Words saved
         // while the keyboard is open go live on the next keyboard show.
         if (customWordStore.rawWords != lastCustomWordsRaw) rebuildDecoder()
+        // Pick up the debug trail-capture toggle from MainActivity.
+        SwipeTrailCapture.enabled = getSharedPreferences(
+            SwipeTrailCapture.PREFS_NAME, MODE_PRIVATE,
+        ).getBoolean(SwipeTrailCapture.KEY_ENABLED, false)
         // Keep the status bar fresh: the model may have finished downloading
         // or the API key may have changed since the last check.
         lifecycleScope.launch { refreshProofreader() }

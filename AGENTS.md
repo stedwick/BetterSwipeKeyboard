@@ -355,6 +355,11 @@ selected as the active IME (the app's setup screen has buttons for both).
   false on bare images, which surfaces as the keyboard's UNAVAILABLE panel.
   Real dictation (and the ML Kit `InputType.VOICE` proofread, since AICore
   is absent on emulators) can only be verified on a real device.
+- Debug builds can record real swipe trails for decoder tuning: toggle
+  "Record swipe trails" in the app's setup screen (debug-only, off by
+  default, local only — see `swipe/SwipeTrailCapture.kt`), then pull
+  `adb run-as com.example.betterswipekeyboard cat files/swipe_trails.jsonl`.
+  Each line is one swipe: key geometry, timed trail points, decoder top-5.
 
 ## How the user likes to work
 
