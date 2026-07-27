@@ -91,6 +91,6 @@ class SwipeRealTrailAccuracyTest {
 
     private companion object {
         /** Best achieved so far — raise on every tuning win, never lower. */
-        const val MIN_COMMITTED_CORRECT = 7
+        const val MIN_COMMITTED_CORRECT = 11
     }
 }

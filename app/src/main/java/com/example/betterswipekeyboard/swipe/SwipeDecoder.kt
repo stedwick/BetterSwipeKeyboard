@@ -32,7 +32,7 @@ data class ScoredWord(val word: String, val score: Float)
  * at dist magnitudes up to ~1.8 (real fingers are far sloppier than the
  * synthetic guard trails), so 1.75 silently dropped correct top-1s.
  */
-const val MAX_COMMIT_SCORE = 1.75f
+const val MAX_COMMIT_SCORE = 1.8f
 
 /**
  * Decodes a swipe trail into the most likely dictionary words.

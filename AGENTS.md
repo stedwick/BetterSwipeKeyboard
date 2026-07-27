@@ -99,7 +99,8 @@ Data flow (deliberately layered, keep it this way):
   unigram frequency prior, and a small per-letter length bonus (FUTO's
   β·L). A dwell ≥ 300 ms on a key doubles its letter. Lower score =
   better; `KeyboardScreen` commits the top word when
-  `score < MAX_COMMIT_SCORE` (1.75).
+  `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
+  trails — correct swipes at normal speed land up to ~1.8).
 - Tuning rules learned the hard way (the test suite guards these):
   - Measure curvature/speed over **arc-length windows** (0.35 key widths),
     never fixed point counts — real finger trails are dense and jittery, and
