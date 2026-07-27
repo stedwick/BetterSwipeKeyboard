@@ -11,16 +11,18 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Real-hand accuracy harness: replays Philip's captured swipes
- * (`swipe_trails_philip.jsonl`, recorded on a Galaxy Fold via
- * SwipeTrailCapture) with their confirmed intended words
- * (`swipe_trails_philip.intents.tsv`) through the decoder and applies the
- * commit rule ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does.
+ * Real-hand accuracy harness: replays Philip's captured swipes (recorded
+ * on a Galaxy Fold via SwipeTrailCapture) with their confirmed intended
+ * words through the decoder and applies the commit rule
+ * ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does. Two sets:
+ * `swipe_trails_philip.*` (first capture) and `swipe_trails2_philip.*`
+ * (second capture, both phrases twice; intent `-` marks a genuine
+ * mis-swipe — the user's typo, excluded from the counts).
  *
- * This is a RATCHET: [MIN_COMMITTED_CORRECT] is the best committed-correct
- * count achieved so far; bump it every time tuning gains a trail, never
- * lower it. The per-trail table is printed for the tuning loop (see the
- * test report's standard output).
+ * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
+ * committed-correct counts achieved so far per set; bump them every time
+ * tuning gains a trail, never lower them. The per-trail table is printed
+ * for the tuning loop (see the test report's standard output).
  */
 class SwipeRealTrailAccuracyTest {
 
@@ -34,15 +36,35 @@ class SwipeRealTrailAccuracyTest {
     }
 
     @Test
-    fun `real-hand trails keep their committed-correct count`() {
-        val intents = javaClass.getResourceAsStream("/swipe_trails_philip.intents.tsv")!!
+    fun `first capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET1",
+            correct >= MIN_COMMITTED_CORRECT_SET1,
+        )
+    }
+
+    @Test
+    fun `second capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails2_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET2",
+            correct >= MIN_COMMITTED_CORRECT_SET2,
+        )
+    }
+
+    /** Replays one capture set, prints the per-trail table, returns the
+     * committed-correct count. */
+    private fun replay(resourceBase: String): Int {
+        val intents = javaClass.getResourceAsStream("/$resourceBase.intents.tsv")!!
             .bufferedReader().readLines()
             .map { it.split('\t').let { cols -> cols[0].toInt() to cols[1] } }.toMap()
-        val lines = javaClass.getResourceAsStream("/swipe_trails_philip.jsonl")!!
+        val lines = javaClass.getResourceAsStream("/$resourceBase.jsonl")!!
             .bufferedReader().readLines().filter { it.isNotBlank() }
 
         var committedCorrect = 0
         var topCorrect = 0
+        var scored = 0
         lines.forEachIndexed { i, line ->
             val rec = JSONObject(line)
             val keyWidth = rec.getDouble("keyWidth").toFloat()
@@ -59,11 +81,20 @@ class SwipeRealTrailAccuracyTest {
                     p.getLong(2),
                 )
             }
-            val results = decoder.decode(trail, keyCenters, keyWidth, topN = 5)
             val intent = intents.getValue(i)
+            val results = decoder.decode(trail, keyCenters, keyWidth, topN = 5)
             val intentRank = results.indexOfFirst { it.word == intent }
             val top = results.firstOrNull()
             val committed = top?.takeIf { it.score < MAX_COMMIT_SCORE }
+            if (intent == "-") {
+                println(
+                    "#%-3d MIS-SWIPE (user typo, not scored) top=%-11s (%6.2f)".format(
+                        i, top?.word ?: "-", top?.score ?: Float.NaN,
+                    ),
+                )
+                return@forEachIndexed
+            }
+            scored++
             if (top?.word == intent) topCorrect++
             if (committed?.word == intent) committedCorrect++
             println(
@@ -79,18 +110,16 @@ class SwipeRealTrailAccuracyTest {
             )
         }
         println(
-            "ACCURACY committed-correct=$committedCorrect/${lines.size} " +
-                "top1-correct=$topCorrect/${lines.size} " +
+            "ACCURACY[$resourceBase] committed-correct=$committedCorrect/$scored " +
+                "top1-correct=$topCorrect/$scored " +
                 "(commit threshold $MAX_COMMIT_SCORE)",
         )
-        assertTrue(
-            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT",
-            committedCorrect >= MIN_COMMITTED_CORRECT,
-        )
+        return committedCorrect
     }
 
     private companion object {
-        /** Best achieved so far — raise on every tuning win, never lower. */
-        const val MIN_COMMITTED_CORRECT = 11
+        /** Best achieved so far per set — raise on every win, never lower. */
+        const val MIN_COMMITTED_CORRECT_SET1 = 11
+        const val MIN_COMMITTED_CORRECT_SET2 = 23
     }
 }
