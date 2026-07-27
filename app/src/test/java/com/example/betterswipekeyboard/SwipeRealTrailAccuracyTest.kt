@@ -123,16 +123,24 @@ class SwipeRealTrailAccuracyTest {
         /**
          * Best achieved so far per set — raise on every win, never lower.
          *
-         * TEMPORARY EXCEPTION (set 1): the wordfreq dictionary swap (56k
-         * words, replacing google-10000) regressed 6 common-word trails
-         * (very->vey, quick->wick, brown->brien, jumps->humps, over->iver,
-         * lazy->krazy), dropping set 1 from 11 to the measured 5/17. The
-         * floor is lowered to the measured count so main stays green for
-         * on-device evaluation of the new dictionary; restore toward 11 as
-         * the planned frequency-weight tuning lands. Set 2 rose 25 -> 26
-         * under the same dictionary and is ratcheted up per the rule.
+         * History (set 1): the wordfreq dictionary swap (56k words,
+         * replacing google-10000) regressed 6 common-word trails
+         * (very->vey, quick->wick, brown->brien, jumps->humps,
+         * over->iver, lazy->krazy), dropping set 1 from 11 to 5. The
+         * wordlist junk filter (feature/wordlist-filter: rare proper
+         * names + nonce respellings dropped by word class) removed vey,
+         * brien, iver and krazy, recovering "very" and "lazy" -> 7/17.
+         * The remaining misses are real-word or surviving-word
+         * competitors (wick, humps, overt, britten, dix, doh) — decoder
+         * scoring territory, for the frequency-tuning branch.
+         *
+         * Combined state (frequency weight 3.0 + filtered list, measured
+         * in qa/acc-combined): set 1 = 12/17, set 2 = 32/36 — the
+         * frequency prior and the filter compound (set 1 beats either
+         * branch alone: 11 freq-only, 7 filter-only). Set-1 floor raised
+         * 11 -> 12, earned.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 11
+        const val MIN_COMMITTED_CORRECT_SET1 = 12
         const val MIN_COMMITTED_CORRECT_SET2 = 32
     }
 }
