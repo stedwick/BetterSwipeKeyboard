@@ -128,7 +128,7 @@ private val SpacebarCursorStep = 14.dp
 /**
  * Best-guess commits above this score are too unsure. Below it we commit
  * even a weak match — a slightly-wrong word beats silence (and the AI
- * proofreader, when enabled, cleans it up a second later).
+ * proofreader, when enabled, cleans it up two seconds later).
  */
 private const val MAX_COMMIT_SCORE = 1.75f
 

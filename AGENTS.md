@@ -13,8 +13,8 @@ entirely in Kotlin with Jetpack Compose. Its two headline features:
 - **Voice input**: the microphone key dictates via the built-in
   `SpeechRecognizer`, with a voice-tuned AI cleanup pass after dictation.
 - **AI proofreading**: an on-device Gemini Nano proofreader (ML Kit GenAI),
-  with an OpenRouter cloud fallback, fixes the current sentence after 1
-  second of typing inactivity.
+  with an OpenRouter cloud fallback, fixes the current sentence after 2
+  seconds of typing inactivity.
 
 Single Gradle module `:app`, package `com.example.betterswipekeyboard`.
 minSdk 35, targetSdk/compileSdk 36, Java 11 source/target compatibility,
@@ -170,7 +170,7 @@ Data flow (deliberately layered, keep it this way):
   requests restricted to zero-data-retention providers).
 - `selectBackend`: on-device wins when available; cloud when an API key is
   configured; otherwise none.
-- Auto-proofread is debounced 1 s after the last *user activity*, not just
+- Auto-proofread is debounced 2 s after the last *user activity*, not just
   the last text change (`SwipeKeyboardService.scheduleAutoProofread`):
   `KeyboardScreen` emits `KeyboardAction.GestureStarted`/`GestureEnded`
   around every gesture (a swipe produces no actions until finger-up), a
@@ -208,7 +208,7 @@ Data flow (deliberately layered, keep it this way):
   is never held after the keyboard hides. Only final results are committed
   (via `editor.commitWord`, so leading-space and voice-proofread scheduling
   come free); partials only update the panel.
-- Dictated text is proofread with `ProofreadMode.VOICE` 1 s after the
+- Dictated text is proofread with `ProofreadMode.VOICE` 2 s after the
   transcript commit, through the same debounce and never-clobber guard as
   typed text. ML Kit's `ProofreadingRequest` has **no custom-prompt hook** —
   the only tuning is `ProofreaderOptions.InputType` per client, so
