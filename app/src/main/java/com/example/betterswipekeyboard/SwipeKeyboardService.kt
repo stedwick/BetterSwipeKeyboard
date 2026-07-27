@@ -379,9 +379,9 @@ class SwipeKeyboardService : InputMethodService(),
     }
 
     /**
-     * Auto-proofreading debounce: every text change restarts a 1-second
-     * timer; the proofread fires only after a full second of no touches or
-     * text changes (so at most once per second, never mid-gesture). Dictated
+     * Auto-proofreading debounce: every text change restarts a 2-second
+     * timer; the proofread fires only after two full seconds of no touches or
+     * text changes (so at most once per two seconds, never mid-gesture). Dictated
      * text schedules with [ProofreadMode.VOICE] so the proofreader targets
      * speech-recognition errors; the debounce is shared, so typing right
      * after dictating reschedules (last writer wins).
@@ -479,7 +479,7 @@ class SwipeKeyboardService : InputMethodService(),
     /**
      * Commits the final transcript through the same path as a swiped word:
      * leading-space handling and the "tap earns a space" rule come free, and
-     * the sentence is voice-proofread after the usual 1s debounce.
+     * the sentence is voice-proofread after the usual 2s debounce.
      */
     private fun commitDictation(transcript: String?) {
         if (transcript == null) return
@@ -519,7 +519,7 @@ class SwipeKeyboardService : InputMethodService(),
     }
 
     private companion object {
-        const val AUTO_PROOFREAD_DEBOUNCE_MS = 1000L
+        const val AUTO_PROOFREAD_DEBOUNCE_MS = 2000L
 
         /** How much text before the cursor the emoji suggester sees. */
         const val EMOJI_SUGGESTION_CHARS = 200

@@ -20,7 +20,7 @@ data class KeyboardState(
     val layout: LayoutId = LayoutId.LETTERS,
     val proofreader: ProofreaderStatus = ProofreaderStatus.UNAVAILABLE,
     val proofreaderBackend: ProofreaderBackend = ProofreaderBackend.NONE,
-    /** Auto-proofreading toggle: while on, text is proofread after 1s of idle. */
+    /** Auto-proofreading toggle: while on, text is proofread after 2s of idle. */
     val proofreadAuto: Boolean = false,
     val proofreadInFlight: Boolean = false,
     /** While not OFF, the key rows are replaced by the voice panel. */
