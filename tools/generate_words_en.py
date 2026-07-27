@@ -19,9 +19,13 @@ Sources:
     english-words.10.txt, latin-1 converted to UTF-8, CR stripped).
 
 Pipeline:
-  1. top_n_list('en', 60000), filtered to ^[a-z]{2,}$ (the decoder only
-     has a-z keys; 2-letter words are kept because it admits them on very
-     short trails, single letters/digits/contractions are useless).
+  1. top_n_list('en', 60000), filtered to WORD_OK: plain words
+     ^[a-z]{2,}$ plus one-apostrophe tokens ^[a-z]+'[a-z]+$ (the decoder
+     matches apostrophe words letter-only and commits them verbatim, so
+     possessives/contractions like "mother's"/"don't" are swipeable;
+     exactly ONE apostrophe with letters on both sides keeps out
+     "rock'n'roll", bare "n't" and "'twas"-class forms). Single letters
+     and digits stay out.
   2. Vowel-less tokens of 3+ letters are dropped ("pwr", "thx", "njpw",
      "msg"-class Twitter/texting abbreviations): they otherwise become
      short-subsequence candidates that beat the intended word on swipe
@@ -103,11 +107,15 @@ NAME_FLOOR = 2.8
 RESPELL_MAX = 3.1
 RESPELL_GAP = 2.0
 
-# The decoder's candidate universe is the QWERTY letter keys; anything else
-# (digits, apostrophes, unicode) can never be scored and only bloats the
-# asset. 2-letter words stay: the decoder admits them on trails <= 3.5 key
-# widths ("hi", "up").
-WORD_OK = re.compile(r"^[a-z]{2,}$")
+# The decoder's candidate universe is the QWERTY letter keys; digits and
+# unicode can never be scored and only bloat the asset. Apostrophe tokens
+# with exactly ONE apostrophe and letters on both sides ARE admitted: the
+# decoder matches them letter-only (the apostrophe has no geometry) and
+# commits the apostrophe verbatim — that is what makes possessives and
+# contractions swipeable ("mother's", "don't"). Leading/trailing
+# apostrophes stay out, so first()/last() of every entry is a letter by
+# construction (the decoder's endpoint gates rely on that).
+WORD_OK = re.compile(r"^(?:[a-z]{2,}|[a-z]+'[a-z]+)$")
 
 # Vowel-less tokens of 3+ letters ("pwr", "thx", "njpw", "msg") are texting
 # abbreviations, not swipe targets — and worse, as short consonant
@@ -138,6 +146,11 @@ KEEP_EXCEPTIONS = {
     "comms",     # -> "comes"; common clipping ("comms")
     "calc",      # -> "call"; common clipping
     "panty",     # -> "party"; real word, missing from SCOWL 2018
+    # Caught by the rare-NAME rule instead (SCOWL lists the possessive
+    # form, zipf 2.47 < NAME_FLOOR). Kept: the name rule exists because
+    # bare names steal common-word swipes, but a possessive only competes
+    # on its own letter trail — and this one is the feature's use case.
+    "spielberg's",
 }
 
 # Hand-maintained supplement: words a keyboard user expects regardless of
@@ -258,6 +271,13 @@ def main() -> None:
     words = [w for w in candidates if w not in dropped_by_filter]
     word_set = set(words)
 
+    # Apostrophe audit: WORD_OK newly admits possessives/contractions —
+    # list what came in and what the junk filters caught, so the
+    # regeneration is reviewable (a filter casualty here may deserve a
+    # KEEP_EXCEPTIONS entry; report it rather than silently adding).
+    apostrophe_admitted = [w for w in words if "'" in w]
+    apostrophe_dropped = sorted(w for w in dropped_by_filter if "'" in w)
+
     # Supplement: merge at wordfreq rank when known, append at the tail
     # (lowest frequency) otherwise.
     tail = [w for w in SUPPLEMENT if w not in word_set]
@@ -281,6 +301,12 @@ def main() -> None:
     print(f"  filtered:      {len(rare_names)} rare proper names, "
           f"{len(respellings)} nonce respellings "
           f"(of {len(candidates)} candidates)")
+    print(f"  apostrophes:   {len(apostrophe_admitted)} admitted, "
+          f"{len(apostrophe_dropped)} dropped by filters")
+    sample = ", ".join(apostrophe_admitted[:40])
+    print(f"    admitted sample: {sample}")
+    if apostrophe_dropped:
+        print(f"    dropped: {', '.join(apostrophe_dropped)}")
     print(f"  dropped:       {len(dropped)} words from the previous list"
           + (f" (listed in {sys.argv[1]})" if len(sys.argv) > 1 else
              " (pass an output path to list them)"))
