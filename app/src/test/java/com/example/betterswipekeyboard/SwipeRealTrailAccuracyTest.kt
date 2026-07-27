@@ -139,8 +139,17 @@ class SwipeRealTrailAccuracyTest {
          * frequency prior and the filter compound (set 1 beats either
          * branch alone: 11 freq-only, 7 filter-only). Set-1 floor raised
          * 11 -> 12, earned.
+         *
+         * feature/apostrophe-s (+1572 apostrophe tokens): set 1 = 11/17,
+         * set 2 = 32/36. Diagnosed per the plan's failure protocol: the
+         * ONE flip is trail #11 fox->fix, a rank-reshuffle near-tie (fix
+         * rank 1753->1788, fox 2124->2164 — the 40 apostrophe tokens
+         * inserted before fox cost it slightly more frequency than the
+         * 35 before fix, flipping a 0.08-score margin). NO apostrophe
+         * token is involved in the flip; re-ratchet approved by Philip.
+         * Set-1 floor 12 -> 11.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 12
+        const val MIN_COMMITTED_CORRECT_SET1 = 11
         const val MIN_COMMITTED_CORRECT_SET2 = 32
     }
 }
