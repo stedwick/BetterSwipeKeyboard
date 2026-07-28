@@ -44,6 +44,9 @@ class KeyboardGeometry {
     fun keyWidth(): Float =
         letterKeys().map { it.second.width }.average().takeIf { !it.isNaN() }?.toFloat() ?: 0f
 
+    /** Letter key bounds (a–z of the letters layout), for trail prefix trimming. */
+    fun letterRects(): List<Rect> = letterKeys().map { it.second }
+
     private fun letterKeys(): List<Pair<Key, Rect>> =
         boundsByLayout[LayoutId.LETTERS].orEmpty().filter { (key, _) ->
             (key.output as? KeyOutput.Text)?.text?.singleOrNull()?.isLetter() == true

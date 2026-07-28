@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +75,7 @@ import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
+import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -128,6 +130,9 @@ private const val FAILED_TRAIL_FADE_MS = 400
 // user feedback: 12dp left too much dead space, so keep this minimal but
 // non-zero.
 private val KeyboardBottomClearance = 4.dp
+
+/** Height of the utility row above the letter rows (and of the gesture surface's top strip). */
+private val UtilityRowHeight = 44.dp
 
 /**
  * Content height of EVERY keyboard surface (letter rows, emoji panel,
@@ -184,6 +189,13 @@ fun KeyboardScreen(
     var popupIndex by remember { mutableStateOf(-1) }
     var popupBounds by remember { mutableStateOf<Rect?>(null) }
     var popupAnchor by remember { mutableStateOf<Rect?>(null) }
+    // Gesture-mode utility row (letters/symbols layouts): key bounds for
+    // hit-testing, and which key is held, for the pressed highlight.
+    val utilityRects = remember { mutableMapOf<UtilityKeyId, Rect>() }
+    var pressedUtility by remember { mutableStateOf<UtilityKeyId?>(null) }
+    // The gesture loop reads the AI key's enabled state at tap time;
+    // pointerInput captures would otherwise freeze it at composition time.
+    val currentState by rememberUpdatedState(state)
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
     // Canonical character-key width: one slot of a full 10-key row. Every
@@ -211,33 +223,55 @@ fun KeyboardScreen(
                 .padding(horizontal = 3.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            UtilityRow(
-                state = state,
-                colors = colors,
-                onAction = onAction,
-                onSettingsClick = onSettingsClick,
-            )
             when {
-                // While dictating, the voice panel replaces the key rows, so
-                // there is no stale key geometry to hit-test against.
-                state.voice != VoiceState.OFF -> VoicePanel(
-                    state = state,
-                    colors = colors,
-                    onToggleVoice = { onAction(KeyboardAction.ToggleVoice) },
-                    onPermissionHelpClick = onPermissionHelpClick,
-                )
+                // Panels and the voice screen keep the utility row OUTSIDE
+                // the gesture surface (plain clickable keys): panel scrolls
+                // must not be read as swipe trails, and there is no letter
+                // decoding there.
+                state.voice != VoiceState.OFF -> {
+                    UtilityRow(
+                        state = state,
+                        colors = colors,
+                        onAction = onAction,
+                        onSettingsClick = onSettingsClick,
+                    )
+                    // While dictating, the voice panel replaces the key rows,
+                    // so there is no stale key geometry to hit-test against.
+                    VoicePanel(
+                        state = state,
+                        colors = colors,
+                        onToggleVoice = { onAction(KeyboardAction.ToggleVoice) },
+                        onPermissionHelpClick = onPermissionHelpClick,
+                    )
+                }
 
-                state.layout == LayoutId.EMOJI -> EmojiPanel(
-                    colors = colors,
-                    onAction = onAction,
-                    suggestions = state.emojiSuggestions,
-                )
+                state.layout == LayoutId.EMOJI -> {
+                    UtilityRow(
+                        state = state,
+                        colors = colors,
+                        onAction = onAction,
+                        onSettingsClick = onSettingsClick,
+                    )
+                    EmojiPanel(
+                        colors = colors,
+                        onAction = onAction,
+                        suggestions = state.emojiSuggestions,
+                    )
+                }
 
-                state.layout == LayoutId.CLIPBOARD -> ClipboardPanel(
-                    colors = colors,
-                    entries = state.clipboard,
-                    onAction = onAction,
-                )
+                state.layout == LayoutId.CLIPBOARD -> {
+                    UtilityRow(
+                        state = state,
+                        colors = colors,
+                        onAction = onAction,
+                        onSettingsClick = onSettingsClick,
+                    )
+                    ClipboardPanel(
+                        colors = colors,
+                        entries = state.clipboard,
+                        onAction = onAction,
+                    )
+                }
 
                 else -> {
                     val layout = when (state.layout) {
@@ -248,28 +282,39 @@ fun KeyboardScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // Pinned to the same height as the panels: the
-                            // weighted rows below fill it exactly, so letters
-                            // and panels never differ by a rounding pixel.
-                            .height(KeyboardContentHeight)
+                            // Utility row + key rows form ONE gesture surface
+                            // (a swipe may start anywhere in the keyboard
+                            // rectangle). Height = utility row + the 6.dp gap
+                            // + the pinned content height, so the letter rows
+                            // keep exactly KeyboardContentHeight and stay
+                            // pixel-equal with the panels.
+                            .height(UtilityRowHeight + 6.dp + KeyboardContentHeight)
                             .onGloballyPositioned {
                                 boxOffsetInWindow = it.positionInWindow()
                                 boxOffsetOnScreen = it.positionOnScreen()
                                 boxSize = it.size.toSize()
                             }
-                            // ALL pointer input for the letter/symbol rows is
-                            // handled here at the container level (taps,
-                            // long-presses and swipe trails) so a finger can
-                            // travel across keys in a single gesture. Keys
-                            // below are purely visual. The utility row and the
-                            // emoji/clipboard panels deliberately live OUTSIDE
-                            // this scope: utility taps must not start gestures,
-                            // and panel scrolls must not be read as swipe trails.
+                            // ALL pointer input for the utility row and the
+                            // letter/symbol rows is handled here at the
+                            // container level (taps, long-presses and swipe
+                            // trails) so a finger can travel across keys in a
+                            // single gesture. Keys are purely visual; taps are
+                            // re-dispatched semantically in the gesture loop.
+                            // The emoji/clipboard/voice surfaces deliberately
+                            // live OUTSIDE this scope: panel scrolls must not
+                            // be read as swipe trails.
                             .pointerInput(layout.id) {
                                 val touchSlop = viewConfiguration.touchSlop
                                 awaitEachGesture {
                                     val down = awaitFirstDown()
                                     onAction(KeyboardAction.GestureStarted)
+                                    // Utility-row hit: on the letters/symbols
+                                    // layouts the row is inside this gesture
+                                    // surface, so a down there is either a
+                                    // utility tap (dispatched below) or the
+                                    // start of a swipe trail.
+                                    val downUtility = utilityRects.entries
+                                        .firstOrNull { it.value.contains(down.position) }?.key
                                     // Space-bar overshoot slack: a down in
                                     // the bar's top slack strip counts as
                                     // "no key", so an overshoot word-swipe
@@ -287,6 +332,7 @@ fun KeyboardScreen(
                                             } == false
                                     }
                                     pressedKey = downKey
+                                    pressedUtility = downUtility
                                     val trail = mutableListOf(
                                         TimedPoint(down.position.toVec2(), down.uptimeMillis),
                                     )
@@ -309,22 +355,57 @@ fun KeyboardScreen(
                                     }
 
                                     var swipeCompleted = false
+                                    // Index into trail of the first point on
+                                    // a letter key; -1 while the drag has not
+                                    // touched one. The trail (visual and
+                                    // decode alike) starts there — the prefix
+                                    // is approach, not word.
+                                    var trailStart = -1
                                     when (outcome) {
-                                        GestureOutcome.TAP ->
-                                            downKey?.let { onAction(it.tapAction()) }
+                                        GestureOutcome.TAP -> when {
+                                            // Utility-row tap, re-dispatched
+                                            // semantically (settings opens the
+                                            // app Activity — a service
+                                            // callback, not a KeyboardAction).
+                                            downUtility == UtilityKeyId.SETTINGS -> onSettingsClick()
+                                            downUtility != null -> utilityTapAction(
+                                                downUtility,
+                                                currentState.proofreader ==
+                                                    ProofreaderStatus.AVAILABLE,
+                                            )?.let(onAction)
+                                            else -> downKey?.let { onAction(it.tapAction()) }
+                                        }
 
                                         GestureOutcome.DRAG ->
                                             if (layout.id == LayoutId.LETTERS &&
-                                                (downKey == null || downKey.isLetter())
+                                                !isSpaceBar(downKey)
                                             ) {
                                                 // Phase 2 (swipe): collect the
                                                 // trail until finger lifts.
-                                                // Drags starting on dead space
-                                                // (key gaps, the space bar's top
-                                                // slack strip) collect a trail
-                                                // too — overshoot swipes must
-                                                // decode; MAX_COMMIT_SCORE
-                                                // filters junk trails.
+                                                // On the letters layout a
+                                                // swipe may start ANYWHERE in
+                                                // the keyboard rectangle:
+                                                // letter keys, dead space (key
+                                                // gaps, the space bar's top
+                                                // slack strip), modifier keys
+                                                // (shift/numbers/mic/enter/
+                                                // backspace) and the utility
+                                                // row. Off-key starts used to
+                                                // be just trail before the
+                                                // first letter basin — but
+                                                // that prefix poisons the
+                                                // decoder's letter alignment,
+                                                // so the trail only BEGINS at
+                                                // the first point on a letter
+                                                // key (firstLetterContact-
+                                                // Index). Junk trails that do
+                                                // reach a letter are filtered
+                                                // by MAX_COMMIT_SCORE; a drag
+                                                // that never touches a letter
+                                                // is no swipe at all —
+                                                // nothing drawn, nothing
+                                                // decoded. Only the space bar
+                                                // itself keeps cursor drag.
                                                 // A new trail supersedes a
                                                 // failed-swipe flash still
                                                 // fading: cancel it before
@@ -333,6 +414,11 @@ fun KeyboardScreen(
                                                 fadeJob?.cancel()
                                                 trailFailed = false
                                                 trailPoints = emptyList()
+                                                val letterRects = geometry.letterRects()
+                                                trailStart = firstLetterContactIndex(
+                                                    trail.map { it.position },
+                                                    letterRects,
+                                                )
                                                 while (true) {
                                                     val event = awaitPointerEvent()
                                                     val change = event.changes
@@ -343,8 +429,21 @@ fun KeyboardScreen(
                                                             change.position.toVec2(),
                                                             change.uptimeMillis,
                                                         )
+                                                        if (trailStart < 0) {
+                                                            trailStart =
+                                                                firstLetterContactIndex(
+                                                                    trail.map { it.position },
+                                                                    letterRects,
+                                                                )
+                                                        }
                                                         trailPoints =
-                                                            trail.map { it.position.toOffset() }
+                                                            if (trailStart >= 0) {
+                                                                trail.subList(
+                                                                    trailStart, trail.size,
+                                                                ).map { it.position.toOffset() }
+                                                            } else {
+                                                                emptyList()
+                                                            }
                                                         pressedKey =
                                                             geometry.keyAt(change.position)
                                                         change.consume()
@@ -354,7 +453,9 @@ fun KeyboardScreen(
                                                     // `pressed`, not `changedToUp()`.
                                                     if (!change.pressed) break
                                                 }
-                                                swipeCompleted = true
+                                                // Only a trail that reached a
+                                                // letter key is a swipe attempt.
+                                                swipeCompleted = trailStart >= 0
                                             } else if (isSpaceBar(downKey)) {
                                                 // Space-bar drag: cursor
                                                 // control, in either layout.
@@ -365,7 +466,11 @@ fun KeyboardScreen(
                                                     onAction,
                                                 )
                                             } else {
-                                                // Drag from a non-letter key is not a swipe; swallow it.
+                                                // Symbols layout: no letter
+                                                // decoding — a drag from a
+                                                // non-spacebar key (or the
+                                                // utility row) is not a swipe;
+                                                // swallow it.
                                                 awaitUp(down.id)
                                             }
 
@@ -470,8 +575,14 @@ fun KeyboardScreen(
                                         }
                                     }
                                     pressedKey = null
+                                    pressedUtility = null
 
                                     if (swipeCompleted) {
+                                        // Decode the TRIMMED trail (from the
+                                        // first letter-key point — the same
+                                        // points the visual trail drew), never
+                                        // the off-letter approach prefix.
+                                        val decodedTrail = trail.subList(trailStart, trail.size).toList()
                                         // Read the decoder at gesture time: the
                                         // service may have rebuilt it with new
                                         // custom words since this composition
@@ -482,12 +593,12 @@ fun KeyboardScreen(
                                         // records the runners-up for tuning;
                                         // only the top word is ever committed.
                                         val results = decoderProvider().decode(
-                                            trail = trail.toList(),
+                                            trail = decodedTrail,
                                             keyCenters = keyCenters,
                                             keyWidth = keyWidth,
                                             topN = 5,
                                         )
-                                        onSwipeDecoded(trail.toList(), keyCenters, keyWidth, results)
+                                        onSwipeDecoded(decodedTrail, keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
                                         if (best != null && best.score < MAX_COMMIT_SCORE) {
                                             onAction(KeyboardAction.CommitWord(best.word))
@@ -530,50 +641,76 @@ fun KeyboardScreen(
                             modifier = Modifier.fillMaxHeight(),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            layout.rows.forEach { row ->
-                                Row(
-                                    // Rows split the pinned content height
-                                    // equally (was: a fixed 52.dp each) so
-                                    // the letter stack is EXACTLY
-                                    // KeyboardContentHeight tall — 4 x 52.dp
-                                    // + 3 rounded 6.dp gaps could drift 1px
-                                    // off the pinned panels.
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
-                                    // Center rows that end up narrower than
-                                    // the full 10-key row (e.g. the 9-key
-                                    // home row) instead of stretching them —
-                                    // modifier keys keep their weights and
-                                    // take the remaining space.
-                                    horizontalArrangement = Arrangement.spacedBy(
-                                        4.dp,
-                                        Alignment.CenterHorizontally,
-                                    ),
-                                ) {
-                                    row.forEach { key ->
-                                        KeyView(
-                                            key = key,
-                                            state = state,
-                                            pressed = key == pressedKey,
-                                            colors = colors,
-                                            modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
-                                                Modifier.width(unitKeyWidth)
-                                            } else {
-                                                Modifier.weight(key.weight)
-                                            },
-                                            onPositioned = { coordinates ->
-                                                geometry.register(
-                                                    layout.id,
-                                                    key,
-                                                    Rect(
-                                                        coordinates.positionInWindow() -
-                                                            boxOffsetInWindow,
-                                                        coordinates.size.toSize(),
-                                                    ),
-                                                )
-                                            },
-                                        )
+                            // Gesture mode: purely visual keys; the gesture
+                            // loop hit-tests their registered bounds and
+                            // re-dispatches taps semantically.
+                            UtilityRow(
+                                state = state,
+                                colors = colors,
+                                onAction = onAction,
+                                onSettingsClick = onSettingsClick,
+                                pressedId = pressedUtility,
+                                onKeyPositioned = { id, coordinates ->
+                                    utilityRects[id] = Rect(
+                                        coordinates.positionInWindow() -
+                                            boxOffsetInWindow,
+                                        coordinates.size.toSize(),
+                                    )
+                                },
+                            )
+                            Column(
+                                // Pinned to the same height as the panels:
+                                // the weighted rows below fill it exactly,
+                                // so letters and panels never differ by a
+                                // rounding pixel.
+                                modifier = Modifier.height(KeyboardContentHeight),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                layout.rows.forEach { row ->
+                                    Row(
+                                        // Rows split the pinned content height
+                                        // equally (was: a fixed 52.dp each) so
+                                        // the letter stack is EXACTLY
+                                        // KeyboardContentHeight tall — 4 x 52.dp
+                                        // + 3 rounded 6.dp gaps could drift 1px
+                                        // off the pinned panels.
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth(),
+                                        // Center rows that end up narrower than
+                                        // the full 10-key row (e.g. the 9-key
+                                        // home row) instead of stretching them —
+                                        // modifier keys keep their weights and
+                                        // take the remaining space.
+                                        horizontalArrangement = Arrangement.spacedBy(
+                                            4.dp,
+                                            Alignment.CenterHorizontally,
+                                        ),
+                                    ) {
+                                        row.forEach { key ->
+                                            KeyView(
+                                                key = key,
+                                                state = state,
+                                                pressed = key == pressedKey,
+                                                colors = colors,
+                                                modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
+                                                    Modifier.width(unitKeyWidth)
+                                                } else {
+                                                    Modifier.weight(key.weight)
+                                                },
+                                                onPositioned = { coordinates ->
+                                                    geometry.register(
+                                                        layout.id,
+                                                        key,
+                                                        Rect(
+                                                            coordinates.positionInWindow() -
+                                                                boxOffsetInWindow,
+                                                            coordinates.size.toSize(),
+                                                        ),
+                                                    )
+                                                },
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -649,17 +786,27 @@ private fun UtilityRow(
     colors: KeyboardColors,
     onAction: (KeyboardAction) -> Unit,
     onSettingsClick: () -> Unit,
+    // Gesture mode (letters/symbols layouts, where the row lives inside the
+    // gesture surface): keys are purely visual and register their bounds for
+    // the gesture loop's hit-testing; pressedId drives the held highlight.
+    // Null onKeyPositioned = clickable mode (panels/voice): each key handles
+    // its own clicks, exactly as before.
+    pressedId: UtilityKeyId? = null,
+    onKeyPositioned: ((UtilityKeyId, LayoutCoordinates) -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         UtilityKey(
+            id = UtilityKeyId.AI,
             onClick = { onAction(KeyboardAction.ToggleProofread) },
             enabled = state.proofreader == ProofreaderStatus.AVAILABLE,
             active = state.proofreadAuto,
             colors = colors,
             modifier = Modifier.weight(2f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
         ) {
             if (state.proofreadInFlight) {
                 CircularProgressIndicator(
@@ -679,6 +826,7 @@ private fun UtilityRow(
             }
         }
         UtilityKey(
+            id = UtilityKeyId.EMOJI,
             // The emoji key toggles: from letters/symbols into the emoji
             // panel, from the panel back to letters.
             onClick = {
@@ -690,10 +838,13 @@ private fun UtilityRow(
             },
             colors = colors,
             modifier = Modifier.weight(1f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
         ) {
             UtilityKeyLabel("😀", colors)
         }
         UtilityKey(
+            id = UtilityKeyId.CLIPBOARD,
             // The clipboard key toggles: from letters/symbols into the
             // clipboard panel, from the panel back to letters.
             onClick = {
@@ -705,13 +856,18 @@ private fun UtilityRow(
             },
             colors = colors,
             modifier = Modifier.weight(1f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
         ) {
             UtilityKeyLabel("📋", colors)
         }
         UtilityKey(
+            id = UtilityKeyId.SETTINGS,
             onClick = onSettingsClick,
             colors = colors,
             modifier = Modifier.weight(1f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
         ) {
             UtilityKeyLabel("⚙", colors)
         }
@@ -795,19 +951,45 @@ private fun VoicePanel(
 /** A key in the utility row above the letter rows. */
 @Composable
 private fun UtilityKey(
+    id: UtilityKeyId,
     onClick: () -> Unit,
     colors: KeyboardColors,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     active: Boolean = false,
+    pressedId: UtilityKeyId? = null,
+    onKeyPositioned: ((UtilityKeyId, LayoutCoordinates) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    // Gesture mode (onKeyPositioned != null): no clickable — the container
+    // gesture loop hit-tests the registered bounds and re-dispatches taps.
+    // Clickable mode: unchanged behavior for the panel/voice surfaces.
+    val gestureMode = onKeyPositioned != null
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(UtilityRowHeight)
+            .then(
+                if (onKeyPositioned != null) {
+                    Modifier.onGloballyPositioned { onKeyPositioned(id, it) }
+                } else {
+                    Modifier
+                },
+            )
             .clip(RoundedCornerShape(6.dp))
-            .background(if (active) colors.keyBackgroundActive else colors.keyBackground)
-            .clickable(enabled = enabled, onClick = onClick),
+            .background(
+                if (active || (gestureMode && pressedId == id)) {
+                    colors.keyBackgroundActive
+                } else {
+                    colors.keyBackground
+                },
+            )
+            .then(
+                if (!gestureMode) {
+                    Modifier.clickable(enabled = enabled, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         content()
@@ -838,9 +1020,6 @@ private suspend fun AwaitPointerEventScope.awaitUp(id: PointerId) {
 private fun Offset.toVec2() = Vec2(x, y)
 
 private fun Vec2.toOffset() = Offset(x, y)
-
-private fun Key.isLetter(): Boolean =
-    (output as? KeyOutput.Text)?.text?.singleOrNull()?.isLetter() == true
 
 /**
  * Character keys (letters, digits, punctuation — any visible single- or

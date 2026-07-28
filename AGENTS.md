@@ -48,13 +48,26 @@ Data flow (deliberately layered, keep it this way):
 2. **Panels are layout modes, not layouts**: `LayoutId.EMOJI` has no
    `KeyboardLayout` — `KeyboardScreen` renders `EmojiPanel` instead of the
    letter rows. Any panel (scrollable/tappable content) must live **outside**
-   the letter-gesture `pointerInput` container, which wraps only the
-   letter/symbol rows (utility row included outside); otherwise panel
-   scrolls/taps are swallowed as gestures.
+   the letter-gesture `pointerInput` container; otherwise panel scrolls/taps
+   are swallowed as gestures. On the letters/symbols layouts the container
+   wraps the utility row too (so a swipe can start anywhere in the keyboard
+   rectangle); panels and the voice screen keep the utility row outside as
+   plain clickable keys (two render modes of one `UtilityRow` composable).
 3. **All gestures produce semantic actions** (`KeyboardAction`): taps,
    long-presses and swipes are handled at the container level in
    `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and
-   every user intent becomes a `KeyboardAction`.
+   every user intent becomes a `KeyboardAction`. On the letters layout a
+   DRAG from anywhere except the space bar may start a swipe (letter
+   keys, dead space, modifier keys, utility row), but the trail — visual
+   and decode alike — only begins at the first point on a letter key
+   (`firstLetterContactIndex` in `swipe/TrailTrim.kt`; the off-letter
+   prefix is approach, not word, and would poison the decoder's letter
+   alignment). A drag that never touches a letter is not a swipe:
+   nothing drawn, nothing decoded. Taps on the gesture-mode
+   utility row are re-dispatched semantically in the loop
+   (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
+   `onSettingsClick` callback). The symbols layout keeps no decoding: a
+   non-spacebar drag there is swallowed.
 4. **`KeyboardViewModel` reduces actions** into a new `KeyboardState` plus an
    optional `KeyboardEffect` (CommitText / CommitWord / DeleteBackward /
    PerformEnter). Pure logic, no Android types beyond `ViewModel`.
