@@ -70,12 +70,13 @@ import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
-import com.example.betterswipekeyboard.swipe.MAX_COMMIT_SCORE
 import com.example.betterswipekeyboard.swipe.ScoredWord
+import com.example.betterswipekeyboard.swipe.SwipeConfidence
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
+import com.example.betterswipekeyboard.swipe.swipeConfidence
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -110,20 +111,22 @@ private val LightKeyboardColors = KeyboardColors(
 private val ToggleOn = Color(0xFF30D158)
 private val ToggleOff = Color(0xFFFF453A)
 
-// Failed-swipe feedback: when the decoder drops a swipe (best score >=
-// MAX_COMMIT_SCORE) the trail flashes in this deliberate warning yellow —
-// jQuery-highlight style — and fades out, so the gesture reads as "seen
-// but not recognized" instead of "the keyboard ignored me". Theme-
-// independent like ToggleOn/ToggleOff; iOS system yellow reads on both
-// the light and dark keyboard backgrounds.
-private val FailedSwipeFlash = Color(0xFFFFD60A)
+// Two-tier swipe feedback (jQuery-highlight style, see swipeConfidence):
+// a FAILED swipe (nothing committed) flashes the trail RED and fades out,
+// so the gesture reads as "seen but not recognized" instead of "the
+// keyboard ignored me"; a COMMIT with a close runner-up flashes YELLOW —
+// "committed, but you may want to re-swipe" — while confident commits
+// flash nothing. Theme-independent like ToggleOn/ToggleOff; iOS system
+// red/yellow read on both the light and dark keyboard backgrounds.
+private val FailedSwipeFlash = Color(0xFFFF453A)
+private val LowConfidenceFlash = Color(0xFFFFD60A)
 
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
 
-/** Failed-swipe yellow flash fade-out duration (tunable starting point). */
-private const val FAILED_TRAIL_FADE_MS = 400
+/** Swipe-feedback flash fade-out duration (tunable starting point). */
+private const val TRAIL_FLASH_FADE_MS = 400
 
 // Small aesthetic gap between the bottom key row and the system IME strip.
 // The measured inset (bottomClearance) already covers the strip itself;
@@ -182,9 +185,10 @@ fun KeyboardScreen(
     var boxSize by remember { mutableStateOf(Size.Zero) }
     var pressedKey by remember { mutableStateOf<Key?>(null) }
     var trailPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    // Failed-swipe flash: while true, the trail renders in FailedSwipeFlash
-    // yellow with alpha scaled by trailFade, animated 1 -> 0 by fadeJob.
-    var trailFailed by remember { mutableStateOf(false) }
+    // Swipe-feedback flash: while non-null, the trail renders in this color
+    // (red = failed, yellow = low-confidence commit) with alpha scaled by
+    // trailFade, animated 1 -> 0 by fadeJob.
+    var trailFlashColor by remember { mutableStateOf<Color?>(null) }
     val trailFade = remember { Animatable(1f) }
     var fadeJob by remember { mutableStateOf<Job?>(null) }
     var popupChoices by remember { mutableStateOf<List<String>?>(null) }
@@ -409,12 +413,12 @@ fun KeyboardScreen(
                                                 // decoded. Only the space bar
                                                 // itself keeps cursor drag.
                                                 // A new trail supersedes a
-                                                // failed-swipe flash still
+                                                // swipe-feedback flash still
                                                 // fading: cancel it before
                                                 // it can clear the NEW
                                                 // trail's points.
                                                 fadeJob?.cancel()
-                                                trailFailed = false
+                                                trailFlashColor = null
                                                 trailPoints = emptyList()
                                                 val letterRects = geometry.letterRects()
                                                 trailStart = firstLetterContactIndex(
@@ -603,36 +607,50 @@ fun KeyboardScreen(
                                         )
                                         onSwipeDecoded(decodedTrail, keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
-                                        if (best != null && best.score < MAX_COMMIT_SCORE) {
+                                        val confidence = swipeConfidence(results)
+                                        if (best != null && confidence != SwipeConfidence.FAILED) {
                                             onAction(KeyboardAction.CommitWord(best.word))
-                                            // Let the trail linger briefly, then clear it.
-                                            scope.launch {
-                                                delay(TRAIL_LINGER_MS)
-                                                trailPoints = emptyList()
+                                        }
+                                        when (confidence) {
+                                            SwipeConfidence.CONFIDENT -> {
+                                                // Let the trail linger briefly, then clear it.
+                                                scope.launch {
+                                                    delay(TRAIL_LINGER_MS)
+                                                    trailPoints = emptyList()
+                                                }
                                             }
-                                        } else {
-                                            // Failed swipe: the trail flashes
-                                            // yellow and fades out (jQuery-
-                                            // highlight style) — feedback
-                                            // that the gesture was seen but
-                                            // rejected. Purely cosmetic: the
-                                            // animation never blocks or
-                                            // captures input, and the next
-                                            // gesture can start mid-fade (the
-                                            // DRAG branch cancels fadeJob).
-                                            trailFailed = true
-                                            fadeJob?.cancel()
-                                            fadeJob = scope.launch {
-                                                trailFade.snapTo(1f)
-                                                trailFade.animateTo(
-                                                    0f,
-                                                    tween(
-                                                        FAILED_TRAIL_FADE_MS,
-                                                        easing = LinearEasing,
-                                                    ),
-                                                )
-                                                trailPoints = emptyList()
-                                                trailFailed = false
+                                            SwipeConfidence.LOW,
+                                            SwipeConfidence.FAILED -> {
+                                                // Two-tier feedback flash
+                                                // (jQuery-highlight style):
+                                                // red = seen but rejected,
+                                                // yellow = committed but the
+                                                // runner-up was close — maybe
+                                                // re-swipe. Purely cosmetic:
+                                                // the animation never blocks
+                                                // or captures input, and the
+                                                // next gesture can start
+                                                // mid-fade (the DRAG branch
+                                                // cancels fadeJob).
+                                                trailFlashColor =
+                                                    if (confidence == SwipeConfidence.FAILED) {
+                                                        FailedSwipeFlash
+                                                    } else {
+                                                        LowConfidenceFlash
+                                                    }
+                                                fadeJob?.cancel()
+                                                fadeJob = scope.launch {
+                                                    trailFade.snapTo(1f)
+                                                    trailFade.animateTo(
+                                                        0f,
+                                                        tween(
+                                                            TRAIL_FLASH_FADE_MS,
+                                                            easing = LinearEasing,
+                                                        ),
+                                                    )
+                                                    trailPoints = emptyList()
+                                                    trailFlashColor = null
+                                                }
                                             }
                                         }
                                     }
@@ -723,11 +741,12 @@ fun KeyboardScreen(
                         Canvas(modifier = Modifier.matchParentSize()) {
                             val points = trailPoints
                             if (points.size >= 2) {
-                                // A failed swipe flashes yellow and fades;
-                                // a live/successful trail keeps the theme
-                                // color at full strength.
-                                val baseColor = if (trailFailed) FailedSwipeFlash else colors.trail
-                                val fade = if (trailFailed) trailFade.value else 1f
+                                // A failed or low-confidence swipe flashes
+                                // red/yellow and fades; a live or confident
+                                // trail keeps the theme color at full strength.
+                                val flashColor = trailFlashColor
+                                val baseColor = flashColor ?: colors.trail
+                                val fade = if (flashColor != null) trailFade.value else 1f
                                 for (i in 1 until points.size) {
                                     drawLine(
                                         color = baseColor.copy(

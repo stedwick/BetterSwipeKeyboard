@@ -148,12 +148,16 @@ Data flow (deliberately layered, keep it this way):
   down aim is much better than lift-off aim). Lower score =
   better; `KeyboardScreen` commits the top word when
   `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
-  trails — correct swipes at normal speed land up to ~1.8). A failed
-  swipe (no candidate below the cutoff) commits nothing and flashes the
-  trail yellow, fading out over ~400 ms (`FailedSwipeFlash` /
-  `FAILED_TRAIL_FADE_MS` in `KeyboardScreen.kt`, segment alpha in
-  `ui/keyboard/TrailFade.kt`) — jQuery-highlight-style "seen but
-  rejected" feedback, purely cosmetic and never input-capturing.
+  trails — correct swipes at normal speed land up to ~1.8). Two-tier
+  feedback flash (pure classification in `swipe/SwipeConfidence.kt`,
+  jQuery-highlight-style fade over ~400 ms, purely cosmetic): a FAILED
+  swipe (no candidate below the cutoff, nothing committed) flashes the
+  trail RED (`FailedSwipeFlash`); a commit with a close runner-up
+  (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.15, calibrated on the
+  four captured trail sets — flags 8/13 wrong commits at ~3% false
+  positives) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
+  confident commits flash nothing. Segment alpha in
+  `ui/keyboard/TrailFade.kt`.
 - Tuning rules learned the hard way (the test suite guards these):
   - Measure curvature/speed over **arc-length windows** (0.35 key widths),
     never fixed point counts — real finger trails are dense and jittery, and
