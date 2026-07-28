@@ -542,12 +542,17 @@ fun KeyboardScreen(
                                             }
 
                                             is KeyOutput.Text -> {
-                                                if ((downKey.output as KeyOutput.Text).text == ".") {
-                                                    // Long-press period: punctuation popup with drag-select.
+                                                // Long-press a popup host key
+                                                // ("." on letters/symbols, "0"
+                                                // on the numpad): punctuation
+                                                // popup with drag-select; a
+                                                // no-drag release commits the
+                                                // host key's own text.
+                                                val popup = keyPopup(layout.id, downKey)
+                                                if (popup != null) {
                                                     var selection = -1
-                                                    popupChoices = PUNCTUATION_POPUP
-                                                    popupAnchor =
-                                                        downKey?.let { geometry.boundsOf(it) }
+                                                    popupChoices = popup.choices
+                                                    popupAnchor = geometry.boundsOf(downKey)
                                                     while (true) {
                                                         val event = awaitPointerEvent()
                                                         val change =
@@ -556,7 +561,9 @@ fun KeyboardScreen(
                                                                 ?: break
                                                         if (change.positionChange() != Offset.Zero) {
                                                             selection = popupIndexAt(
-                                                                change.position, popupBounds,
+                                                                change.position,
+                                                                popupBounds,
+                                                                popup.choices,
                                                             )
                                                             popupIndex = selection
                                                         }
@@ -568,9 +575,10 @@ fun KeyboardScreen(
                                                     onAction(
                                                         KeyboardAction.InsertText(
                                                             if (selection >= 0) {
-                                                                PUNCTUATION_POPUP[selection]
+                                                                popup.choices[selection]
                                                             } else {
-                                                                "."
+                                                                (downKey.output as KeyOutput.Text)
+                                                                    .text
                                                             },
                                                         ),
                                                     )
@@ -739,6 +747,7 @@ fun KeyboardScreen(
                                                         ),
                                                     )
                                                 },
+                                                popupHint = keyPopup(layout.id, key)?.hint,
                                             )
                                         }
                                     }
@@ -1077,6 +1086,8 @@ private fun KeyView(
     colors: KeyboardColors,
     onPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
+    /** Corner hint for the key's long-press popup ("!" on ".", "#" on numpad 0). */
+    popupHint: String? = null,
 ) {
     val isShiftActive = key.output is KeyOutput.Shift && state.shiftMode != ShiftMode.OFF
     val background = when {
@@ -1110,10 +1121,10 @@ private fun KeyView(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        // Long-press hint in the corner of the period key.
-        if ((key.output as? KeyOutput.Text)?.text == ".") {
+        // Long-press hint in the corner of popup host keys ("." / numpad "0").
+        if (popupHint != null) {
             Text(
-                text = "!",
+                text = popupHint,
                 color = colors.keyText.copy(alpha = 0.4f),
                 fontSize = 10.sp,
                 modifier = Modifier
