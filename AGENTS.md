@@ -41,15 +41,19 @@ Data flow (deliberately layered, keep it this way):
 
 1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
    each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
-   Microphone). `QwertyLayout` and `SymbolsLayout`. Character keys render at
+   Microphone). `QwertyLayout`, `SymbolsLayout` and `NumericLayout` (the 3x4
+   dial pad — see "Numeric keypad" below). Character keys render at
    one fixed global width computed in `KeyboardScreen` (`unitKeyWidthPx` in
    `ui/keyboard/KeyWidth.kt`); rows with fewer keys are centered instead of
-   stretched, and modifier keys take the remaining space via weights.
+   stretched, and modifier keys take the remaining space via weights. The
+   numpad is the one exception: it keeps its own weights (uniform 1/3-width
+   dial keys), bypassing the unit width in `KeyboardScreen`.
 2. **Panels are layout modes, not layouts**: `LayoutId.EMOJI` has no
    `KeyboardLayout` — `KeyboardScreen` renders `EmojiPanel` instead of the
    letter rows. Any panel (scrollable/tappable content) must live **outside**
    the letter-gesture `pointerInput` container; otherwise panel scrolls/taps
-   are swallowed as gestures. On the letters/symbols layouts the container
+   are swallowed as gestures. On the key layouts (letters/symbols/numeric)
+   the container
    wraps the utility row too (so a swipe can start anywhere in the keyboard
    rectangle); panels and the voice screen keep the utility row outside as
    plain clickable keys (two render modes of one `UtilityRow` composable).
@@ -66,8 +70,8 @@ Data flow (deliberately layered, keep it this way):
    nothing drawn, nothing decoded. Taps on the gesture-mode
    utility row are re-dispatched semantically in the loop
    (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
-   `onSettingsClick` callback). The symbols layout keeps no decoding: a
-   non-spacebar drag there is swallowed.
+   `onSettingsClick` callback). The symbols and numeric layouts keep no
+   decoding: a non-spacebar drag there is swallowed.
 4. **`KeyboardViewModel` reduces actions** into a new `KeyboardState` plus an
    optional `KeyboardEffect` (CommitText / CommitWord / DeleteBackward /
    PerformEnter). Pure logic, no Android types beyond `ViewModel`.
@@ -109,6 +113,31 @@ Data flow (deliberately layered, keep it this way):
    the letters layout) collect a swipe trail, so an overshoot word-swipe
    starting just above the space bar decodes instead of being eaten by the
    cursor drag. Junk gap trails are filtered by `MAX_COMMIT_SCORE`.
+
+### Numeric keypad
+
+- `LayoutId.NUMERIC` + `NumericLayout` (`layout/NumericLayout.kt`): a strict
+  3x4 dial pad (ITU-T telephone arrangement, uniform weight-1f keys — no wide
+  keys, no ABC key, no space bar, no visible punctuation; Philip's spec, don't
+  "fix"). Like the symbols layout it has no swipe decoding: a non-spacebar
+  drag is swallowed by the gesture loop.
+- The utility row's fifth key toggles it both ways with a contextual label
+  ("123" on letters/symbols, "ABC" on the numpad); gesture-mode taps go
+  through `utilityTapAction(id, proofreaderAvailable, layout)`.
+- Auto-popup: `SwipeKeyboardService.onStartInputView` applies
+  `fieldStartLayout` (`ime/NumericField.kt`, pure, unit-tested) on a fresh
+  field start (`!restarting`) — numpad for `TYPE_CLASS_NUMBER`/`PHONE`/
+  `DATETIME` (variation/flag bits ignored), back to letters when the next
+  field is not numeric and the numpad is showing. Within a field session the
+  manual toggle is never overridden; other layouts keep their existing
+  cross-field persistence. Routed through `onKeyboardAction` so the wrapper's
+  emoji-suggestion clearing applies.
+- Punctuation lives behind the `0` long-press popup (dial-pad convention),
+  via the generalized `keyPopup(layout, key)` in
+  `ui/keyboard/LongPressPopup.kt`: `NUMERIC_POPUP` = `# * ( ) / : . ,` +
+  space (the numpad's only space source; renders as "␣", commits " "), 3x3,
+  money keys on the bottom row. `popupIndexAt` takes the choices list — never
+  re-couple it to `PUNCTUATION_POPUP.size`.
 
 ### Swipe decoding (`swipe/`)
 
