@@ -143,7 +143,13 @@ Data flow (deliberately layered, keep it this way):
   "dog" hesitating over F must not become "fog"); endpoint regions are
   anchored to the actual first/last trail point (their hardcoded 0.5
   salience is evidence-free, so the distance term skips the salience
-  multiplier there); and words whose first letter matches mid-trail pay
+  multiplier there), and an ISOLATED lift-off region — no measured
+  salience reaches the last point, i.e. the finger lifted mid-flight
+  without decelerating — emits no key at all, so a drift endpoint's
+  nearest key ("dough"'s h, "we're"'s r) can't charge the intended word
+  a missed salient it never earned (touch-down keeps its anchor
+  unconditionally: the finger starts at rest on an aimed key); and words
+  whose first letter matches mid-trail pay
   an unexplained-head charge mirroring the tail term (0.5kw free — touch-
   down aim is much better than lift-off aim). Lower score =
   better; `KeyboardScreen` commits the top word when

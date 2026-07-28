@@ -55,6 +55,27 @@ class SwipeDecoderTest {
                 repeat(25) { add(to) } // ~400ms standing still on the key
             }
         }
+        // Real lift-offs decelerate into the final key (cf. the deliberate
+        // stops of the trails6 pass-1 capture): near-stationary points with
+        // growing gaps make the end region MEASURED, not just the hardcoded
+        // 0.5 endpoint anchor. The points keep CREEPING forward (a fully
+        // stationary blob would reach into the final leg through the 0.35kw
+        // salience window and merge the last turn's region into the end
+        // region — a stationary tail ate "hello"'s double-L dwell). Total
+        // added dwell (~128 ms) stays well under DWELL_DOUBLE_MS so the
+        // last letter never doubles.
+        val dir = waypoints.last() - waypoints[waypoints.size - 2]
+        val len = waypoints.last().distanceTo(waypoints[waypoints.size - 2])
+        val step = if (len > 1e-6f) Vec2(dir.x / len, dir.y / len) else Vec2(1f, 0f)
+        var offset = 0f
+        for ((advance, gap) in listOf(3f to 24L, 2f to 40L, 1f to 64L)) {
+            offset += advance
+            points += TimedPoint(
+                Vec2(waypoints.last().x + step.x * offset, waypoints.last().y + step.y * offset),
+                t,
+            )
+            t += gap
+        }
         return points
     }
 
@@ -84,6 +105,24 @@ class SwipeDecoderTest {
             for (s in 1..steps) {
                 add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps))
             }
+        }
+        // Same decelerating lift-off tail as trailThrough (which see for why
+        // the points keep creeping forward instead of standing still):
+        // real lift-offs slow into the final key, so the end region is
+        // measured, not just the hardcoded 0.5 anchor. Explicit gaps (add()
+        // would give 3 ms — G is far from F). ~128 ms total, well under
+        // DWELL_DOUBLE_MS.
+        val dir = waypoints.last() - waypoints[waypoints.size - 2]
+        val len = waypoints.last().distanceTo(waypoints[waypoints.size - 2])
+        val step = if (len > 1e-6f) Vec2(dir.x / len, dir.y / len) else Vec2(1f, 0f)
+        var offset = 0f
+        for ((advance, gap) in listOf(3f to 24L, 2f to 40L, 1f to 64L)) {
+            offset += advance
+            points += TimedPoint(
+                Vec2(waypoints.last().x + step.x * offset, waypoints.last().y + step.y * offset),
+                t,
+            )
+            t += gap
         }
         return points
     }
