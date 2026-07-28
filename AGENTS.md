@@ -160,7 +160,7 @@ Data flow (deliberately layered, keep it this way):
   generator and regenerate, never hand-edit `words_en.txt`.
 - Apostrophe words (possessives/contractions) are swipeable: the generator
   admits tokens with exactly ONE apostrophe between letters ("mother's",
-  "don't", ~1.6k of them) so first()/last() is always a letter and the
+  "don't", ~1.75k of them) so first()/last() is always a letter and the
   endpoint gates are unaffected. The decoder matches them LETTERS ONLY —
   `swipeLetters(word)` (swipe/WordLetters.kt) strips the apostrophe, which
   has no key and contributes zero geometry (no distance, conformance,
@@ -179,6 +179,10 @@ Data flow (deliberately layered, keep it this way):
   - **Rare proper names**: in SCOWL names ∧ NOT in SCOWL words ∧ zipf <
     2.8 — drops "brien"/"vey"/"iver"-class surname junk (~2.5k words)
     while keeping names people type ("siri", "alexa", "jose", "maria").
+    Apostrophe tokens are EXEMPT (Philip's call after a decoder
+    competition audit: a possessive's letters must match the trail in
+    order, so frequent words crush them on frequency whenever geometry
+    coincides — the bare-name steal mechanism doesn't transfer).
   - **Nonce respellings**: len ≥ 4, not a SCOWL word, zipf < 3.1, and a
     same-length ONE-SUBSTITUTION neighbor exists in SCOWL words with zipf
     ≥ word + 2.0 ("krazy"→"crazy"). Substitution-only is deliberate —
