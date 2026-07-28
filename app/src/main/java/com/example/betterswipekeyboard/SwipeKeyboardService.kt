@@ -358,6 +358,15 @@ class SwipeKeyboardService : InputMethodService(),
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
+            KeyboardEffect.DeleteWordBackward -> {
+                // First backspace after a swipe: the whole word goes. The
+                // service's own lastCommitWasSwipe (tap-after-swipe
+                // leading-space rule) is deliberately left alone — typing
+                // or swiping a replacement word still earns its space.
+                editor.deleteWordBackward()
+                textDirtySinceProofread = true
+                scheduleAutoProofread()
+            }
             KeyboardEffect.PerformEnter -> {
                 editor.enter(currentInputEditorInfo)
                 textDirtySinceProofread = true

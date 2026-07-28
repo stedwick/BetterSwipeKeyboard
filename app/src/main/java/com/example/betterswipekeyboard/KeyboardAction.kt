@@ -79,6 +79,17 @@ sealed interface KeyboardEffect {
      */
     data class CommitWord(val word: String) : KeyboardEffect
     data object DeleteBackward : KeyboardEffect
+
+    /**
+     * Delete the word a swipe just committed, including the leading space
+     * the swipe commit auto-inserted, so the cursor returns to the
+     * pre-swipe state. Emitted instead of [DeleteBackward] for the first
+     * backspace after a swipe commit (see
+     * [KeyboardState.lastCommitWasSwipe]); distinct because the editor
+     * reads the word length from the text field instead of deleting one
+     * grapheme cluster.
+     */
+    data object DeleteWordBackward : KeyboardEffect
     data object PerformEnter : KeyboardEffect
 
     /**

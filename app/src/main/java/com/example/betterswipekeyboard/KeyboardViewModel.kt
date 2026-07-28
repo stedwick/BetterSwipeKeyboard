@@ -29,12 +29,14 @@ class KeyboardViewModel : ViewModel() {
             val current = _state.value
             val text = if (current.isCaps) action.text.uppercase() else action.text
             consumeOneShot()
+            clearSwipeFlag()
             KeyboardEffect.CommitText(text)
         }
 
         is KeyboardAction.CommitWord -> {
             val caps = _state.value.shiftMode
             consumeOneShot()
+            _state.update { it.copy(lastCommitWasSwipe = true) }
             KeyboardEffect.CommitWord(
                 when (caps) {
                     ShiftMode.ONE_SHOT -> action.word.replaceFirstChar { it.uppercase() }
@@ -44,17 +46,33 @@ class KeyboardViewModel : ViewModel() {
             )
         }
 
-        KeyboardAction.Backspace -> KeyboardEffect.DeleteBackward
+        // First backspace after a swipe deletes the whole just-swiped word
+        // (and consumes the flag); anything after is a plain char delete —
+        // so a held-backspace repeat goes word, then characters.
+        KeyboardAction.Backspace ->
+            if (_state.value.lastCommitWasSwipe) {
+                clearSwipeFlag()
+                KeyboardEffect.DeleteWordBackward
+            } else {
+                KeyboardEffect.DeleteBackward
+            }
 
-        KeyboardAction.Enter -> KeyboardEffect.PerformEnter
+        KeyboardAction.Enter -> {
+            clearSwipeFlag()
+            KeyboardEffect.PerformEnter
+        }
 
         // Cursor moves don't consume one-shot shift: move, then type the
         // shifted letter.
-        is KeyboardAction.MoveCursor -> KeyboardEffect.MoveCursor(action.steps)
+        is KeyboardAction.MoveCursor -> {
+            clearSwipeFlag()
+            KeyboardEffect.MoveCursor(action.steps)
+        }
 
         KeyboardAction.Shift -> {
             _state.update {
                 it.copy(
+                    lastCommitWasSwipe = false,
                     shiftMode = when (it.shiftMode) {
                         ShiftMode.OFF -> ShiftMode.ONE_SHOT
                         ShiftMode.ONE_SHOT, ShiftMode.LOCKED -> ShiftMode.OFF
@@ -65,22 +83,29 @@ class KeyboardViewModel : ViewModel() {
         }
 
         KeyboardAction.CapsLock -> {
-            _state.update { it.copy(shiftMode = ShiftMode.LOCKED) }
+            _state.update { it.copy(lastCommitWasSwipe = false, shiftMode = ShiftMode.LOCKED) }
             null
         }
 
         is KeyboardAction.SwitchLayout -> {
-            _state.update { it.copy(layout = action.layout) }
+            _state.update { it.copy(lastCommitWasSwipe = false, layout = action.layout) }
             null
         }
 
         KeyboardAction.ToggleProofread -> {
-            _state.update { it.copy(proofreadAuto = !it.proofreadAuto) }
+            _state.update {
+                it.copy(lastCommitWasSwipe = false, proofreadAuto = !it.proofreadAuto)
+            }
             null
         }
 
         // No state change: the service uses these solely to suspend and
         // restart the auto-proofread inactivity timer around gestures.
+        // They deliberately do NOT clear lastCommitWasSwipe: they wrap
+        // every gesture (GestureStarted, the action, GestureEnded), so the
+        // swipe's own CommitWord arrives between them and a backspace
+        // tap's GestureStarted precedes the Backspace that must still see
+        // the flag.
         KeyboardAction.GestureStarted -> null
         KeyboardAction.GestureEnded -> null
 
@@ -95,12 +120,13 @@ class KeyboardViewModel : ViewModel() {
             // leading-space rules and auto-proofread for the same reason.
             // Pasting returns to letters.
             consumeOneShot()
-            _state.update { it.copy(layout = LayoutId.LETTERS) }
+            _state.update { it.copy(lastCommitWasSwipe = false, layout = LayoutId.LETTERS) }
             KeyboardEffect.PasteText(action.text)
         }
 
         is KeyboardAction.DeleteClip -> {
             clipboardHistory.remove(action.text)
+            clearSwipeFlag()
             refreshClipboard()
             null
         }
@@ -153,6 +179,12 @@ class KeyboardViewModel : ViewModel() {
     private fun consumeOneShot() {
         _state.update {
             if (it.shiftMode == ShiftMode.ONE_SHOT) it.copy(shiftMode = ShiftMode.OFF) else it
+        }
+    }
+
+    private fun clearSwipeFlag() {
+        _state.update {
+            if (it.lastCommitWasSwipe) it.copy(lastCommitWasSwipe = false) else it
         }
     }
 }

@@ -68,7 +68,15 @@ Data flow (deliberately layered, keep it this way):
    repeat keeps them minimal: a "delete streak" (reset by any other edit)
    skips the per-step `getSelectedText` check after the first step, and the
    repeat clock in `KeyboardScreen` fires at fixed 50 ms boundaries instead
-   of 50 ms after each step's IPC returned.
+   of 50 ms after each step's IPC returned. The first backspace after a
+   swipe deletes the whole just-swiped word, Gboard-style:
+   `KeyboardState.lastCommitWasSwipe` (set by the CommitWord reduction,
+   cleared by any other input action — but NOT by GestureStarted/Ended,
+   which wrap every gesture) makes the ViewModel emit
+   `KeyboardEffect.DeleteWordBackward`, and `precedingWordLength` measures
+   the word plus its auto-inserted leading space (never a newline) via the
+   word `BreakIterator`. Voice dictation bypasses the reducer, so it never
+   arms the word-delete.
 6. **Space-bar drag = cursor control** (`SpacebarCursor.kt` +
    `ui/keyboard/SpacebarCursorDrag.kt`): a horizontal drag on the space bar
    emits `MoveCursor` step deltas (net displacement, 14.dp per step), which

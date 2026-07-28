@@ -31,6 +31,15 @@ data class KeyboardState(
     val clipboard: List<ClipEntry> = emptyList(),
     /** Suggestions shown in the row atop the emoji panel; service-computed. */
     val emojiSuggestions: List<String> = emptyList(),
+    /**
+     * True when the most recently committed input was a swiped word. Set by
+     * the CommitWord reduction and cleared by any other input action; the
+     * first Backspace while set deletes the whole just-swiped word (fast
+     * course-correction for a bad swipe, like Gboard) instead of one
+     * character. Voice dictation bypasses the reducer (the service commits
+     * it directly), so dictation never sets this flag.
+     */
+    val lastCommitWasSwipe: Boolean = false,
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF
