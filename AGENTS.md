@@ -515,4 +515,7 @@ selected as the active IME (the app's setup screen has buttons for both).
 - Privacy matters: prefer on-device, ZDR, honest cloud disclosure in the UI.
 - UI taste: iOS-like keyboard aesthetics, thumb reach, iterating on small
   details (labels, colors, popup styling, long-press hints).
+- When asking him to record or test the swipe test sentences, ALWAYS
+  re-print the full sentence list in the reply — he doesn't want to scroll
+  back up to find them.
 
