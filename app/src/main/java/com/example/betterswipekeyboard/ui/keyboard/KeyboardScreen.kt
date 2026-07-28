@@ -75,6 +75,7 @@ import com.example.betterswipekeyboard.swipe.SwipeConfidence
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
+import com.example.betterswipekeyboard.swipe.crossedLetters
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import com.example.betterswipekeyboard.swipe.swipeConfidence
 import kotlinx.coroutines.Job
@@ -609,7 +610,15 @@ fun KeyboardScreen(
                                         val best = results.firstOrNull()
                                         val confidence = swipeConfidence(results)
                                         if (best != null && confidence != SwipeConfidence.FAILED) {
-                                            onAction(KeyboardAction.CommitWord(best.word))
+                                            onAction(
+                                                KeyboardAction.CommitWord(
+                                                    best.word,
+                                                    crossedLetters(
+                                                        decodedTrail.map { it.position },
+                                                        keyCenters,
+                                                    ),
+                                                ),
+                                            )
                                         }
                                         when (confidence) {
                                             SwipeConfidence.CONFIDENT -> {

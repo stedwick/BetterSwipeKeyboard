@@ -45,7 +45,16 @@ object ProofreadPrompt {
             "an error - keep it exactly as written, even if it is informal " +
             "('mum', 'gonna') or a more common word would read better. Make the " +
             "smallest possible fix: replace the wrong word, never restructure, " +
-            "delete or invent words around it. The text may contain the previous sentence " +
+            "delete or invent words around it. The text may be followed by swipe " +
+            "paths: for each swiped word, the ordered keys the finger crossed " +
+            "('fog=d·o·g' means 'fog' was written but the path reads d-o-g). " +
+            "Paths are approximate - an extra letter at either end (finger " +
+            "travel) or a missing letter (aim slip) is normal. A word that " +
+            "disagrees with its path is a likely error even if it fits its " +
+            "sentence: restore the word the path spells. Typed words have no " +
+            "path; for them the rules above apply unchanged. When path and " +
+            "context disagree, prefer the reading that makes the sentence " +
+            "natural. The text may contain the previous sentence " +
             "followed by the sentence currently being typed. Never rephrase an " +
             "already-correct sentence. If the last sentence is a fragment that " +
             "continues the previous one (e.g. it starts with 'and', 'but', 'so' or " +
@@ -117,7 +126,53 @@ object ProofreadPrompt {
         "We go out on Fridays." to "We go out on Fridays.",
     )
 
-    val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES
+    /**
+     * Few-shots teaching the swipe-path annotation format the service
+     * appends ([withSwipePaths]): one disagreement fix (the path overrides
+     * a plausible-looking wrong word), one agreement negative (paths match
+     * the text — return it unchanged, never invent changes). Both avoid
+     * the ten-sentence retest corpus (Philip's §8.2 call: the negative
+     * pair deliberately does NOT quote "the dog ran over the hill").
+     */
+    val PATH_EXAMPLES: List<Pair<String, String>> = listOf(
+        "the update should found the crash bug\n" +
+            "(Swipe paths, approximate: the=t·h·e, update=u·p·d·a·t·e, " +
+            "should=s·h·o·u·l·d, found=f·i·x, the=t·h·e, crash=c·r·a·s·h, bug=b·u·g)" to
+            "The update should fix the crash bug.",
+        "The cat sat on the mat.\n" +
+            "(Swipe paths, approximate: the=t·h·e, cat=c·a·t, sat=s·a·t, " +
+            "on=o·n, the=t·h·e, mat=m·a·t)" to
+            "The cat sat on the mat.",
+    )
+
+    val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES + PATH_EXAMPLES
+
+    /** Marker prefix of the annotation block [withSwipePaths] appends —
+     * shared with the echo guard ([containsSwipePathsMarker]). */
+    const val SWIPE_PATHS_MARKER = "Swipe paths"
+
+    /** Cap on annotated words per request — bounds the token cost. */
+    const val MAX_ANNOTATED_WORDS = 20
+
+    /**
+     * Appends the swipe-path block to the proofread input: the most recent
+     * [MAX_ANNOTATED_WORDS] swiped words as `word=path` pairs. Returns
+     * [text] unchanged when there is nothing to annotate (typed text).
+     */
+    fun withSwipePaths(text: String, paths: List<Pair<String, String>>): String {
+        if (paths.isEmpty()) return text
+        val block = paths.takeLast(MAX_ANNOTATED_WORDS)
+            .joinToString(", ") { (word, letters) -> "$word=$letters" }
+        return "$text\n($SWIPE_PATHS_MARKER, approximate: $block)"
+    }
+
+    /**
+     * Echo guard: the model must reply with ONLY the corrected text, so a
+     * reply containing the annotation marker means it echoed the input —
+     * the caller discards such results (fail soft) rather than risk
+     * inserting the annotation into the text field.
+     */
+    fun containsSwipePathsMarker(text: String): Boolean = text.contains(SWIPE_PATHS_MARKER)
 
     const val VOICE_SYSTEM =
         "You are a meticulous proofreader for text produced by voice dictation " +

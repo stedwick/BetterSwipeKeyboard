@@ -88,6 +88,25 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `crossed letters pass through the commit word reduction`() {
+        val vm = viewModel()
+        assertEquals(
+            KeyboardEffect.CommitWord("hello", "h·e·l·o"),
+            vm.onAction(KeyboardAction.CommitWord("hello", "h·e·l·o")),
+        )
+    }
+
+    @Test
+    fun `caps transforms the word but not the crossed letters`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        assertEquals(
+            KeyboardEffect.CommitWord("Hello", "h·e·l·o"),
+            vm.onAction(KeyboardAction.CommitWord("hello", "h·e·l·o")),
+        )
+    }
+
+    @Test
     fun `one shot shift capitalizes swiped word then turns off`() {
         val vm = viewModel()
         vm.onAction(KeyboardAction.Shift)
