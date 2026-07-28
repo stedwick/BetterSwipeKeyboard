@@ -44,3 +44,48 @@ fun spacebarHitRect(visualRect: Rect, topInsetPx: Float): Rect =
  */
 fun dragCursorSteps(displacementXPx: Float, stepPx: Float): Int =
     (displacementXPx / stepPx).toInt()
+
+// Velocity-sensitive space-bar scrubbing: the faster the finger moves, the
+// less physical travel each cursor step costs, so a fast fling crosses many
+// characters while a slow drag keeps today's precise feel. Three zones
+// (tune on-device); velocity is the smoothed magnitude in dp/s, so the
+// zones are direction-symmetric.
+const val SPACEBAR_STEP_SLOW_DP = 14f // today's fixed feel
+const val SPACEBAR_STEP_MID_DP = 8f
+const val SPACEBAR_STEP_FAST_DP = 4f
+const val SPACEBAR_SLOW_VELOCITY_DP_PER_SEC = 200f
+const val SPACEBAR_FAST_VELOCITY_DP_PER_SEC = 800f
+
+/**
+ * Pure, unit-tested: horizontal travel per cursor step at a given
+ * (smoothed, unsigned) scrub velocity in dp/s. Chosen over emitting
+ * multi-char steps at speed: a variable step size keeps the
+ * net-displacement accumulator and its reversal semantics intact, and
+ * [rebaseCursorAnchor] makes zone changes continuous.
+ */
+fun spacebarStepSize(velocityDpPerSec: Float): Float = when {
+    velocityDpPerSec < SPACEBAR_SLOW_VELOCITY_DP_PER_SEC -> SPACEBAR_STEP_SLOW_DP
+    velocityDpPerSec < SPACEBAR_FAST_VELOCITY_DP_PER_SEC -> SPACEBAR_STEP_MID_DP
+    else -> SPACEBAR_STEP_FAST_DP
+}
+
+/**
+ * EMA smoothing factor for the scrub velocity (tune on-device): reacts
+ * within ~2–3 pointer events, but a single jittery event (big dx over a
+ * tiny dt) cannot flip the zone by itself.
+ */
+const val SPACEBAR_VELOCITY_EMA_ALPHA = 0.4f
+
+/** Pure, unit-tested: exponential moving average of the scrub velocity. */
+fun smoothVelocity(previous: Float, sample: Float, alpha: Float): Float =
+    previous + alpha * (sample - previous)
+
+/**
+ * Pure, unit-tested: re-anchor a net-displacement step accumulator when
+ * the step size changes mid-drag, keeping the already-emitted
+ * [emittedSteps] continuous at [positionX]. Without this, a zone change
+ * retroactively re-divides the whole drag from the original anchor and
+ * the cursor jumps (the classic variable-rate accumulator bug).
+ */
+fun rebaseCursorAnchor(positionX: Float, emittedSteps: Int, stepPx: Float): Float =
+    positionX - emittedSteps * stepPx
