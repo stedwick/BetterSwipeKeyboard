@@ -14,14 +14,19 @@ import org.junit.Test
  * Real-hand accuracy harness: replays Philip's captured swipes (recorded
  * on a Galaxy Fold via SwipeTrailCapture) with their confirmed intended
  * words through the decoder and applies the commit rule
- * ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does. Three sets:
+ * ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does. Four sets:
  * `swipe_trails_philip.*` (first capture), `swipe_trails2_philip.*`
  * (second capture, both phrases twice; intent `-` marks a genuine
- * mis-swipe — the user's typo, excluded from the counts), and
+ * mis-swipe — the user's typo, excluded from the counts),
  * `swipe_trails3_philip.*` (third capture: sentence 1 with 'bought',
  * sentence 1 with 'sold', the pangram twice, then a lone 'mother'
  * retry — recorded on the combined build with the frequency prior
- * at 3.0 and the filtered word list).
+ * at 3.0 and the filtered word list), and
+ * `swipe_trails4_normal_philip.*` (fourth capture: the ten-sentence
+ * TDD corpus at normal speed, one pass — 65 word slots plus two
+ * genuine retries in sentence 4, 'excellent' #23/#24 and 'example'
+ * #25/#26, both scored; sentence 8's one-letter 'a' was tapped, not
+ * swiped, so it has no record).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -63,6 +68,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET3",
             correct >= MIN_COMMITTED_CORRECT_SET3,
+        )
+    }
+
+    @Test
+    fun `fourth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails4_normal_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET4",
+            correct >= MIN_COMMITTED_CORRECT_SET4,
         )
     }
 
@@ -173,5 +187,18 @@ class SwipeRealTrailAccuracyTest {
          * mother's real blocker, the saturating conformance mean is) —
          * and lazy #34 ('lay' coin-flip at the commit threshold). */
         const val MIN_COMMITTED_CORRECT_SET3 = 34
+
+        /** Fourth capture (ten-sentence TDD corpus, normal speed) baseline
+         * at the B3 decoder: 60/67. The seven misses, by class:
+         * excellent #23 + example #25 (wild-trail SILENCE — intent absent
+         * from top-300, whole candidate field scores >3.3; both are
+         * first attempts that Philip immediately retried successfully);
+         * nine #31 + nice #32 (intent absent from top-300 while long
+         * words bounce/notice partition the trail and win — the
+         * mother-cull mechanism, NOT the predicted frequency tie);
+         * past #35 (loses 'part' by 0.06); the #48 (loses 'that' by
+         * 0.53); how #56 (loses 'hire' by 1.01 — a CONTROL-sentence
+         * breach at baseline, fix is TDD territory). */
+        const val MIN_COMMITTED_CORRECT_SET4 = 60
     }
 }
