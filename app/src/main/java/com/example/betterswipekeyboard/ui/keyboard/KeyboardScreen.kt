@@ -75,6 +75,7 @@ import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
+import com.example.betterswipekeyboard.swipe.crossedLetters
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -604,7 +605,15 @@ fun KeyboardScreen(
                                         onSwipeDecoded(decodedTrail, keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
                                         if (best != null && best.score < MAX_COMMIT_SCORE) {
-                                            onAction(KeyboardAction.CommitWord(best.word))
+                                            onAction(
+                                                KeyboardAction.CommitWord(
+                                                    best.word,
+                                                    crossedLetters(
+                                                        decodedTrail.map { it.position },
+                                                        keyCenters,
+                                                    ),
+                                                ),
+                                            )
                                             // Let the trail linger briefly, then clear it.
                                             scope.launch {
                                                 delay(TRAIL_LINGER_MS)

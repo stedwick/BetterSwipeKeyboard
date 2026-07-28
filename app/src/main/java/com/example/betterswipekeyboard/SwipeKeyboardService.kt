@@ -44,6 +44,7 @@ import com.example.betterswipekeyboard.proofread.Proofreader
 import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.proofread.SentenceExtractor
+import com.example.betterswipekeyboard.proofread.SwipedWordLog
 import com.example.betterswipekeyboard.proofread.selectBackend
 import com.example.betterswipekeyboard.swipe.Dictionary
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
@@ -89,6 +90,9 @@ class SwipeKeyboardService : InputMethodService(),
     private val editor = InputConnectionEditor { currentInputConnection }
     private var autoProofreadJob: Job? = null
     private var lastCommitWasSwipe = false
+
+    /** Crossed-letter memory for the proofreader (see SwipedWordLog). */
+    private val swipedWordLog = SwipedWordLog()
 
     private lateinit var clipboardManager: ClipboardManager
 
@@ -342,6 +346,7 @@ class SwipeKeyboardService : InputMethodService(),
             is KeyboardEffect.CommitWord -> {
                 // commitWord inserts the leading space for tap → swipe itself.
                 editor.commitWord(effect.word)
+                effect.crossedLetters?.let { swipedWordLog.record(effect.word, it) }
                 lastCommitWasSwipe = true
                 textDirtySinceProofread = true
                 scheduleAutoProofread()

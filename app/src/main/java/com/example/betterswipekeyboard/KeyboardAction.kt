@@ -29,11 +29,12 @@ sealed interface KeyboardAction {
     data object ToggleVoice : KeyboardAction
 
     /**
-     * Reserved for future swipe typing: a whole word decoded from a glide
-     * trail, committed as a single unit (followed by any trailing separator
-     * the decoder decides on).
+     * A whole word decoded from a glide trail, committed as a single unit.
+     * [crossedLetters] carries the ordered keys the trail crossed (see
+     * swipe/CrossedLetters.kt) as proofreader context; null for commits
+     * with no trail (only swipes produce it).
      */
-    data class CommitWord(val word: String) : KeyboardAction
+    data class CommitWord(val word: String, val crossedLetters: String? = null) : KeyboardAction
 
     /** Tap the sparkly key: toggles auto-proofreading on/off (like Shift). */
     data object ToggleProofread : KeyboardAction
@@ -76,8 +77,10 @@ sealed interface KeyboardEffect {
     /**
      * A swiped word. Distinct from [CommitText] because the service adds a
      * leading space when the field doesn't already end in whitespace.
+     * [crossedLetters] mirrors the action's trail letters for the
+     * proofreader's SwipedWordLog; caps transforms apply to [word] only.
      */
-    data class CommitWord(val word: String) : KeyboardEffect
+    data class CommitWord(val word: String, val crossedLetters: String? = null) : KeyboardEffect
     data object DeleteBackward : KeyboardEffect
 
     /**

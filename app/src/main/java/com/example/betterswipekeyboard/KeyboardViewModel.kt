@@ -43,6 +43,9 @@ class KeyboardViewModel : ViewModel() {
                     ShiftMode.LOCKED -> action.word.uppercase()
                     ShiftMode.OFF -> action.word
                 },
+                // Trail letters pass through unchanged: they describe keys,
+                // not characters, so caps never applies to them.
+                crossedLetters = action.crossedLetters,
             )
         }
 
