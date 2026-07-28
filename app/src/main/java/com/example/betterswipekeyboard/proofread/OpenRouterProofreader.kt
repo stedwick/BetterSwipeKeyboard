@@ -13,12 +13,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The proofreading prompt: a strict system message plus a few-shot example
- * per behavior we want (conservative fixes, nearby-key typos, homophones,
- * missing spaces, tone/emoji preservation, leaving correct text alone, the
- * swipe decoder's measured error classes, and merging a continuation
- * fragment into the previous sentence — needed when an earlier pass
- * terminated the sentence during a mid-thought pause).
+ * The proofreading prompt: a scoped repair system message plus a few-shot
+ * example per behavior we want (conservative fixes, nearby-key typos,
+ * homophones, missing spaces, tone/emoji preservation, leaving correct text
+ * alone, the swipe decoder's measured error classes, and merging a
+ * continuation fragment into the previous sentence — needed when an earlier
+ * pass terminated the sentence during a mid-thought pause).
+ * The typed prompt REPAIRS, it does not restyle: SYSTEM scopes the job to
+ * swipe-error shapes, plain typos and path disagreement ("That is the whole
+ * job"), and RESTYLE_EXAMPLES teaches by identity example that register,
+ * word choice, sentence structure and comma style are the writer's own —
+ * the old 'meticulous proofreader' framing rewrote evidence-free text in
+ * Philip's AI runs. The one sanctioned override stays the path carve-out:
+ * a word disagreeing with its crossed-letters path is fixed even when it
+ * fits its sentence.
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
@@ -132,12 +140,46 @@ object ProofreadPrompt {
     )
 
     /**
+     * Identity few-shots (input returned verbatim) killing the restyle
+     * classes the typed prompt must NOT perform: register formalization,
+     * synonym upgrades, restructuring a grammatical sentence, recasting
+     * defensible grammar, and comma/style restyling. They operationalize
+     * SYSTEM's "That is the whole job" scoping — a word with no swipe-error
+     * evidence stays exactly as written. Added after Philip's AI runs showed
+     * the old 'meticulous proofreader' prompt rewriting evidence-free text.
+     * All avoid the ten-sentence retest corpus.
+     */
+    val RESTYLE_EXAMPLES: List<Pair<String, String>> = listOf(
+        // Register formalization (gonna->going to, folks->parents; the
+        // mummy->mother class).
+        "I'm gonna crash at my folks' place tonight." to
+            "I'm gonna crash at my folks' place tonight.",
+        // Synonym upgrade (big->large, couch->sofa).
+        "We just bought a big couch for the den." to
+            "We just bought a big couch for the den.",
+        // Restructuring a grammatical sentence.
+        "There's still a bunch of stuff to finish before Friday." to
+            "There's still a bunch of stuff to finish before Friday.",
+        // Recasting defensible grammar (team 'are' is British agreement,
+        // not an error).
+        "The team are playing their best this season." to
+            "The team are playing their best this season.",
+        // Comma/style restyle (no comma insertion before 'but').
+        "It was a long drive but totally worth it." to
+            "It was a long drive but totally worth it.",
+    )
+
+    /**
      * Few-shots teaching the swipe-path annotation format the service
      * appends ([withSwipePaths]): one disagreement fix (the path overrides
      * a plausible-looking wrong word), one agreement negative (paths match
-     * the text — return it unchanged, never invent changes). Both avoid
-     * the ten-sentence retest corpus (Philip's §8.2 call: the negative
-     * pair deliberately does NOT quote "the dog ran over the hill").
+     * the text — return it unchanged, never invent changes), and one
+     * path-over-fluency fix — 'move' with path m·i·c·e becomes 'mice',
+     * never the more fluent 'men' (the ai3 run's 'Nine nice men' failure:
+     * the model took a fluent guess over path evidence; the path spelling
+     * wins). All avoid the ten-sentence retest corpus (Philip's §8.2 call:
+     * the negative pair deliberately does NOT quote "the dog ran over the
+     * hill", and the mice pair avoids "nine nice mice ran past the fox").
      */
     val PATH_EXAMPLES: List<Pair<String, String>> = listOf(
         "the update should found the crash bug\n" +
@@ -148,9 +190,15 @@ object ProofreadPrompt {
             "(Swipe paths, approximate: the=t·h·e, cat=c·a·t, sat=s·a·t, " +
             "on=o·n, the=t·h·e, mat=m·a·t)" to
             "The cat sat on the mat.",
+        "i saw three move in the garden yesterday\n" +
+            "(Swipe paths, approximate: i=i, saw=s·a·w, three=t·h·r·e·e, " +
+            "move=m·i·c·e, in=i·n, the=t·h·e, garden=g·a·r·d·e·n, " +
+            "yesterday=y·e·s·t·e·r·d·a·y)" to
+            "I saw three mice in the garden yesterday.",
     )
 
-    val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES + PATH_EXAMPLES
+    val EXAMPLES: List<Pair<String, String>> =
+        GENERAL_EXAMPLES + SWIPE_EXAMPLES + RESTYLE_EXAMPLES + PATH_EXAMPLES
 
     /** Marker prefix of the annotation block [withSwipePaths] appends —
      * shared with the echo guard ([containsSwipePathsMarker]). */
