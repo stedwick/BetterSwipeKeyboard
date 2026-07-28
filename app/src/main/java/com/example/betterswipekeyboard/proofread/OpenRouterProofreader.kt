@@ -13,12 +13,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The proofreading prompt: a strict system message plus a few-shot example
- * per behavior we want (conservative fixes, nearby-key typos, homophones,
- * missing spaces, tone/emoji preservation, leaving correct text alone, the
- * swipe decoder's measured error classes, and merging a continuation
- * fragment into the previous sentence — needed when an earlier pass
- * terminated the sentence during a mid-thought pause).
+ * The proofreading prompt: a scoped repair system message plus a few-shot
+ * example per behavior we want (conservative fixes, nearby-key typos,
+ * homophones, missing spaces, tone/emoji preservation, leaving correct text
+ * alone, the swipe decoder's measured error classes, and merging a
+ * continuation fragment into the previous sentence — needed when an earlier
+ * pass terminated the sentence during a mid-thought pause).
+ * The typed prompt REPAIRS, it does not restyle: SYSTEM scopes the job to
+ * swipe-error shapes, plain typos and path disagreement ("That is the whole
+ * job"), and RESTYLE_EXAMPLES teaches by identity example that register,
+ * word choice, sentence structure and comma style are the writer's own —
+ * the old 'meticulous proofreader' framing rewrote evidence-free text in
+ * Philip's AI runs. The one sanctioned override stays the path carve-out:
+ * a word disagreeing with its crossed-letters path is fixed even when it
+ * fits its sentence.
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
@@ -30,37 +38,42 @@ import org.json.JSONObject
 object ProofreadPrompt {
 
     const val SYSTEM =
-        "You are a meticulous proofreader. Correct spelling, grammar, punctuation " +
-            "and capitalization. Preserve the writer's meaning, tone, formatting and emoji. " +
-            "Do not translate or answer questions in the text. If the text is already " +
-            "correct, return it unchanged. The text was swipe-typed: the finger drags " +
-            "over the keys and the word is guessed from the path, which leaves " +
-            "characteristic errors. A word becomes a longer or rarer word starting " +
-            "the same way ('his' as 'hours', 'dog' as 'doping', 'fox' as 'folic') " +
-            "or shrinks to its prefix ('mother' as 'not', 'minimum' as 'min'); " +
-            "words with the same swipe path swap ('nine' as 'bounce', 'nice' as " +
-            "'notice'); neighboring keys slip at word edges ('quick' as 'wick'). " +
-            "When a word makes no sense in context, restore the sensible word on " +
-            "the same swipe path. A word that already fits its sentence is never " +
-            "an error - keep it exactly as written, even if it is informal " +
-            "('mum', 'gonna') or a more common word would read better. Make the " +
-            "smallest possible fix: replace the wrong word, never restructure, " +
-            "delete or invent words around it. The text may be followed by swipe " +
-            "paths: for each swiped word, the ordered keys the finger crossed " +
-            "('fog=d·o·g' means 'fog' was written but the path reads d-o-g). " +
-            "Paths are approximate - an extra letter at either end (finger " +
-            "travel) or a missing letter (aim slip) is normal. A word that " +
-            "disagrees with its path is a likely error even if it fits its " +
-            "sentence: restore the word the path spells. Typed words have no " +
-            "path; for them the rules above apply unchanged. When path and " +
-            "context disagree, prefer the reading that makes the sentence " +
-            "natural. The text may contain the previous sentence " +
-            "followed by the sentence currently being typed. Never rephrase an " +
-            "already-correct sentence. If the last sentence is a fragment that " +
-            "continues the previous one (e.g. it starts with 'and', 'but', 'so' or " +
-            "lacks a subject), merge them into one natural sentence. Genuinely " +
-            "separate sentences stay separate. Reply with ONLY the corrected text - no " +
-            "quotes, no explanations."
+        "You repair swipe-typed text. The finger drags over the keys and each " +
+            "word is guessed from the path, which leaves characteristic errors. " +
+            "A word becomes a longer or rarer word starting the same way ('his' " +
+            "as 'hours', 'dog' as 'doping', 'fox' as 'folic') or shrinks to " +
+            "its prefix ('mother' as 'not', 'minimum' as 'min'); words with the " +
+            "same swipe path swap ('nine' as 'bounce', 'nice' as 'notice'); " +
+            "neighboring keys slip at word edges ('quick' as 'wick'). When a " +
+            "word does not fit its sentence and one of these shapes explains " +
+            "it, restore the word the swipe meant - but only then. Also fix " +
+            "plain typos: misspellings, doubled or missing letters, missing " +
+            "spaces, missing capitals and end punctuation, and clear agreement " +
+            "errors. That is the whole job. A word that already fits its " +
+            "sentence is never an error - keep it exactly as written, even if " +
+            "it is informal ('mum', 'gonna') or a more common word would read " +
+            "better. Make the smallest possible fix: replace the wrong word, " +
+            "never restructure, delete or invent words around it. Never swap a " +
+            "word for a synonym, never change the writer's register or " +
+            "sentence structure, never restyle punctuation. Preserve the " +
+            "writer's words, tone, formatting and emoji. Do not translate or " +
+            "answer questions in the text. If the text is already correct, or " +
+            "you are unsure whether something is an error, return it unchanged. " +
+            "The text may be followed by swipe paths: for each swiped word, " +
+            "the ordered keys the finger crossed ('fog=d·o·g' means 'fog' was " +
+            "written but the path reads d-o-g). Paths are approximate - an " +
+            "extra letter at either end (finger travel) or a missing letter " +
+            "(aim slip) is normal. A word that disagrees with its path is a " +
+            "likely error even if it fits its sentence: restore the word the " +
+            "path spells. Typed words have no path; for them the rules above " +
+            "apply unchanged. When path and context disagree, prefer the " +
+            "reading that makes the sentence natural. The text may contain " +
+            "the previous sentence followed by the sentence currently being " +
+            "typed. If the last sentence is a fragment that continues the " +
+            "previous one (e.g. it starts with 'and', 'but', 'so' or lacks a " +
+            "subject), merge them into one sentence by joining them, changing " +
+            "nothing else. Genuinely separate sentences stay separate. Reply " +
+            "with ONLY the corrected text - no quotes, no explanations."
 
     private val GENERAL_EXAMPLES: List<Pair<String, String>> = listOf(
         "this is a short msg" to "This is a short msg.",
@@ -127,12 +140,46 @@ object ProofreadPrompt {
     )
 
     /**
+     * Identity few-shots (input returned verbatim) killing the restyle
+     * classes the typed prompt must NOT perform: register formalization,
+     * synonym upgrades, restructuring a grammatical sentence, recasting
+     * defensible grammar, and comma/style restyling. They operationalize
+     * SYSTEM's "That is the whole job" scoping — a word with no swipe-error
+     * evidence stays exactly as written. Added after Philip's AI runs showed
+     * the old 'meticulous proofreader' prompt rewriting evidence-free text.
+     * All avoid the ten-sentence retest corpus.
+     */
+    val RESTYLE_EXAMPLES: List<Pair<String, String>> = listOf(
+        // Register formalization (gonna->going to, folks->parents; the
+        // mummy->mother class).
+        "I'm gonna crash at my folks' place tonight." to
+            "I'm gonna crash at my folks' place tonight.",
+        // Synonym upgrade (big->large, couch->sofa).
+        "We just bought a big couch for the den." to
+            "We just bought a big couch for the den.",
+        // Restructuring a grammatical sentence.
+        "There's still a bunch of stuff to finish before Friday." to
+            "There's still a bunch of stuff to finish before Friday.",
+        // Recasting defensible grammar (team 'are' is British agreement,
+        // not an error).
+        "The team are playing their best this season." to
+            "The team are playing their best this season.",
+        // Comma/style restyle (no comma insertion before 'but').
+        "It was a long drive but totally worth it." to
+            "It was a long drive but totally worth it.",
+    )
+
+    /**
      * Few-shots teaching the swipe-path annotation format the service
      * appends ([withSwipePaths]): one disagreement fix (the path overrides
      * a plausible-looking wrong word), one agreement negative (paths match
-     * the text — return it unchanged, never invent changes). Both avoid
-     * the ten-sentence retest corpus (Philip's §8.2 call: the negative
-     * pair deliberately does NOT quote "the dog ran over the hill").
+     * the text — return it unchanged, never invent changes), and one
+     * path-over-fluency fix — 'move' with path m·i·c·e becomes 'mice',
+     * never the more fluent 'men' (the ai3 run's 'Nine nice men' failure:
+     * the model took a fluent guess over path evidence; the path spelling
+     * wins). All avoid the ten-sentence retest corpus (Philip's §8.2 call:
+     * the negative pair deliberately does NOT quote "the dog ran over the
+     * hill", and the mice pair avoids "nine nice mice ran past the fox").
      */
     val PATH_EXAMPLES: List<Pair<String, String>> = listOf(
         "the update should found the crash bug\n" +
@@ -143,9 +190,15 @@ object ProofreadPrompt {
             "(Swipe paths, approximate: the=t·h·e, cat=c·a·t, sat=s·a·t, " +
             "on=o·n, the=t·h·e, mat=m·a·t)" to
             "The cat sat on the mat.",
+        "i saw three move in the garden yesterday\n" +
+            "(Swipe paths, approximate: i=i, saw=s·a·w, three=t·h·r·e·e, " +
+            "move=m·i·c·e, in=i·n, the=t·h·e, garden=g·a·r·d·e·n, " +
+            "yesterday=y·e·s·t·e·r·d·a·y)" to
+            "I saw three mice in the garden yesterday.",
     )
 
-    val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES + PATH_EXAMPLES
+    val EXAMPLES: List<Pair<String, String>> =
+        GENERAL_EXAMPLES + SWIPE_EXAMPLES + RESTYLE_EXAMPLES + PATH_EXAMPLES
 
     /** Marker prefix of the annotation block [withSwipePaths] appends —
      * shared with the echo guard ([containsSwipePathsMarker]). */

@@ -395,7 +395,13 @@ Data flow (deliberately layered, keep it this way):
   plus negative examples guarding against 'correcting' plausible words.
   Examples deliberately avoid the ten-sentence retest corpus so the
   retest measures class generalization, not memorization. OpenRouter
-  path only, same ML Kit caveat as merging.
+  path only, same ML Kit caveat as merging. The typed prompt is scoped
+  repair-NOT-restyle (SYSTEM's "That is the whole job" plus the
+  `RESTYLE_EXAMPLES` identity negatives): no register, synonym,
+  structure or comma-style edits without swipe-error evidence — added
+  after Philip's AI runs showed the old 'meticulous proofreader'
+  framing rewriting evidence-free text; the path carve-out remains the
+  one sanctioned way to touch a plausible word.
 - Swipe-path annotation (crossed letters as proofreader evidence): at
   swipe-commit time `KeyboardScreen` attaches `crossedLetters` to
   `KeyboardAction.CommitWord` (the ViewModel passes it through; caps

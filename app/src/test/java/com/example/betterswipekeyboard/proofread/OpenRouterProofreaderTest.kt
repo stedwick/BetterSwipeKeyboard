@@ -221,6 +221,40 @@ class ProofreadPromptTest {
     }
 
     @Test
+    fun `restyle examples are identity pairs included in the typed few-shot list`() {
+        val restyle = ProofreadPrompt.RESTYLE_EXAMPLES
+        assertTrue(restyle.isNotEmpty())
+        for ((input, output) in restyle) {
+            assertEquals("restyle example must return its input verbatim: $input", input, output)
+        }
+        assertTrue(ProofreadPrompt.EXAMPLES.containsAll(restyle))
+    }
+
+    @Test
+    fun `restyle negatives cover register, synonym, restructure and comma-style classes`() {
+        val texts = ProofreadPrompt.RESTYLE_EXAMPLES.map { it.first }
+        // Register formalization (gonna/folks; the mummy->mother class).
+        assertTrue(texts.any { it.contains("gonna") })
+        // Synonym upgrade.
+        assertTrue(texts.any { it.contains("couch") })
+        // Restructuring a grammatical sentence.
+        assertTrue(texts.any { it.contains("bunch of stuff") })
+        // Comma/style restyle.
+        assertTrue(texts.any { it.contains("long drive but") })
+    }
+
+    @Test
+    fun `path few-shot teaches the path spelling over the fluent guess`() {
+        // The ai3 'Nine nice men' failure class: 'move' with path m-i-c-e
+        // must become 'mice', never the more fluent 'men'.
+        assertTrue(
+            ProofreadPrompt.PATH_EXAMPLES.any { (input, output) ->
+                input.contains("move=m·i·c·e") && output.contains(" mice ")
+            },
+        )
+    }
+
+    @Test
     fun `withSwipePaths appends the marker block`() {
         val annotated = ProofreadPrompt.withSwipePaths(
             "the fog ram",
