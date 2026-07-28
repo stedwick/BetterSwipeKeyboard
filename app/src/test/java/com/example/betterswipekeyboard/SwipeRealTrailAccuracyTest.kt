@@ -14,10 +14,14 @@ import org.junit.Test
  * Real-hand accuracy harness: replays Philip's captured swipes (recorded
  * on a Galaxy Fold via SwipeTrailCapture) with their confirmed intended
  * words through the decoder and applies the commit rule
- * ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does. Two sets:
- * `swipe_trails_philip.*` (first capture) and `swipe_trails2_philip.*`
+ * ([MAX_COMMIT_SCORE]) exactly as KeyboardScreen does. Three sets:
+ * `swipe_trails_philip.*` (first capture), `swipe_trails2_philip.*`
  * (second capture, both phrases twice; intent `-` marks a genuine
- * mis-swipe — the user's typo, excluded from the counts).
+ * mis-swipe — the user's typo, excluded from the counts), and
+ * `swipe_trails3_philip.*` (third capture: sentence 1 with 'bought',
+ * sentence 1 with 'sold', the pangram twice, then a lone 'mother'
+ * retry — recorded on the combined build with the frequency prior
+ * at 3.0 and the filtered word list).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -50,6 +54,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET2",
             correct >= MIN_COMMITTED_CORRECT_SET2,
+        )
+    }
+
+    @Test
+    fun `third capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails3_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET3",
+            correct >= MIN_COMMITTED_CORRECT_SET3,
         )
     }
 
@@ -139,8 +152,26 @@ class SwipeRealTrailAccuracyTest {
          * frequency prior and the filter compound (set 1 beats either
          * branch alone: 11 freq-only, 7 filter-only). Set-1 floor raised
          * 11 -> 12, earned.
+         *
+         * feature/endpoint-b3g (endpoint evidence grading: endpoint
+         * re-anchoring, mid-trail dwell gate, no salience multiplier at
+         * endpoint match indices, unexplained-head charge): set 1 #12
+         * "jumps" fixed (the head charge sinks "humps", whose H basin
+         * sits past the touch-down). Set-1 floor raised 12 -> 13, earned.
+         * Set 2 unchanged at 32 — the endpoint classes this package
+         * targets were already held by the frequency prior there.
          */
-        const val MIN_COMMITTED_CORRECT_SET1 = 12
+        const val MIN_COMMITTED_CORRECT_SET1 = 13
         const val MIN_COMMITTED_CORRECT_SET2 = 32
+
+        /** Third capture's baseline at the B3 decoder: 34/37. The three
+         * misses are mother x2 (#3 silence, #21 wrong-commits 'not') —
+         * the known line-conformance-cull victims: deleting the 1.75kw
+         * hard cull was MEASURED and rejected (it resurrected
+         * ict/mortimer/lay/pad/liszt across all three sets and mother
+         * still lost to 'mothed'/'moths' junk — the cull is not
+         * mother's real blocker, the saturating conformance mean is) —
+         * and lazy #34 ('lay' coin-flip at the commit threshold). */
+        const val MIN_COMMITTED_CORRECT_SET3 = 34
     }
 }

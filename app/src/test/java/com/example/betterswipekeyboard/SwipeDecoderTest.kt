@@ -58,6 +58,36 @@ class SwipeDecoderTest {
         return points
     }
 
+    /**
+     * Straight d->o->g trail whose speed dips near F (Philip's "dog"
+     * slowdown class): [slowGapMs] between the points within 35px of F,
+     * 3 ms elsewhere — a slight slowdown over a crossed key, not a turn.
+     * At 12 ms the dip totals ~50 ms near the region peak (below the dwell
+     * gate); at 16 ms it totals ~65 ms (above). The geometry never changes,
+     * only the timing, so any scoring difference is the gate's doing.
+     */
+    private fun dogTrailWithSpeedDip(slowGapMs: Long): List<TimedPoint> {
+        val f = centerOf('f')
+        val waypoints = listOf(centerOf('d'), centerOf('o'), centerOf('g'))
+        val points = mutableListOf<TimedPoint>()
+        var t = 0L
+        fun add(p: Vec2) {
+            val gap = if (p.distanceTo(f) < 35f) slowGapMs else 3L
+            points += TimedPoint(p, t)
+            t += gap
+        }
+        add(waypoints.first())
+        for (w in 1 until waypoints.size) {
+            val from = waypoints[w - 1]
+            val to = waypoints[w]
+            val steps = maxOf(1, (from.distanceTo(to) / 10f).toInt())
+            for (s in 1..steps) {
+                add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps))
+            }
+        }
+        return points
+    }
+
     @Test
     fun `swipe decodes with crossed letter i`() {
         // Trail turns on s, w, p, e only; the i is crossed without stopping.
@@ -164,6 +194,43 @@ class SwipeDecoderTest {
         if ("ak" in scores) {
             assertTrue(scores.getValue("ask") < scores.getValue("ak"))
         }
+    }
+
+    @Test
+    fun `brief mid-trail slowdown does not mark the crossed key deliberate`() {
+        // Philip's "dog must not become fog on a slight slowdown" class: a
+        // d->o->g swipe whose speed dips near F for ~50 ms. The dwell gate
+        // drops the slow region, so F never enters the salient keys and
+        // "fog" stays out of the candidates entirely.
+        val results = decoder.decode(dogTrailWithSpeedDip(slowGapMs = 12), keyCenters, KEY_WIDTH)
+        assertEquals("dog", results.top())
+        assertTrue("fog" !in results.map { it.word })
+    }
+
+    @Test
+    fun `lingering mid-trail slowdown marks the crossed key deliberate`() {
+        // Same trail with a ~65 ms linger near F: the region is admitted, F
+        // becomes salient, "dog" pays the missed-salient charge it dodged
+        // above, and "fog" enters the candidates (still loses on frequency).
+        val brief = decoder.decode(dogTrailWithSpeedDip(slowGapMs = 12), keyCenters, KEY_WIDTH)
+        val linger = decoder.decode(dogTrailWithSpeedDip(slowGapMs = 16), keyCenters, KEY_WIDTH, topN = 10)
+        assertEquals("dog", linger.top())
+        val briefDog = brief.first { it.word == "dog" }.score
+        val lingerDog = linger.first { it.word == "dog" }.score
+        assertTrue(lingerDog > briefDog + 0.2f)
+        assertTrue(linger.any { it.word == "fog" })
+    }
+
+    @Test
+    fun `word ignoring the trail opening pays the unexplained head charge`() {
+        // Straight top-row O->T trail. "it" matches its i a full key-width
+        // in, ignoring the o->i opening; "out" explains the whole trail.
+        // The unexplained-head charge is what puts "it" clearly behind —
+        // zero HEAD_ARC_WEIGHT and the gap shrinks from ~0.76 to ~0.26.
+        val results = decoder.decode(trailThrough('o', 't'), keyCenters, KEY_WIDTH)
+        assertEquals("out", results.top())
+        val scores = results.associate { it.word to it.score }
+        assertTrue(scores.getValue("it") - scores.getValue("out") > 0.5f)
     }
 
     private fun List<ScoredWord>.top(): String =

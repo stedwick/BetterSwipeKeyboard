@@ -136,7 +136,16 @@ Data flow (deliberately layered, keep it this way):
   motion; an LCS alignment between salient keys and the word, a trail-vs-
   ideal path-length term (Swype's per-word "expected path length"), a
   unigram frequency prior, and a small per-letter length bonus (FUTO's
-  β·L). A dwell ≥ 300 ms on a key doubles its letter. Lower score =
+  β·L). A dwell ≥ 300 ms on a key doubles its letter. Salient evidence is
+  graded before it can charge: a mid-trail region dominated by SLOWNESS
+  (not curvature) counts as a deliberate key visit only if the finger
+  lingered ≥ 60 ms (a slight slowdown over a crossed key is aim noise —
+  "dog" hesitating over F must not become "fog"); endpoint regions are
+  anchored to the actual first/last trail point (their hardcoded 0.5
+  salience is evidence-free, so the distance term skips the salience
+  multiplier there); and words whose first letter matches mid-trail pay
+  an unexplained-head charge mirroring the tail term (0.5kw free — touch-
+  down aim is much better than lift-off aim). Lower score =
   better; `KeyboardScreen` commits the top word when
   `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
   trails — correct swipes at normal speed land up to ~1.8). A failed
