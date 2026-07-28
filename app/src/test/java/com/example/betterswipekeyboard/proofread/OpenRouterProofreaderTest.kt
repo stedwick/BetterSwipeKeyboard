@@ -83,6 +83,28 @@ class ProofreadPromptTest {
     }
 
     @Test
+    fun `system prompt guards against overcorrection of valid words`() {
+        val system = ProofreadPrompt.SYSTEM
+        // A word that fits its sentence is kept exactly as written...
+        assertTrue(system.contains("never an error"))
+        assertTrue(system.contains("keep it exactly as written"))
+        // ...even when informal ('mum') or upgradable to a commoner word
+        // (the mummy->mother and go->went proofreader damage classes).
+        assertTrue(system.contains("'mum'"))
+        // The smallest possible fix: no restructuring around the fix (the
+        // never->member->'remembered once drinking' cascade class).
+        assertTrue(system.contains("smallest possible fix"))
+        assertTrue(system.contains("never restructure"))
+    }
+
+    @Test
+    fun `swipe few-shot examples include informal-word and short-verb negatives`() {
+        val negatives = ProofreadPrompt.SWIPE_EXAMPLES.filter { (input, output) -> input == output }
+        assertTrue(negatives.any { it.first.contains("mum") })
+        assertTrue(negatives.any { it.first.contains(" go ") })
+    }
+
+    @Test
     fun `system prompt teaches the swipe error classes`() {
         val system = ProofreadPrompt.SYSTEM
         assertTrue(system.contains("swipe-typed"))

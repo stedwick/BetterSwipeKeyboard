@@ -41,8 +41,11 @@ object ProofreadPrompt {
             "words with the same swipe path swap ('nine' as 'bounce', 'nice' as " +
             "'notice'); neighboring keys slip at word edges ('quick' as 'wick'). " +
             "When a word makes no sense in context, restore the sensible word on " +
-            "the same swipe path - but a word that already fits its sentence is " +
-            "not an error. The text may contain the previous sentence " +
+            "the same swipe path. A word that already fits its sentence is never " +
+            "an error - keep it exactly as written, even if it is informal " +
+            "('mum', 'gonna') or a more common word would read better. Make the " +
+            "smallest possible fix: replace the wrong word, never restructure, " +
+            "delete or invent words around it. The text may contain the previous sentence " +
             "followed by the sentence currently being typed. Never rephrase an " +
             "already-correct sentence. If the last sentence is a fragment that " +
             "continues the previous one (e.g. it starts with 'and', 'but', 'so' or " +
@@ -108,6 +111,10 @@ object ProofreadPrompt {
         // Already plausible in context: never 'fix' a word that fits.
         "The hours flew by." to "The hours flew by.",
         "She pinned a notice to the door." to "She pinned a notice to the door.",
+        // Informal words and short verbs are the writer's choice, not
+        // errors (guards mummy->mother and go->went style 'improvements').
+        "His mum makes the best soup." to "His mum makes the best soup.",
+        "We go out on Fridays." to "We go out on Fridays.",
     )
 
     val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES
