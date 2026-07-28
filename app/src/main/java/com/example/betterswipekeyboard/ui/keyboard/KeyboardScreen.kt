@@ -66,6 +66,7 @@ import com.example.betterswipekeyboard.spacebarHitRect
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
+import com.example.betterswipekeyboard.layout.NumericLayout
 import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
@@ -283,6 +284,7 @@ fun KeyboardScreen(
                 else -> {
                     val layout = when (state.layout) {
                         LayoutId.SYMBOLS -> SymbolsLayout
+                        LayoutId.NUMERIC -> NumericLayout
                         else -> QwertyLayout
                     }
                     geometry.activeLayout = layout.id
@@ -379,6 +381,7 @@ fun KeyboardScreen(
                                                 downUtility,
                                                 currentState.proofreader ==
                                                     ProofreaderStatus.AVAILABLE,
+                                                currentState.layout,
                                             )?.let(onAction)
                                             else -> downKey?.let { onAction(it.tapAction()) }
                                         }
@@ -474,8 +477,8 @@ fun KeyboardScreen(
                                                     onAction,
                                                 )
                                             } else {
-                                                // Symbols layout: no letter
-                                                // decoding — a drag from a
+                                                // Symbols/numeric layout: no
+                                                // letter decoding — a drag from a
                                                 // non-spacebar key (or the
                                                 // utility row) is not a swipe;
                                                 // swallow it.
@@ -731,7 +734,15 @@ fun KeyboardScreen(
                                                 state = state,
                                                 pressed = key == pressedKey,
                                                 colors = colors,
-                                                modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
+                                                modifier = if (
+                                                    // The numpad keeps its own
+                                                    // weights (uniform 1/3-width
+                                                    // dial keys), not the fixed
+                                                    // letter-key width.
+                                                    layout.id != LayoutId.NUMERIC &&
+                                                    key.isUnitCharacterKey() &&
+                                                    unitKeyWidth > 0.dp
+                                                ) {
                                                     Modifier.width(unitKeyWidth)
                                                 } else {
                                                     Modifier.weight(key.weight)
@@ -900,6 +911,28 @@ private fun UtilityRow(
             onKeyPositioned = onKeyPositioned,
         ) {
             UtilityKeyLabel("📋", colors)
+        }
+        UtilityKey(
+            id = UtilityKeyId.NUMERIC,
+            // The numpad key toggles: from letters/symbols into the numeric
+            // layout, from the numpad back to letters.
+            onClick = {
+                onAction(
+                    KeyboardAction.SwitchLayout(
+                        if (state.layout == LayoutId.NUMERIC) LayoutId.LETTERS else LayoutId.NUMERIC,
+                    ),
+                )
+            },
+            colors = colors,
+            modifier = Modifier.weight(1f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
+        ) {
+            // Contextual label: "123" goes to the numpad, "ABC" returns.
+            UtilityKeyLabel(
+                text = if (state.layout == LayoutId.NUMERIC) "ABC" else "123",
+                colors = colors,
+            )
         }
         UtilityKey(
             id = UtilityKeyId.SETTINGS,
