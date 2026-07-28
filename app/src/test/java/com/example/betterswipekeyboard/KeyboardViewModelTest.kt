@@ -52,6 +52,15 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `numeric layout switching produces no editor effect`() {
+        val vm = viewModel()
+        assertNull(vm.onAction(KeyboardAction.SwitchLayout(LayoutId.NUMERIC)))
+        assertEquals(LayoutId.NUMERIC, vm.state.value.layout)
+        assertNull(vm.onAction(KeyboardAction.SwitchLayout(LayoutId.LETTERS)))
+        assertEquals(LayoutId.LETTERS, vm.state.value.layout)
+    }
+
+    @Test
     fun `emoji layout switching produces no editor effect`() {
         val vm = viewModel()
         assertNull(vm.onAction(KeyboardAction.SwitchLayout(LayoutId.EMOJI)))
