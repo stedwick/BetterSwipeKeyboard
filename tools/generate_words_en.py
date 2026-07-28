@@ -42,6 +42,8 @@ Pipeline:
         lowercase tokens from film credits and out-score "brown"/"over"/
         "very" on real trails. Common names stay: "maria"/"jose" are
         dictionary words, "niko"/"siri"/"alexa" are above the floor.
+        Apostrophe tokens are EXEMPT (possessives don't steal — see
+        NAME_FLOOR), so "spielberg's"-class forms stay.
      b. NONCE RESPELLINGS: non-dictionary tokens one letter SUBSTITUTION
         away from a ≥100x more frequent dictionary word (zipf gap ≥ 2.0),
         below zipf 3.1 ("krazy"->"crazy", "definately"->"definitely",
@@ -100,6 +102,13 @@ SCOWL_FILES = (
 # type start higher ("niko" 3.02, "siri" 3.30, "alexa" 3.52) — 2.8 sits
 # in the measured gap, it is not a rank cutoff: it only scopes the
 # SCOWL-verified name class.
+# APOSTROPHE TOKENS ARE EXEMPT from the name rule (Philip's call, after a
+# decoder competition audit on synthetic trails): a possessive's letters
+# must match the trail in order, so frequent plain words crush them on
+# frequency whenever geometry coincides — zero common-word steals in the
+# 35-token audit. The steal mechanism that made bare names dangerous
+# (short names parking on a common word's path) does not transfer to
+# name+"'s". The RESPELLING rule still applies to apostrophe tokens.
 NAME_FLOOR = 2.8
 # Respelling ceiling/gap: common misspellings and eye-dialect cluster at
 # zipf 2.5-3.1 ("krazy" 2.55, "definately" 2.87, "seperate" 2.82); the
@@ -146,11 +155,6 @@ KEEP_EXCEPTIONS = {
     "comms",     # -> "comes"; common clipping ("comms")
     "calc",      # -> "call"; common clipping
     "panty",     # -> "party"; real word, missing from SCOWL 2018
-    # Caught by the rare-NAME rule instead (SCOWL lists the possessive
-    # form, zipf 2.47 < NAME_FLOOR). Kept: the name rule exists because
-    # bare names steal common-word swipes, but a possessive only competes
-    # on its own letter trail — and this one is the feature's use case.
-    "spielberg's",
 }
 
 # Hand-maintained supplement: words a keyboard user expects regardless of
@@ -261,9 +265,13 @@ def main() -> None:
         if w in KEEP_EXCEPTIONS:
             continue
         z = zipf_frequency(w, "en")
-        if w in scowl_names and w not in scowl_words and z < NAME_FLOOR:
+        # Name rule skips apostrophe tokens entirely (see NAME_FLOOR): a
+        # possessive's letters must match the trail in order, so the
+        # bare-name steal mechanism does not transfer.
+        name_hit = w in scowl_names and w not in scowl_words and z < NAME_FLOOR
+        if name_hit and "'" not in w:
             rare_names.append(w)  # "brien", "iver", "vey"
-        elif (len(w) >= 4 and w not in scowl_words and z < RESPELL_MAX
+        elif not name_hit and (len(w) >= 4 and w not in scowl_words and z < RESPELL_MAX
               and any(n in scowl_words and zipf_frequency(n, "en") >= z + RESPELL_GAP
                       for n in one_substitution_away(w))):
             respellings.append(w)  # "krazy" -> "crazy"
