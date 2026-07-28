@@ -52,6 +52,17 @@ class SwipeConfidenceTest {
     }
 
     @Test
+    fun `a margin between the old and new cutoffs is now low confidence`() {
+        // Pins the raised threshold: 0.20 was CONFIDENT at the old 0.15
+        // cutoff, and must flash yellow at 0.25 (see the calibration table
+        // on LOW_CONFIDENCE_MARGIN).
+        assertEquals(
+            SwipeConfidence.LOW,
+            swipeConfidence(results("hello" to 0.0f, "hell" to 0.20f)),
+        )
+    }
+
+    @Test
     fun `a close margin below the commit cutoff is low even with a great score`() {
         // The margin, not the absolute score, decides (calibration: wrong
         // commits score anywhere from -1.63 to 1.65).

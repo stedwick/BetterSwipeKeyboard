@@ -188,8 +188,8 @@ Data flow (deliberately layered, keep it this way):
   jQuery-highlight-style fade over ~400 ms, purely cosmetic): a FAILED
   swipe (no candidate below the cutoff, nothing committed) flashes the
   trail RED (`FailedSwipeFlash`); a commit with a close runner-up
-  (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.15, calibrated on the
-  four captured trail sets — flags 8/13 wrong commits at ~3% false
+  (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.25, calibrated on the
+  six captured trail sets — flags 11/20 wrong commits at 6.0% false
   positives) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
   confident commits flash nothing. Segment alpha in
   `ui/keyboard/TrailFade.kt`.
