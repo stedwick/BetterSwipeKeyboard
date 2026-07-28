@@ -15,12 +15,17 @@ import org.json.JSONObject
 /**
  * The proofreading prompt: a strict system message plus a few-shot example
  * per behavior we want (conservative fixes, nearby-key typos, homophones,
- * missing spaces, tone/emoji preservation, leaving correct text alone, and
- * merging a continuation fragment into the previous sentence — needed when
- * an earlier pass terminated the sentence during a mid-thought pause).
+ * missing spaces, tone/emoji preservation, leaving correct text alone, the
+ * swipe decoder's measured error classes, and merging a continuation
+ * fragment into the previous sentence — needed when an earlier pass
+ * terminated the sentence during a mid-thought pause).
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
+ *
+ * Backend split: this prompt only reaches the OpenRouter path. ML Kit's
+ * ProofreadingRequest takes plain text (no system prompt, no few-shot),
+ * so on-device proofreading never sees any of this.
  */
 object ProofreadPrompt {
 
@@ -28,7 +33,16 @@ object ProofreadPrompt {
         "You are a meticulous proofreader. Correct spelling, grammar, punctuation " +
             "and capitalization. Preserve the writer's meaning, tone, formatting and emoji. " +
             "Do not translate or answer questions in the text. If the text is already " +
-            "correct, return it unchanged. The text may contain the previous sentence " +
+            "correct, return it unchanged. The text was swipe-typed: the finger drags " +
+            "over the keys and the word is guessed from the path, which leaves " +
+            "characteristic errors. A word becomes a longer or rarer word starting " +
+            "the same way ('his' as 'hours', 'dog' as 'doping', 'fox' as 'folic') " +
+            "or shrinks to its prefix ('mother' as 'not', 'minimum' as 'min'); " +
+            "words with the same swipe path swap ('nine' as 'bounce', 'nice' as " +
+            "'notice'); neighboring keys slip at word edges ('quick' as 'wick'). " +
+            "When a word makes no sense in context, restore the sensible word on " +
+            "the same swipe path - but a word that already fits its sentence is " +
+            "not an error. The text may contain the previous sentence " +
             "followed by the sentence currently being typed. Never rephrase an " +
             "already-correct sentence. If the last sentence is a fragment that " +
             "continues the previous one (e.g. it starts with 'and', 'but', 'so' or " +
@@ -36,7 +50,7 @@ object ProofreadPrompt {
             "separate sentences stay separate. Reply with ONLY the corrected text - no " +
             "quotes, no explanations."
 
-    val EXAMPLES: List<Pair<String, String>> = listOf(
+    private val GENERAL_EXAMPLES: List<Pair<String, String>> = listOf(
         "this is a short msg" to "This is a short msg.",
         "The praject is compleet but needs too be reviewd" to
             "The project is complete but needs to be reviewed.",
@@ -59,6 +73,44 @@ object ProofreadPrompt {
         // sentence from obvious-error fixes.
         "she said shed call. when she got home" to "She said she'd call when she got home.",
     )
+
+    /**
+     * Few-shots for the swipe decoder's measured error classes (from the
+     * captured-trail miss autopsies: dog->doping, his->hours, the->that,
+     * over->overt are post-word drags; mother->not, minimum->min, past->part
+     * are tail-truncations; nine->bounce, nice->notice are same-path swaps;
+     * quick->wick is an edge key-slip; fox->folic is a rare word stealing a
+     * frequency tie). The classes are taught, not the instances, so the
+     * model generalizes to swipe errors it was never shown. The negative
+     * pair at the end guards the main risk: 'correcting' a word that is
+     * already plausible in its sentence.
+     * OpenRouter path only — ML Kit has no prompt hook (see class KDoc).
+     *
+     * Deliberately NONE of these sentences comes from the ten-sentence
+     * retest corpus: the retest should measure class generalization, not
+     * memorized corrections.
+     */
+    val SWIPE_EXAMPLES: List<Pair<String, String>> = listOf(
+        // Post-word drag: travel after the last letter reads as extra
+        // letters, so a short word becomes a longer word starting the same.
+        "i called hours office this morning" to "I called his office this morning.",
+        "we took the doping for a long walk" to "We took the dog for a long walk.",
+        // Same class reversed: the long word shrinks to its prefix.
+        "my not taught me how to swim" to "My mother taught me how to swim.",
+        "this job only pays min wage" to "This job only pays minimum wage.",
+        // Same swipe path, wrong word.
+        "she is bounce years old today" to "She is nine years old today.",
+        "we had a notice time at the beach" to "We had a nice time at the beach.",
+        // Neighboring keys slip at word edges (q and w are neighbors).
+        "can you give me a wick answer" to "Can you give me a quick answer?",
+        // A rare word steals a close trail from the obvious common one.
+        "a wild folic crossed the road" to "A wild fox crossed the road.",
+        // Already plausible in context: never 'fix' a word that fits.
+        "The hours flew by." to "The hours flew by.",
+        "She pinned a notice to the door." to "She pinned a notice to the door.",
+    )
+
+    val EXAMPLES: List<Pair<String, String>> = GENERAL_EXAMPLES + SWIPE_EXAMPLES
 
     const val VOICE_SYSTEM =
         "You are a meticulous proofreader for text produced by voice dictation " +
