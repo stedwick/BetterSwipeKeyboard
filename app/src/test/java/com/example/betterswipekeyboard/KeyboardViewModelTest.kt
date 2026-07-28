@@ -326,4 +326,108 @@ class KeyboardViewModelTest {
             )
         }
     }
+
+    @Test
+    fun `commit word stores the alternates in state`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+        assertEquals(listOf("hell", "help"), vm.state.value.swipeAlternates)
+    }
+
+    @Test
+    fun `alternates are stored caps-transformed like the committed word`() {
+        val oneShot = viewModel()
+        oneShot.onAction(KeyboardAction.Shift)
+        oneShot.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+        assertEquals(listOf("Hell", "Help"), oneShot.state.value.swipeAlternates)
+
+        val locked = viewModel()
+        locked.onAction(KeyboardAction.CapsLock)
+        locked.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        assertEquals(listOf("HELL"), locked.state.value.swipeAlternates)
+    }
+
+    @Test
+    fun `select alternate replaces the word and re-arms the swipe flag`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+
+        val effect = vm.onAction(KeyboardAction.SelectAlternate("hell"))
+        assertEquals(KeyboardEffect.ReplaceSwipedWord("hell"), effect)
+        // Re-armed: the next backspace word-deletes the replacement, and the
+        // strip keeps the other alternate for another swap.
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+        assertEquals(listOf("help"), vm.state.value.swipeAlternates)
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `selecting alternates repeatedly chains swaps`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+        assertEquals(KeyboardEffect.ReplaceSwipedWord("hell"), vm.onAction(KeyboardAction.SelectAlternate("hell")))
+        assertEquals(KeyboardEffect.ReplaceSwipedWord("help"), vm.onAction(KeyboardAction.SelectAlternate("help")))
+        assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+    }
+
+    @Test
+    fun `select alternate without an armed swipe is ignored`() {
+        val vm = viewModel()
+        val before = vm.state.value
+        assertNull(vm.onAction(KeyboardAction.SelectAlternate("hell")))
+        assertEquals(before, vm.state.value)
+
+        // Also ignored after the strip was cleared by other input.
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        vm.onAction(KeyboardAction.InsertText("a"))
+        assertNull(vm.onAction(KeyboardAction.SelectAlternate("hell")))
+    }
+
+    @Test
+    fun `any other input action clears the alternates too`() {
+        val clearingActions = listOf(
+            KeyboardAction.InsertText("a"),
+            KeyboardAction.Enter,
+            KeyboardAction.MoveCursor(-1),
+            KeyboardAction.SwitchLayout(LayoutId.SYMBOLS),
+            KeyboardAction.Shift,
+            KeyboardAction.CapsLock,
+            KeyboardAction.PasteClip("clip"),
+            KeyboardAction.ToggleProofread,
+            KeyboardAction.Backspace, // after the word-delete fires, the strip is stale
+        )
+        for (action in clearingActions) {
+            val vm = viewModel()
+            vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+            vm.onAction(action)
+            assertEquals("after $action", emptyList<String>(), vm.state.value.swipeAlternates)
+        }
+    }
+
+    @Test
+    fun `gesture markers do not clear the alternates`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.GestureStarted)
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        vm.onAction(KeyboardAction.GestureEnded)
+        assertEquals(listOf("hell"), vm.state.value.swipeAlternates)
+    }
+
+    @Test
+    fun `voice state transitions clear the alternates`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        vm.setVoiceState(VoiceState.LISTENING)
+        assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+    }
+
+    @Test
+    fun `clear swipe alternates empties the strip but keeps the swipe flag`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        vm.clearSwipeAlternates()
+        assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+    }
 }
