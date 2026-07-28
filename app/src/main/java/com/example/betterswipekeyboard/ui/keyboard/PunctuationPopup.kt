@@ -59,17 +59,20 @@ internal val PopupEdgeMargin = 4.dp
  * The bottom slack is deliberately small: the popup sits just above the
  * anchor key, and a larger allowance would put the resting fingertip inside
  * the hit area, so release jitter could select a bottom-row character
- * instead of committing the period.
+ * instead of committing the host key's own text. Rows are derived from
+ * [choices] (the prose and numeric popups differ), never from a hardcoded
+ * list — an invisible size coupling mis-slices rows and can return
+ * out-of-range indices.
  */
-internal fun popupIndexAt(position: Offset, bounds: Rect?): Int {
+internal fun popupIndexAt(position: Offset, bounds: Rect?, choices: List<String>): Int {
     val b = bounds ?: return -1
     if (position.y < b.top - 24f || position.y > b.bottom + 40f) return -1
     if (position.x < b.left || position.x > b.right) return -1
     val column = ((position.x - b.left) / (b.width / PUNCTUATION_POPUP_COLUMNS)).toInt()
         .coerceIn(0, PUNCTUATION_POPUP_COLUMNS - 1)
-    val rows = (PUNCTUATION_POPUP.size + PUNCTUATION_POPUP_COLUMNS - 1) / PUNCTUATION_POPUP_COLUMNS
+    val rows = (choices.size + PUNCTUATION_POPUP_COLUMNS - 1) / PUNCTUATION_POPUP_COLUMNS
     val row = ((position.y - b.top) / (b.height / rows)).toInt().coerceIn(0, rows - 1)
-    return (row * PUNCTUATION_POPUP_COLUMNS + column).coerceIn(0, PUNCTUATION_POPUP.size - 1)
+    return (row * PUNCTUATION_POPUP_COLUMNS + column).coerceIn(0, choices.size - 1)
 }
 
 /**
@@ -143,7 +146,13 @@ internal fun PunctuationPopup(
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(text = label, color = colors.keyText, fontSize = 20.sp)
+                            // A space choice is invisible as a label — show
+                            // the open-box glyph but still commit " ".
+                            Text(
+                                text = if (label == " ") "␣" else label,
+                                color = colors.keyText,
+                                fontSize = 20.sp,
+                            )
                         }
                     }
                 }

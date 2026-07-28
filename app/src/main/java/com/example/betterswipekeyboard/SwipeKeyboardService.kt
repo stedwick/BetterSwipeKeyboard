@@ -35,6 +35,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.lifecycle.lifecycleScope
 import com.example.betterswipekeyboard.ime.bottomClearancePx
+import com.example.betterswipekeyboard.ime.fieldStartLayout
 import com.example.betterswipekeyboard.emoji.EmojiSuggester
 import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
@@ -284,6 +285,16 @@ class SwipeKeyboardService : InputMethodService(),
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Auto-show the numpad for number/phone/datetime fields (and undo it
+        // when the next field is not numeric). Only on a fresh start:
+        // restarting keeps the user's in-session manual layout choice. Routed
+        // through onKeyboardAction — not viewModel.onAction — so the wrapper's
+        // side effects apply (e.g. clearing emoji suggestions when switching
+        // away from the EMOJI panel).
+        if (!restarting && info != null) {
+            fieldStartLayout(info.inputType, viewModel.state.value.layout)
+                ?.let { onKeyboardAction(KeyboardAction.SwitchLayout(it)) }
+        }
         // Pick up custom words saved in MainActivity: rebuild the decoder
         // only when the stored word string actually changed. Words saved
         // while the keyboard is open go live on the next keyboard show.

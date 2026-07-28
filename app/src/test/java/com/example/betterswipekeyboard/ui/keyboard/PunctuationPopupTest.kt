@@ -44,8 +44,8 @@ class PunctuationPopupTest {
     @Test
     fun `grid hit-testing maps positions to indices`() {
         val bounds = Rect(0f, 0f, 150f, 150f) // 3x3 grid of 50px tiles
-        assertEquals(0, popupIndexAt(Offset(25f, 25f), bounds)) // top-left
-        assertEquals(8, popupIndexAt(Offset(125f, 125f), bounds)) // bottom-right
+        assertEquals(0, popupIndexAt(Offset(25f, 25f), bounds, PUNCTUATION_POPUP)) // top-left
+        assertEquals(8, popupIndexAt(Offset(125f, 125f), bounds, PUNCTUATION_POPUP)) // bottom-right
     }
 
     @Test
@@ -55,9 +55,9 @@ class PunctuationPopupTest {
         // the popup's bottom edge (~90px at Fold density) — beyond the 40px
         // bottom slack, so a no-drag release selects nothing and commits ".".
         val bounds = Rect(0f, 0f, 150f, 150f)
-        assertEquals(-1, popupIndexAt(Offset(75f, 150f + 90f), bounds))
+        assertEquals(-1, popupIndexAt(Offset(75f, 150f + 90f), bounds, PUNCTUATION_POPUP))
         // A deliberate drag into the bottom row still selects.
-        assertEquals(7, popupIndexAt(Offset(75f, 125f), bounds))
+        assertEquals(7, popupIndexAt(Offset(75f, 125f), bounds, PUNCTUATION_POPUP))
     }
 
     @Test

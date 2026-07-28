@@ -66,6 +66,7 @@ import com.example.betterswipekeyboard.spacebarHitRect
 import com.example.betterswipekeyboard.layout.Key
 import com.example.betterswipekeyboard.layout.KeyOutput
 import com.example.betterswipekeyboard.layout.LayoutId
+import com.example.betterswipekeyboard.layout.NumericLayout
 import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
@@ -283,6 +284,7 @@ fun KeyboardScreen(
                 else -> {
                     val layout = when (state.layout) {
                         LayoutId.SYMBOLS -> SymbolsLayout
+                        LayoutId.NUMERIC -> NumericLayout
                         else -> QwertyLayout
                     }
                     geometry.activeLayout = layout.id
@@ -379,6 +381,7 @@ fun KeyboardScreen(
                                                 downUtility,
                                                 currentState.proofreader ==
                                                     ProofreaderStatus.AVAILABLE,
+                                                currentState.layout,
                                             )?.let(onAction)
                                             else -> downKey?.let { onAction(it.tapAction()) }
                                         }
@@ -474,8 +477,8 @@ fun KeyboardScreen(
                                                     onAction,
                                                 )
                                             } else {
-                                                // Symbols layout: no letter
-                                                // decoding — a drag from a
+                                                // Symbols/numeric layout: no
+                                                // letter decoding — a drag from a
                                                 // non-spacebar key (or the
                                                 // utility row) is not a swipe;
                                                 // swallow it.
@@ -542,12 +545,17 @@ fun KeyboardScreen(
                                             }
 
                                             is KeyOutput.Text -> {
-                                                if ((downKey.output as KeyOutput.Text).text == ".") {
-                                                    // Long-press period: punctuation popup with drag-select.
+                                                // Long-press a popup host key
+                                                // ("." on letters/symbols, "0"
+                                                // on the numpad): punctuation
+                                                // popup with drag-select; a
+                                                // no-drag release commits the
+                                                // host key's own text.
+                                                val popup = keyPopup(layout.id, downKey)
+                                                if (popup != null) {
                                                     var selection = -1
-                                                    popupChoices = PUNCTUATION_POPUP
-                                                    popupAnchor =
-                                                        downKey?.let { geometry.boundsOf(it) }
+                                                    popupChoices = popup.choices
+                                                    popupAnchor = geometry.boundsOf(downKey)
                                                     while (true) {
                                                         val event = awaitPointerEvent()
                                                         val change =
@@ -556,7 +564,9 @@ fun KeyboardScreen(
                                                                 ?: break
                                                         if (change.positionChange() != Offset.Zero) {
                                                             selection = popupIndexAt(
-                                                                change.position, popupBounds,
+                                                                change.position,
+                                                                popupBounds,
+                                                                popup.choices,
                                                             )
                                                             popupIndex = selection
                                                         }
@@ -568,9 +578,10 @@ fun KeyboardScreen(
                                                     onAction(
                                                         KeyboardAction.InsertText(
                                                             if (selection >= 0) {
-                                                                PUNCTUATION_POPUP[selection]
+                                                                popup.choices[selection]
                                                             } else {
-                                                                "."
+                                                                (downKey.output as KeyOutput.Text)
+                                                                    .text
                                                             },
                                                         ),
                                                     )
@@ -723,7 +734,15 @@ fun KeyboardScreen(
                                                 state = state,
                                                 pressed = key == pressedKey,
                                                 colors = colors,
-                                                modifier = if (key.isUnitCharacterKey() && unitKeyWidth > 0.dp) {
+                                                modifier = if (
+                                                    // The numpad keeps its own
+                                                    // weights (uniform 1/3-width
+                                                    // dial keys), not the fixed
+                                                    // letter-key width.
+                                                    layout.id != LayoutId.NUMERIC &&
+                                                    key.isUnitCharacterKey() &&
+                                                    unitKeyWidth > 0.dp
+                                                ) {
                                                     Modifier.width(unitKeyWidth)
                                                 } else {
                                                     Modifier.weight(key.weight)
@@ -739,6 +758,7 @@ fun KeyboardScreen(
                                                         ),
                                                     )
                                                 },
+                                                popupHint = keyPopup(layout.id, key)?.hint,
                                             )
                                         }
                                     }
@@ -891,6 +911,28 @@ private fun UtilityRow(
             onKeyPositioned = onKeyPositioned,
         ) {
             UtilityKeyLabel("📋", colors)
+        }
+        UtilityKey(
+            id = UtilityKeyId.NUMERIC,
+            // The numpad key toggles: from letters/symbols into the numeric
+            // layout, from the numpad back to letters.
+            onClick = {
+                onAction(
+                    KeyboardAction.SwitchLayout(
+                        if (state.layout == LayoutId.NUMERIC) LayoutId.LETTERS else LayoutId.NUMERIC,
+                    ),
+                )
+            },
+            colors = colors,
+            modifier = Modifier.weight(1f),
+            pressedId = pressedId,
+            onKeyPositioned = onKeyPositioned,
+        ) {
+            // Contextual label: "123" goes to the numpad, "ABC" returns.
+            UtilityKeyLabel(
+                text = if (state.layout == LayoutId.NUMERIC) "ABC" else "123",
+                colors = colors,
+            )
         }
         UtilityKey(
             id = UtilityKeyId.SETTINGS,
@@ -1077,6 +1119,8 @@ private fun KeyView(
     colors: KeyboardColors,
     onPositioned: (LayoutCoordinates) -> Unit,
     modifier: Modifier = Modifier,
+    /** Corner hint for the key's long-press popup ("!" on ".", "#" on numpad 0). */
+    popupHint: String? = null,
 ) {
     val isShiftActive = key.output is KeyOutput.Shift && state.shiftMode != ShiftMode.OFF
     val background = when {
@@ -1110,10 +1154,10 @@ private fun KeyView(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        // Long-press hint in the corner of the period key.
-        if ((key.output as? KeyOutput.Text)?.text == ".") {
+        // Long-press hint in the corner of popup host keys ("." / numpad "0").
+        if (popupHint != null) {
             Text(
-                text = "!",
+                text = popupHint,
                 color = colors.keyText.copy(alpha = 0.4f),
                 fontSize = 10.sp,
                 modifier = Modifier
