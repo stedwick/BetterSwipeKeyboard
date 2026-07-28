@@ -78,6 +78,7 @@ import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import com.example.betterswipekeyboard.swipe.crossedLetters
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
+import com.example.betterswipekeyboard.swipe.swipeAlternates
 import com.example.betterswipekeyboard.swipe.swipeConfidence
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -140,13 +141,16 @@ private val KeyboardBottomClearance = 4.dp
 private val UtilityRowHeight = 44.dp
 
 /**
- * Content height of EVERY keyboard surface (letter rows, emoji panel,
- * clipboard panel, voice panel) — they must all be exactly this tall or
- * the IME window shifts on layout switches. Pinning matters because the
- * letter rows would otherwise sum 4 x 52.dp + 3 x 6.dp with each gap
- * rounded to whole px separately (16.5 -> 17px at density 2.75), landing
- * 1px off a pinned 226.dp panel. The letter rows are weighted to fill
- * exactly this height instead of fixing each row at 52.dp.
+ * Content height below the alternates strip on EVERY keyboard surface
+ * (letter rows, emoji panel, clipboard panel, voice panel) — they must all
+ * be exactly this tall or the IME window shifts on layout switches. Pinning
+ * matters because the letter rows would otherwise sum 4 x 52.dp + 3 x 6.dp
+ * with each gap rounded to whole px separately (16.5 -> 17px at density
+ * 2.75), landing 1px off a pinned 226.dp panel. The letter rows are
+ * weighted to fill exactly this height instead of fixing each row at 52.dp.
+ * Every surface is UtilityRowHeight + gap + AlternatesStripHeight + gap +
+ * KeyboardContentHeight tall (= 322.dp); the strip is always visible, so
+ * the total is static and the window never resizes at runtime.
  * Not private: EmojiPanel and ClipboardPanel (same package) pin to it too.
  */
 val KeyboardContentHeight = 226.dp
@@ -201,6 +205,10 @@ fun KeyboardScreen(
     // hit-testing, and which key is held, for the pressed highlight.
     val utilityRects = remember { mutableMapOf<UtilityKeyId, Rect>() }
     var pressedUtility by remember { mutableStateOf<UtilityKeyId?>(null) }
+    // Alternates strip (also inside the gesture surface): cell bounds for
+    // hit-testing, and which cell is held, for the pressed highlight.
+    val altRects = remember { mutableMapOf<Int, Rect>() }
+    var pressedAlt by remember { mutableStateOf<Int?>(null) }
     // The gesture loop reads the AI key's enabled state at tap time;
     // pointerInput captures would otherwise freeze it at composition time.
     val currentState by rememberUpdatedState(state)
@@ -243,6 +251,11 @@ fun KeyboardScreen(
                         onAction = onAction,
                         onSettingsClick = onSettingsClick,
                     )
+                    // The strip renders on every surface (blank here: voice
+                    // transitions clear the alts) so the window height stays
+                    // pixel-equal with the key layouts. Inert outside the
+                    // gesture surface.
+                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
                     // While dictating, the voice panel replaces the key rows,
                     // so there is no stale key geometry to hit-test against.
                     VoicePanel(
@@ -260,6 +273,9 @@ fun KeyboardScreen(
                         onAction = onAction,
                         onSettingsClick = onSettingsClick,
                     )
+                    // Blank strip (SwitchLayout cleared the alts); keeps the
+                    // surface height pixel-equal with the key layouts.
+                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
                     EmojiPanel(
                         colors = colors,
                         onAction = onAction,
@@ -274,6 +290,9 @@ fun KeyboardScreen(
                         onAction = onAction,
                         onSettingsClick = onSettingsClick,
                     )
+                    // Blank strip (SwitchLayout cleared the alts); keeps the
+                    // surface height pixel-equal with the key layouts.
+                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
                     ClipboardPanel(
                         colors = colors,
                         entries = state.clipboard,
@@ -291,13 +310,17 @@ fun KeyboardScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // Utility row + key rows form ONE gesture surface
-                            // (a swipe may start anywhere in the keyboard
-                            // rectangle). Height = utility row + the 6.dp gap
-                            // + the pinned content height, so the letter rows
-                            // keep exactly KeyboardContentHeight and stay
-                            // pixel-equal with the panels.
-                            .height(UtilityRowHeight + 6.dp + KeyboardContentHeight)
+                            // Utility row + alternates strip + key rows form
+                            // ONE gesture surface (a swipe may start anywhere
+                            // in the keyboard rectangle). Height = utility row
+                            // + strip + gaps + the pinned content height, so
+                            // the letter rows keep exactly KeyboardContentHeight
+                            // and stay pixel-equal with the panels (which render
+                            // the same strip above their pinned content).
+                            .height(
+                                UtilityRowHeight + 6.dp + AlternatesStripHeight +
+                                    6.dp + KeyboardContentHeight,
+                            )
                             .onGloballyPositioned {
                                 boxOffsetInWindow = it.positionInWindow()
                                 boxOffsetOnScreen = it.positionOnScreen()
@@ -324,6 +347,16 @@ fun KeyboardScreen(
                                     // start of a swipe trail.
                                     val downUtility = utilityRects.entries
                                         .firstOrNull { it.value.contains(down.position) }?.key
+                                    // Alternates-strip hit: same inside-the-
+                                    // gesture-surface re-dispatch pattern as
+                                    // the utility row. Rects can briefly
+                                    // outlive a shrinking list (recomposition
+                                    // hasn't re-reported yet), so accept only
+                                    // cells that still exist.
+                                    val downAlt = altRects.entries
+                                        .firstOrNull { it.value.contains(down.position) }
+                                        ?.key
+                                        ?.takeIf { it < currentState.swipeAlternates.size }
                                     // Space-bar overshoot slack: a down in
                                     // the bar's top slack strip counts as
                                     // "no key", so an overshoot word-swipe
@@ -342,6 +375,7 @@ fun KeyboardScreen(
                                     }
                                     pressedKey = downKey
                                     pressedUtility = downUtility
+                                    pressedAlt = downAlt
                                     val trail = mutableListOf(
                                         TimedPoint(down.position.toVec2(), down.uptimeMillis),
                                     )
@@ -383,6 +417,14 @@ fun KeyboardScreen(
                                                     ProofreaderStatus.AVAILABLE,
                                                 currentState.layout,
                                             )?.let(onAction)
+                                            // Alternates-strip tap: replace
+                                            // the just-swiped word with the
+                                            // picked alternate (the reducer
+                                            // ignores it when unarmed).
+                                            downAlt != null ->
+                                                currentState.swipeAlternates
+                                                    .getOrNull(downAlt)
+                                                    ?.let { onAction(KeyboardAction.SelectAlternate(it)) }
                                             else -> downKey?.let { onAction(it.tapAction()) }
                                         }
 
@@ -595,6 +637,7 @@ fun KeyboardScreen(
                                     }
                                     pressedKey = null
                                     pressedUtility = null
+                                    pressedAlt = null
 
                                     if (swipeCompleted) {
                                         // Decode the TRIMMED trail (from the
@@ -628,6 +671,12 @@ fun KeyboardScreen(
                                                         decodedTrail.map { it.position },
                                                         keyCenters,
                                                     ),
+                                                    // Runner-ups for the
+                                                    // alternates strip; the
+                                                    // reducer stores them in
+                                                    // KeyboardState and the
+                                                    // strip renders from there.
+                                                    swipeAlternates(results),
                                                 ),
                                             )
                                         }
@@ -693,6 +742,25 @@ fun KeyboardScreen(
                                 pressedId = pressedUtility,
                                 onKeyPositioned = { id, coordinates ->
                                     utilityRects[id] = Rect(
+                                        coordinates.positionInWindow() -
+                                            boxOffsetInWindow,
+                                        coordinates.size.toSize(),
+                                    )
+                                },
+                            )
+                            // Always-visible alternates strip between the
+                            // utility row and the key rows. Inside the
+                            // gesture surface like the utility row: cells
+                            // are purely visual, register their bounds, and
+                            // taps are re-dispatched in the gesture loop
+                            // (a clickable child would have its touches
+                            // swallowed by the container pointerInput).
+                            SwipeAlternatesStrip(
+                                alternates = state.swipeAlternates,
+                                colors = colors,
+                                pressedIndex = pressedAlt,
+                                onAlternatePositioned = { index, coordinates ->
+                                    altRects[index] = Rect(
                                         coordinates.positionInWindow() -
                                             boxOffsetInWindow,
                                         coordinates.size.toSize(),
