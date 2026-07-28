@@ -80,6 +80,15 @@ class SwipeRealTrailAccuracyTest {
         )
     }
 
+    @Test
+    fun `fifth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails5_normal2_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET5",
+            correct >= MIN_COMMITTED_CORRECT_SET5,
+        )
+    }
+
     /** Replays one capture set, prints the per-trail table, returns the
      * committed-correct count. */
     private fun replay(resourceBase: String): Int {
@@ -200,5 +209,16 @@ class SwipeRealTrailAccuracyTest {
          * 0.53); how #56 (loses 'hire' by 1.01 — a CONTROL-sentence
          * breach at baseline, fix is TDD territory). */
         const val MIN_COMMITTED_CORRECT_SET4 = 60
+
+        /** Fifth capture (ten-sentence corpus RE-recorded at normal speed,
+         * one pass, no retries; 'a' tapped in s8) baseline on main 7d48da9:
+         * 58/65. Misses: dog #8 (doping 1.01, intent out of top-5 — the
+         * lift-off drift class), minimum #13 (min 2.53 silence), his #14
+         * (hours -0.89, intent out of top-5), past #33 (part by 0.11),
+         * we #36 (were by 0.05), fix #40 (fox 0.05, intent out of top-5),
+         * quick #52 (wick by 0.01). The set-4 mis-swipe candidates
+         * (how/nine/nice/example/excellent) all pass in this re-recording,
+         * confirming the diagnosis. */
+        const val MIN_COMMITTED_CORRECT_SET5 = 58
     }
 }
