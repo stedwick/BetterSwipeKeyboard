@@ -53,11 +53,38 @@ class SwipeDecoderRealisticTrailTest {
             val to = waypoints[w]
             val steps = maxOf(1, (from.distanceTo(to) / 3f).toInt())
             for (s in 1..steps) {
-                // Slow near segment ends, fast in the middle.
+                // Slow near segment ends, fast in the middle. The 0.25 floor
+                // makes turns genuinely linger (a real finger slows hard to
+                // reverse direction) so deliberate-turn dwells sit above
+                // DWELL_DOUBLE_MS with margin instead of on the 300 ms
+                // knife-edge the 0.3 floor produced ("hello"'s double-L died
+                // when a 3% duration change shaved its dwell 300 -> 259).
                 val phase = s.toFloat() / steps
-                val speedFactor = 0.3f + 0.7f * sin(phase * Math.PI).toFloat()
+                val speedFactor = 0.25f + 0.75f * sin(phase * Math.PI).toFloat()
                 add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps), speedFactor)
             }
+        }
+        // Real lift-offs decelerate into the final key (cf. the deliberate
+        // stops of the trails6 pass-1 capture): the sin profile's ~26 ms end
+        // gaps alone don't register as measured slowness over the 0.35kw
+        // window, so the end region stayed evidence-free. Near-stationary
+        // points with growing gaps fix that — but they keep CREEPING
+        // forward: a fully stationary blob reaches into the final leg
+        // through the salience window and merges the last turn's region
+        // into the end region (it ate "hello"'s double-L dwell). ~128 ms
+        // total, well under DWELL_DOUBLE_MS — the last letter never doubles.
+        val dir = waypoints.last() - waypoints[waypoints.size - 2]
+        val len = waypoints.last().distanceTo(waypoints[waypoints.size - 2])
+        val step = if (len > 1e-6f) Vec2(dir.x / len, dir.y / len) else Vec2(1f, 0f)
+        var offset = 0f
+        for ((advance, gap) in listOf(3f to 24L, 2f to 40L, 1f to 64L)) {
+            offset += advance
+            val jittered = Vec2(
+                waypoints.last().x + step.x * offset + (random.nextFloat() - 0.5f) * 6f,
+                waypoints.last().y + step.y * offset + (random.nextFloat() - 0.5f) * 6f,
+            )
+            points += TimedPoint(jittered, t)
+            t += gap
         }
         return points
     }
