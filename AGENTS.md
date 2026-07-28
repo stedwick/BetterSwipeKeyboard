@@ -331,15 +331,28 @@ Data flow (deliberately layered, keep it this way):
 - `SentenceExtractor.currentWindow` pulls the current fragment *plus the
   previous sentence* from text before the cursor, so a continuation
   fragment ("and bought ...") can be merged back into a sentence an
-  earlier pass terminated during a mid-thought pause. The whole window is
-  the proofread input and the replacement span; the result is only
-  applied if the user hasn't typed since (never clobber newer text).
+  earlier pass terminated during a mid-thought pause. The window never
+  crosses the last newline before the cursor: a newline is a deliberate
+  user boundary (paragraphs, lists), so text before it is neither
+  analyzed nor editable, the newline itself can never be removed by a
+  replacement, and continuation merging is possible only WITHIN a
+  paragraph. The whole window is the proofread input and the replacement
+  span; the result is only applied if the user hasn't typed since (never
+  clobber newer text).
   Proofread failures are logged and swallowed — the keyboard must never
   depend on the AI.
 - The merge behavior is taught only on the OpenRouter path (few-shot
   examples in `ProofreadPrompt`). The ML Kit API takes plain text only —
   no system prompt, no few-shot — so on-device merging is best-effort
   model behavior and parity between backends is not guaranteed.
+- The typed prompt also teaches the swipe decoder's measured error
+  classes (`ProofreadPrompt.SWIPE_EXAMPLES`): post-word drags (his→hours),
+  tail truncations (mother→not), same-path swaps (nine→bounce), edge
+  key-slips (quick→wick) and rare-word frequency-tie steals (fox→folic),
+  plus negative examples guarding against 'correcting' plausible words.
+  Examples deliberately avoid the ten-sentence retest corpus so the
+  retest measures class generalization, not memorization. OpenRouter
+  path only, same ML Kit caveat as merging.
 - The OpenRouter API key is stored in plain SharedPreferences by
   `ApiKeyStore` (acceptable for a personal app; noted in code as
   not production-grade).

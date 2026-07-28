@@ -98,9 +98,48 @@ class SentenceExtractorTest {
     }
 
     @Test
-    fun `window handles mixed boundaries and newline`() {
+    fun `window never crosses a newline`() {
+        // sentence1\nsentence2 -> the window is sentence2 only: text before
+        // a deliberate paragraph break is neither analyzed nor editable.
+        val window = SentenceExtractor.currentWindow("First sentence here.\nsecond fragment")
+        assertEquals(SentenceWindow("second fragment", hasPreviousSentence = false), window)
+    }
+
+    @Test
+    fun `fragment after a newline gets no merge context`() {
+        // The same fragment WITHIN a paragraph would merge; across a
+        // newline the previous sentence is out of reach by design.
+        val window = SentenceExtractor.currentWindow("I went to the store.\nand bought ice cream")
+        assertEquals(SentenceWindow("and bought ice cream", hasPreviousSentence = false), window)
+    }
+
+    @Test
+    fun `same-paragraph continuation still merges across a sentence boundary`() {
+        val window = SentenceExtractor.currentWindow(
+            "Earlier paragraph.\nI went to the store. and bought some ice cream",
+        )
+        assertEquals(
+            SentenceWindow(
+                "I went to the store. and bought some ice cream",
+                hasPreviousSentence = true,
+            ),
+            window,
+        )
+    }
+
+    @Test
+    fun `window span can never contain the newline`() {
+        // Multiple paragraphs: only the current line is reachable, so no
+        // replacement can delete any newline.
+        val window = SentenceExtractor.currentWindow("one\ntwo\nthree frag")
+        assertEquals(SentenceWindow("three frag", hasPreviousSentence = false), window)
+        assertEquals(false, window.text.contains('\n'))
+    }
+
+    @Test
+    fun `window does not cross a newline between sentences`() {
         val window = SentenceExtractor.currentWindow("one! two?\nthree")
-        assertEquals(SentenceWindow(" two?\nthree", hasPreviousSentence = true), window)
+        assertEquals(SentenceWindow("three", hasPreviousSentence = false), window)
     }
 
     @Test
