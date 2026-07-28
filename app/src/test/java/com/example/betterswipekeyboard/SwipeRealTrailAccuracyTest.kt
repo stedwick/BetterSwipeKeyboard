@@ -26,7 +26,16 @@ import org.junit.Test
  * TDD corpus at normal speed, one pass — 65 word slots plus two
  * genuine retries in sentence 4, 'excellent' #23/#24 and 'example'
  * #25/#26, both scored; sentence 8's one-letter 'a' was tapped, not
- * swiped, so it has no record).
+ * swiped, so it has no record), `swipe_trails5_normal2_philip.*` (the
+ * ten-sentence corpus re-recorded at normal speed, one pass), and
+ * `swipe_trails6_short_words_philip.*` (short-word paragraph — 19
+ * swipeable words: am well and we go up the hill to ask if you will
+ * fix it hello it is fun — swiped TWICE: pass 1 with a deliberate stop
+ * on each last letter, pass 2 with natural drift lift-offs; #34/#35 are
+ * probable echo swipes of 'it', not paragraph words, marked `-`).
+ * The TSV's third column labels the pass for the reader; the pass split
+ * is visible in the printed table by record index (pass 1 = #0-18,
+ * pass 2 = #19-39).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -86,6 +95,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET5",
             correct >= MIN_COMMITTED_CORRECT_SET5,
+        )
+    }
+
+    @Test
+    fun `sixth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails6_short_words_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET6",
+            correct >= MIN_COMMITTED_CORRECT_SET6,
         )
     }
 
@@ -220,5 +238,21 @@ class SwipeRealTrailAccuracyTest {
          * (how/nine/nice/example/excellent) all pass in this re-recording,
          * confirming the diagnosis. */
         const val MIN_COMMITTED_CORRECT_SET5 = 58
+
+        /** Sixth capture (short-word paragraph, two passes) baseline on
+         * feature/endpoint-evidence 103d75b: 34/38. Pass 1 (deliberate
+         * stops on the last letter, #0-18): 18/19 — only and #2 misses
+         * (amd -0.38, intent out of top-5). Pass 2 (natural drift
+         * lift-offs, #19-39 minus the two '-' echo swipes): 16/19 —
+         * we #22 (were by 0.03: drift ended 0.5kw from R and the
+         * hardcoded lift-off anchor handed 'were' a free salient),
+         * you #30 (yoy -0.56: drift ended 0.7kw from Y), hello #36
+         * (help by 0.01). The 18/19-vs-16/19 deliberate-vs-drift split
+         * is the captured contrast the lift-off grading targets: drift
+         * lift-offs land near wrong keys, deliberate stops do not.
+         * #34/#35 are excluded ('-'): timestamps + i->t endpoint
+         * geometry say they are echo swipes of 'it', not paragraph
+         * words (probable, not proven — flagged to Philip). */
+        const val MIN_COMMITTED_CORRECT_SET6 = 34
     }
 }
