@@ -194,6 +194,11 @@ Data flow (deliberately layered, keep it this way):
   - The old google-10000 list (2006 web n-grams) was replaced by wordfreq
     data (see below); check dictionary coverage before assuming a missing
     word is a decoder bug.
+  - `docs/decoder-investigation.md` is the decoder's engineering log: every
+    captured-trail miss autopsy with term breakdowns, and the REJECTED
+    levers with the measurements that killed them (tail-cap, cull deletion,
+    drag stage-0, endpoint exemption). Read it before proposing decoder
+    tuning — most naive levers are already measured dead ends.
 - `Dictionary`: frequency-ordered word list from
   `app/src/main/assets/words_en.txt` (`word<TAB>rank` lines, ~55k words,
   lower rank = more frequent), indexed by first letter. The asset is
