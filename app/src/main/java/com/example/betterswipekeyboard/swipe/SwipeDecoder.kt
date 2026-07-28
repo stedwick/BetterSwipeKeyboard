@@ -418,7 +418,12 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      * - A region touching the trail's start/end is the touch-down/lift-off
      *   anchor; its salience is the hardcoded 0.5, not measured motion, so
      *   the region's own peak is jitter — the key is anchored to the actual
-     *   first/last trail point instead.
+     *   first/last trail point instead. Exception: an ISOLATED lift-off
+     *   region (nothing measured reaches the last point — the finger lifted
+     *   mid-flight) emits no key at all; the drift endpoint's nearest key
+     *   is not evidence of a deliberate visit (dough's h, we're's r).
+     *   Touch-down is exempt from the grading: the finger starts at rest
+     *   on an aimed key, so the trail's first point is always deliberate.
      * - A mid-trail region dominated by SLOWNESS (not curvature) counts as
      *   a deliberate key visit only if the finger lingered at least
      *   [SLOW_REGION_MIN_DWELL_MS]: a slight slowdown over a crossed key is
@@ -467,6 +472,20 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         val keys = mutableListOf<Char>()
         for (region in regions) {
+            // Lift-off evidence grading: the hardcoded 0.5 salience at the
+            // last trail point always opens a region there, even when the
+            // finger lifted mid-flight with no deceleration — the region is
+            // then ISOLATED (nothing measured extends into the trail; any
+            // earlier point with salience >= REGION_EXIT_THRESHOLD would
+            // have chained into it). An evidence-free lift-off anchor lets
+            // whatever key happens to be nearest the drift endpoint
+            // (dough's h, we're's r) charge the intended word a missed
+            // salient it never earned, so an isolated lift-off region emits
+            // nothing. Touch-down keeps its anchor unconditionally: the
+            // finger starts at rest on an aimed key, so the touch-down
+            // point is always deliberate (the symmetric exemption was
+            // measured at B3 to lose us->is and am).
+            if (region.from == n - 1) continue
             val endpoint = region.from == 0 || region.to == n - 1
             val anchor = when {
                 region.from == 0 -> 0

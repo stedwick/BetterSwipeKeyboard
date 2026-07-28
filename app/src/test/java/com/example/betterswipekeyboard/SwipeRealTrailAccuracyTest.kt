@@ -212,8 +212,14 @@ class SwipeRealTrailAccuracyTest {
          * ict/mortimer/lay/pad/liszt across all three sets and mother
          * still lost to 'mothed'/'moths' junk — the cull is not
          * mother's real blocker, the saturating conformance mean is) —
-         * and lazy #34 ('lay' coin-flip at the commit threshold). */
-        const val MIN_COMMITTED_CORRECT_SET3 = 34
+         * and lazy #34 ('lay' coin-flip at the commit threshold).
+         *
+         * Lift-off evidence grading (isolated lift-off region emits no
+         * salient key): lazy #34 fixed — the drift lift-off's free anchor
+         * had been handing 'lay' its y. 34 -> 35, earned. The mother
+         * misses shuffle impostors (#3 now silence via 'misinterpret',
+         * #21 wrong-commits 'norbert') — same class, unchanged count. */
+        const val MIN_COMMITTED_CORRECT_SET3 = 35
 
         /** Fourth capture (ten-sentence TDD corpus, normal speed) baseline
          * at the B3 decoder: 60/67. The seven misses, by class:
@@ -236,8 +242,15 @@ class SwipeRealTrailAccuracyTest {
          * we #36 (were by 0.05), fix #40 (fox 0.05, intent out of top-5),
          * quick #52 (wick by 0.01). The set-4 mis-swipe candidates
          * (how/nine/nice/example/excellent) all pass in this re-recording,
-         * confirming the diagnosis. */
-        const val MIN_COMMITTED_CORRECT_SET5 = 58
+         * confirming the diagnosis.
+         *
+         * Lift-off evidence grading: we #36 + quick #52 fixed (drift
+         * lift-offs near r/k had handed were/wick a free salient),
+         * had #60 FLIPPED to has (by 0.10) — the symmetric cost: that
+         * lift-off also shows no deceleration, but the drift happened to
+         * end 0.38kw from the RIGHT key (d), so the dropped anchor was
+         * luck helping a thin margin, not evidence. Net 58 -> 59, earned. */
+        const val MIN_COMMITTED_CORRECT_SET5 = 59
 
         /** Sixth capture (short-word paragraph, two passes) baseline on
          * feature/endpoint-evidence 103d75b: 34/38. Pass 1 (deliberate
@@ -252,7 +265,13 @@ class SwipeRealTrailAccuracyTest {
          * lift-offs land near wrong keys, deliberate stops do not.
          * #34/#35 are excluded ('-'): timestamps + i->t endpoint
          * geometry say they are echo swipes of 'it', not paragraph
-         * words (probable, not proven — flagged to Philip). */
-        const val MIN_COMMITTED_CORRECT_SET6 = 34
+         * words (probable, not proven — flagged to Philip).
+         *
+         * Lift-off evidence grading: we #22 fixed (same r-anchor disease
+         * as set5's we #36) — 34 -> 35, earned. Pass 1 unchanged (18/19):
+         * deliberate stops decelerate, so their end regions are
+         * non-isolated and keep their keys. Remaining: and #2, you #30
+         * (yoy), hello #36 (help). */
+        const val MIN_COMMITTED_CORRECT_SET6 = 35
     }
 }
