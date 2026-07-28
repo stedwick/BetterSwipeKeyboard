@@ -386,6 +386,16 @@ Data flow (deliberately layered, keep it this way):
 - The OpenRouter API key is stored in plain SharedPreferences by
   `ApiKeyStore` (acceptable for a personal app; noted in code as
   not production-grade).
+- Standard debugging workflow for AI-run complaints ("the proofreader
+  broke/missed X"): replay the session's captured trails
+  (`swipe_trails*.jsonl`) through the decoder to get its commits, then
+  diff those commits against the post-proofread transcript. Every
+  discrepancy lands in one fault class — decoder-miss (decoder committed
+  the wrong word), proofreader-miss (decoder right, proofreader didn't
+  fix it), proofreader-damage (decoder right, proofreader broke it), or
+  window/merge-rule (the word never entered `currentWindow`, or the
+  replacement span was wrong). Never tune the prompt or the decoder from
+  the transcript alone — attribution first, or you fix the wrong layer.
 
 ### Voice input
 
