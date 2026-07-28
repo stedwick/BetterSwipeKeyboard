@@ -189,6 +189,83 @@ class ProofreadPromptTest {
     }
 
     @Test
+    fun `system prompt teaches swipe paths and their primacy over plausibility`() {
+        val system = ProofreadPrompt.SYSTEM
+        assertTrue(system.contains("swipe paths"))
+        // The crux: a disagreeing path overrides 'fits its sentence'.
+        assertTrue(system.contains("disagrees with its path"))
+        // Typed words (no path) keep the conservative rule.
+        assertTrue(system.contains("Typed words have no path"))
+        // Approximation is taught: extra/missing letters are normal.
+        assertTrue(system.contains("approximate"))
+    }
+
+    @Test
+    fun `path few-shot examples teach the annotation format`() {
+        val paths = ProofreadPrompt.PATH_EXAMPLES
+        // A disagreement fix: 'found' with path f-i-x becomes 'fix'.
+        assertTrue(
+            paths.any { (input, output) ->
+                input.contains("found=f·i·x") && output.contains(" fix ")
+            },
+        )
+        // An agreement negative: annotated correct text returned unchanged.
+        assertTrue(
+            paths.any { (input, output) ->
+                input.startsWith("The cat sat on the mat.") &&
+                    input.contains(ProofreadPrompt.SWIPE_PATHS_MARKER) &&
+                    output == "The cat sat on the mat."
+            },
+        )
+        assertTrue(ProofreadPrompt.EXAMPLES.containsAll(paths))
+    }
+
+    @Test
+    fun `withSwipePaths appends the marker block`() {
+        val annotated = ProofreadPrompt.withSwipePaths(
+            "the fog ram",
+            listOf("fog" to "d·o·g", "ram" to "r·a·n"),
+        )
+        assertEquals(
+            "the fog ram\n(Swipe paths, approximate: fog=d·o·g, ram=r·a·n)",
+            annotated,
+        )
+    }
+
+    @Test
+    fun `withSwipePaths leaves unannotated text unchanged`() {
+        assertEquals("plain typed text", ProofreadPrompt.withSwipePaths("plain typed text", emptyList()))
+    }
+
+    @Test
+    fun `withSwipePaths caps the block at the most recent words`() {
+        val paths = (1..25).map { "w$it" to "p$it" }
+        val annotated = ProofreadPrompt.withSwipePaths("text", paths)
+        // w1..w5 dropped, w6..w25 kept.
+        assertTrue(!annotated.contains("w5="))
+        assertTrue(annotated.contains("w6="))
+        assertTrue(annotated.contains("w25="))
+        assertEquals(
+            ProofreadPrompt.MAX_ANNOTATED_WORDS,
+            Regex("w\\d+=").findAll(annotated).count(),
+        )
+    }
+
+    @Test
+    fun `echo guard detects an annotated reply`() {
+        assertTrue(ProofreadPrompt.containsSwipePathsMarker("Fixed. (Swipe paths, approximate: x=y)"))
+        assertTrue(!ProofreadPrompt.containsSwipePathsMarker("Just the fixed text."))
+    }
+
+    @Test
+    fun `voice prompt has no swipe-path wording`() {
+        // Voice requests keep the separate prompt: dictated words have no
+        // trails, and the annotation is never appended for them.
+        assertTrue(!ProofreadPrompt.VOICE_SYSTEM.contains("swipe path"))
+        assertTrue(ProofreadPrompt.VOICE_EXAMPLES.none { (input, _) -> input.contains("=") })
+    }
+
+    @Test
     fun `at least one example merges a continuation fragment into the previous sentence`() {
         assertTrue(
             "expected a few-shot example merging a fragment after a boundary",

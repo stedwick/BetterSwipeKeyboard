@@ -40,6 +40,7 @@ import com.example.betterswipekeyboard.layout.LayoutId
 import com.example.betterswipekeyboard.proofread.MlKitProofreader
 import com.example.betterswipekeyboard.proofread.OpenRouterProofreader
 import com.example.betterswipekeyboard.proofread.ProofreadMode
+import com.example.betterswipekeyboard.proofread.ProofreadPrompt
 import com.example.betterswipekeyboard.proofread.Proofreader
 import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
@@ -451,17 +452,32 @@ class SwipeKeyboardService : InputMethodService(),
                 // terminated during a mid-thought pause.
                 val window = SentenceExtractor.currentWindow(before)
                 if (window.text.isBlank()) return@launch
-                val corrected = proofreader.proofread(window.text.trim(), mode)
+                // Swipe-path context for the cloud typed prompt only: the
+                // on-device API takes plain text, and voice requests use
+                // the separate voice prompt.
+                val input = if (proofreader is OpenRouterProofreader && mode != ProofreadMode.VOICE) {
+                    val windowStart = before.length - window.text.length
+                    val paths = swipedWordLog.reconcile(before)
+                        .filter { it.startIndex >= windowStart }
+                        .map { it.entry.word to it.entry.letters }
+                    ProofreadPrompt.withSwipePaths(window.text.trim(), paths)
+                } else {
+                    window.text.trim()
+                }
+                val corrected = proofreader.proofread(input, mode)
                 // The user may have kept typing while the request was in
                 // flight; never clobber newer text. Comparing whole windows
                 // also invalidates the result when either of the two
-                // visible sentences changed.
+                // visible sentences changed. An echoed annotation block
+                // discards the result (fail soft) — it must never land in
+                // the text field.
                 val latest = SentenceExtractor.currentWindow(
                     editor.textBeforeCursor().orEmpty(),
                 )
                 if (latest == window &&
                     corrected.isNotBlank() &&
-                    corrected != window.text.trim()
+                    corrected != window.text.trim() &&
+                    !ProofreadPrompt.containsSwipePathsMarker(corrected)
                 ) {
                     // Preserve the fragment's surrounding whitespace.
                     editor.replaceBeforeCursor(
