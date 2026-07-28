@@ -23,8 +23,14 @@ class CustomWordsTest {
     }
 
     @Test
-    fun `apostrophes and hyphens are word breaks`() {
-        assertEquals(listOf("don", "t", "stop"), parseCustomWords("don't stop"))
+    fun `apostrophe between letters is intra-word, hyphens break`() {
+        // Possessives/contractions are swipeable wordforms (letter-only
+        // matching, verbatim commit), so they parse as ONE token.
+        assertEquals(listOf("spielberg's"), parseCustomWords("Spielberg's"))
+        assertEquals(listOf("don't", "maybe"), parseCustomWords("don't, maybe"))
+        // Leading/trailing apostrophes are stripped.
+        assertEquals(listOf("hello"), parseCustomWords("'hello'"))
+        // Hyphens still break: no hyphenated-wordform mechanism exists.
         assertEquals(listOf("mother", "in", "law"), parseCustomWords("mother-in-law"))
     }
 

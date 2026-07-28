@@ -19,9 +19,13 @@ Sources:
     english-words.10.txt, latin-1 converted to UTF-8, CR stripped).
 
 Pipeline:
-  1. top_n_list('en', 60000), filtered to ^[a-z]{2,}$ (the decoder only
-     has a-z keys; 2-letter words are kept because it admits them on very
-     short trails, single letters/digits/contractions are useless).
+  1. top_n_list('en', 60000), filtered to WORD_OK: plain words
+     ^[a-z]{2,}$ plus one-apostrophe tokens ^[a-z]+'[a-z]+$ (the decoder
+     matches apostrophe words letter-only and commits them verbatim, so
+     possessives/contractions like "mother's"/"don't" are swipeable;
+     exactly ONE apostrophe with letters on both sides keeps out
+     "rock'n'roll", bare "n't" and "'twas"-class forms). Single letters
+     and digits stay out.
   2. Vowel-less tokens of 3+ letters are dropped ("pwr", "thx", "njpw",
      "msg"-class Twitter/texting abbreviations): they otherwise become
      short-subsequence candidates that beat the intended word on swipe
@@ -38,6 +42,8 @@ Pipeline:
         lowercase tokens from film credits and out-score "brown"/"over"/
         "very" on real trails. Common names stay: "maria"/"jose" are
         dictionary words, "niko"/"siri"/"alexa" are above the floor.
+        Apostrophe tokens are EXEMPT (possessives don't steal — see
+        NAME_FLOOR), so "spielberg's"-class forms stay.
      b. NONCE RESPELLINGS: non-dictionary tokens one letter SUBSTITUTION
         away from a ≥100x more frequent dictionary word (zipf gap ≥ 2.0),
         below zipf 3.1 ("krazy"->"crazy", "definately"->"definitely",
@@ -96,6 +102,13 @@ SCOWL_FILES = (
 # type start higher ("niko" 3.02, "siri" 3.30, "alexa" 3.52) — 2.8 sits
 # in the measured gap, it is not a rank cutoff: it only scopes the
 # SCOWL-verified name class.
+# APOSTROPHE TOKENS ARE EXEMPT from the name rule (Philip's call, after a
+# decoder competition audit on synthetic trails): a possessive's letters
+# must match the trail in order, so frequent plain words crush them on
+# frequency whenever geometry coincides — zero common-word steals in the
+# 35-token audit. The steal mechanism that made bare names dangerous
+# (short names parking on a common word's path) does not transfer to
+# name+"'s". The RESPELLING rule still applies to apostrophe tokens.
 NAME_FLOOR = 2.8
 # Respelling ceiling/gap: common misspellings and eye-dialect cluster at
 # zipf 2.5-3.1 ("krazy" 2.55, "definately" 2.87, "seperate" 2.82); the
@@ -103,11 +116,15 @@ NAME_FLOOR = 2.8
 RESPELL_MAX = 3.1
 RESPELL_GAP = 2.0
 
-# The decoder's candidate universe is the QWERTY letter keys; anything else
-# (digits, apostrophes, unicode) can never be scored and only bloats the
-# asset. 2-letter words stay: the decoder admits them on trails <= 3.5 key
-# widths ("hi", "up").
-WORD_OK = re.compile(r"^[a-z]{2,}$")
+# The decoder's candidate universe is the QWERTY letter keys; digits and
+# unicode can never be scored and only bloat the asset. Apostrophe tokens
+# with exactly ONE apostrophe and letters on both sides ARE admitted: the
+# decoder matches them letter-only (the apostrophe has no geometry) and
+# commits the apostrophe verbatim — that is what makes possessives and
+# contractions swipeable ("mother's", "don't"). Leading/trailing
+# apostrophes stay out, so first()/last() of every entry is a letter by
+# construction (the decoder's endpoint gates rely on that).
+WORD_OK = re.compile(r"^(?:[a-z]{2,}|[a-z]+'[a-z]+)$")
 
 # Vowel-less tokens of 3+ letters ("pwr", "thx", "njpw", "msg") are texting
 # abbreviations, not swipe targets — and worse, as short consonant
@@ -248,15 +265,26 @@ def main() -> None:
         if w in KEEP_EXCEPTIONS:
             continue
         z = zipf_frequency(w, "en")
-        if w in scowl_names and w not in scowl_words and z < NAME_FLOOR:
+        # Name rule skips apostrophe tokens entirely (see NAME_FLOOR): a
+        # possessive's letters must match the trail in order, so the
+        # bare-name steal mechanism does not transfer.
+        name_hit = w in scowl_names and w not in scowl_words and z < NAME_FLOOR
+        if name_hit and "'" not in w:
             rare_names.append(w)  # "brien", "iver", "vey"
-        elif (len(w) >= 4 and w not in scowl_words and z < RESPELL_MAX
+        elif not name_hit and (len(w) >= 4 and w not in scowl_words and z < RESPELL_MAX
               and any(n in scowl_words and zipf_frequency(n, "en") >= z + RESPELL_GAP
                       for n in one_substitution_away(w))):
             respellings.append(w)  # "krazy" -> "crazy"
     dropped_by_filter = set(rare_names) | set(respellings)
     words = [w for w in candidates if w not in dropped_by_filter]
     word_set = set(words)
+
+    # Apostrophe audit: WORD_OK newly admits possessives/contractions —
+    # list what came in and what the junk filters caught, so the
+    # regeneration is reviewable (a filter casualty here may deserve a
+    # KEEP_EXCEPTIONS entry; report it rather than silently adding).
+    apostrophe_admitted = [w for w in words if "'" in w]
+    apostrophe_dropped = sorted(w for w in dropped_by_filter if "'" in w)
 
     # Supplement: merge at wordfreq rank when known, append at the tail
     # (lowest frequency) otherwise.
@@ -281,6 +309,12 @@ def main() -> None:
     print(f"  filtered:      {len(rare_names)} rare proper names, "
           f"{len(respellings)} nonce respellings "
           f"(of {len(candidates)} candidates)")
+    print(f"  apostrophes:   {len(apostrophe_admitted)} admitted, "
+          f"{len(apostrophe_dropped)} dropped by filters")
+    sample = ", ".join(apostrophe_admitted[:40])
+    print(f"    admitted sample: {sample}")
+    if apostrophe_dropped:
+        print(f"    dropped: {', '.join(apostrophe_dropped)}")
     print(f"  dropped:       {len(dropped)} words from the previous list"
           + (f" (listed in {sys.argv[1]})" if len(sys.argv) > 1 else
              " (pass an output path to list them)"))
