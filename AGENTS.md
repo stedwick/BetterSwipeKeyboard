@@ -246,6 +246,15 @@ Data flow (deliberately layered, keep it this way):
   current decoder at gesture time. Custom words affect swipe decoding only.
 - `KeyboardGeometry`: collects key bounds from the Compose UI
   (`onGloballyPositioned`) and answers hit-testing / key-center questions.
+- `crossedLetters` (`swipe/CrossedLetters.kt`, pure): the ordered letter
+  keys a trail crossed — nearest key center per trail point (Voronoi, no
+  radius gate — gates were measured to lose exactly the endpoint letters
+  that matter, 46-69% vs 75% letter recovery on the fixture sets), order
+  preserved, consecutive repeats collapsed. Proofreader context, NOT
+  decoder input; deliberately independent of `SwipeDecoder`'s private
+  alignment. Ratchet-tested in `CrossedLettersRealTrailTest` (committed-
+  correct trails recover the intent letters as an in-order subsequence;
+  floors 7/13, 28/32, 30/34, 48/60).
 
 ### Clipboard history (`clipboard/`)
 
@@ -343,6 +352,22 @@ Data flow (deliberately layered, keep it this way):
   Examples deliberately avoid the ten-sentence retest corpus so the
   retest measures class generalization, not memorization. OpenRouter
   path only, same ML Kit caveat as merging.
+- Swipe-path annotation (crossed letters as proofreader evidence): at
+  swipe-commit time `KeyboardScreen` attaches `crossedLetters` to
+  `KeyboardAction.CommitWord` (the ViewModel passes it through; caps
+  applies to the word, never the letters), and the service records it in
+  `SwipedWordLog` (pure, in-memory, cap 100). The keyboard never observes
+  external edits, so alignment is TEXT-ANCHORED: at proofread time the
+  log is reconciled against `textBeforeCursor` (whole-word, case-
+  sensitive, commit order) and every invalidation — edited, deleted,
+  retried or externally changed word — resolves to a safe drop. Matching
+  words inside the window annotate the request as
+  `(Swipe paths, approximate: word=p·a·t·h)` (max 20 most recent), ONLY
+  for the OpenRouter typed prompt — ML Kit and voice requests get plain
+  text. The prompt teaches that a word disagreeing with its path is a
+  likely error even if it fits its sentence (the one exception to the
+  anti-overcorrection rule — this is what fixes fog→dog), and a reply
+  echoing the marker is discarded by the echo guard, never applied.
 - The OpenRouter API key is stored in plain SharedPreferences by
   `ApiKeyStore` (acceptable for a personal app; noted in code as
   not production-grade).
