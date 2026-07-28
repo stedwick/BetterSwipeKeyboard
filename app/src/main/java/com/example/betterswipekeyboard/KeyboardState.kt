@@ -40,6 +40,15 @@ data class KeyboardState(
      * it directly), so dictation never sets this flag.
      */
     val lastCommitWasSwipe: Boolean = false,
+    /**
+     * The runner-up words shown in the alternates strip after a swipe
+     * commit, already caps-transformed the same way the committed word was
+     * (the strip renders exactly what a tap commits — one-shot shift is
+     * consumed by the commit, so caps cannot be re-derived at tap time).
+     * Same lifetime as [lastCommitWasSwipe]: set by the CommitWord
+     * reduction, cleared by any other input action.
+     */
+    val swipeAlternates: List<String> = emptyList(),
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF

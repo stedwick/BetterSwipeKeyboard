@@ -36,18 +36,39 @@ class KeyboardViewModel : ViewModel() {
         is KeyboardAction.CommitWord -> {
             val caps = _state.value.shiftMode
             consumeOneShot()
-            _state.update { it.copy(lastCommitWasSwipe = true) }
+            _state.update {
+                it.copy(
+                    lastCommitWasSwipe = true,
+                    // The strip renders what a tap commits: one-shot shift is
+                    // consumed by this commit, so the alternates are stored
+                    // already caps-transformed and SelectAlternate needs no
+                    // caps logic of its own.
+                    swipeAlternates = action.alternates.map { alt -> applyCaps(alt, caps) },
+                )
+            }
             KeyboardEffect.CommitWord(
-                when (caps) {
-                    ShiftMode.ONE_SHOT -> action.word.replaceFirstChar { it.uppercase() }
-                    ShiftMode.LOCKED -> action.word.uppercase()
-                    ShiftMode.OFF -> action.word
-                },
+                applyCaps(action.word, caps),
                 // Trail letters pass through unchanged: they describe keys,
                 // not characters, so caps never applies to them.
                 crossedLetters = action.crossedLetters,
             )
         }
+
+        // Tap an alternate in the strip: replace the just-swiped word with
+        // it. Re-arms the swipe flag (the replacement is still "the word the
+        // swipe produced" — the next backspace word-deletes it, and tapping
+        // another alternate swaps again) and drops the picked word from the
+        // strip. Ignored when no swipe is armed, so a stale strip can never
+        // delete text in a context the user has moved on from.
+        is KeyboardAction.SelectAlternate ->
+            if (_state.value.lastCommitWasSwipe) {
+                _state.update {
+                    it.copy(swipeAlternates = it.swipeAlternates - action.word)
+                }
+                KeyboardEffect.ReplaceSwipedWord(action.word)
+            } else {
+                null
+            }
 
         // First backspace after a swipe deletes the whole just-swiped word
         // (and consumes the flag); anything after is a plain char delete —
@@ -76,6 +97,7 @@ class KeyboardViewModel : ViewModel() {
             _state.update {
                 it.copy(
                     lastCommitWasSwipe = false,
+                    swipeAlternates = emptyList(),
                     shiftMode = when (it.shiftMode) {
                         ShiftMode.OFF -> ShiftMode.ONE_SHOT
                         ShiftMode.ONE_SHOT, ShiftMode.LOCKED -> ShiftMode.OFF
@@ -86,18 +108,34 @@ class KeyboardViewModel : ViewModel() {
         }
 
         KeyboardAction.CapsLock -> {
-            _state.update { it.copy(lastCommitWasSwipe = false, shiftMode = ShiftMode.LOCKED) }
+            _state.update {
+                it.copy(
+                    lastCommitWasSwipe = false,
+                    swipeAlternates = emptyList(),
+                    shiftMode = ShiftMode.LOCKED,
+                )
+            }
             null
         }
 
         is KeyboardAction.SwitchLayout -> {
-            _state.update { it.copy(lastCommitWasSwipe = false, layout = action.layout) }
+            _state.update {
+                it.copy(
+                    lastCommitWasSwipe = false,
+                    swipeAlternates = emptyList(),
+                    layout = action.layout,
+                )
+            }
             null
         }
 
         KeyboardAction.ToggleProofread -> {
             _state.update {
-                it.copy(lastCommitWasSwipe = false, proofreadAuto = !it.proofreadAuto)
+                it.copy(
+                    lastCommitWasSwipe = false,
+                    swipeAlternates = emptyList(),
+                    proofreadAuto = !it.proofreadAuto,
+                )
             }
             null
         }
@@ -123,7 +161,13 @@ class KeyboardViewModel : ViewModel() {
             // leading-space rules and auto-proofread for the same reason.
             // Pasting returns to letters.
             consumeOneShot()
-            _state.update { it.copy(lastCommitWasSwipe = false, layout = LayoutId.LETTERS) }
+            _state.update {
+                it.copy(
+                    lastCommitWasSwipe = false,
+                    swipeAlternates = emptyList(),
+                    layout = LayoutId.LETTERS,
+                )
+            }
             KeyboardEffect.PasteText(action.text)
         }
 
@@ -160,8 +204,10 @@ class KeyboardViewModel : ViewModel() {
     fun setVoiceState(state: VoiceState) {
         _state.update {
             // The partial transcript is only meaningful while listening.
-            if (state == VoiceState.LISTENING) it.copy(voice = state)
-            else it.copy(voice = state, voicePartial = "")
+            // Dictation ends the swipe context (it bypasses the reducer, so
+            // no input action ever clears the strip), so the alternates go.
+            if (state == VoiceState.LISTENING) it.copy(voice = state, swipeAlternates = emptyList())
+            else it.copy(voice = state, voicePartial = "", swipeAlternates = emptyList())
         }
     }
 
@@ -173,6 +219,17 @@ class KeyboardViewModel : ViewModel() {
     /** Called by the service when the emoji-panel suggestions change. */
     fun setEmojiSuggestions(suggestions: List<String>) {
         _state.update { it.copy(emojiSuggestions = suggestions) }
+    }
+
+    /**
+     * Called by the service on a fresh field start: the strip's words belong
+     * to the previous field's text, so they must not be offered (or worse,
+     * replace text) in the new one.
+     */
+    fun clearSwipeAlternates() {
+        _state.update {
+            if (it.swipeAlternates.isNotEmpty()) it.copy(swipeAlternates = emptyList()) else it
+        }
     }
 
     private fun refreshClipboard() {
@@ -187,7 +244,17 @@ class KeyboardViewModel : ViewModel() {
 
     private fun clearSwipeFlag() {
         _state.update {
-            if (it.lastCommitWasSwipe) it.copy(lastCommitWasSwipe = false) else it
+            if (it.lastCommitWasSwipe || it.swipeAlternates.isNotEmpty()) {
+                it.copy(lastCommitWasSwipe = false, swipeAlternates = emptyList())
+            } else {
+                it
+            }
         }
+    }
+
+    private fun applyCaps(word: String, caps: ShiftMode): String = when (caps) {
+        ShiftMode.ONE_SHOT -> word.replaceFirstChar { it.uppercase() }
+        ShiftMode.LOCKED -> word.uppercase()
+        ShiftMode.OFF -> word
     }
 }

@@ -1,0 +1,105 @@
+package com.example.betterswipekeyboard.ui.keyboard
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/**
+ * Height of the always-visible swipe-alternates strip between the utility
+ * row and the content below it. Fixed on every surface (key layouts AND
+ * panels/voice) so the IME window never jumps: every branch of
+ * KeyboardScreen renders one, keeping each surface exactly
+ * `UtilityRowHeight + 6 + AlternatesStripHeight + 6 + KeyboardContentHeight`
+ * tall. Matches the 40.dp bars in EmojiPanel/ClipboardPanel.
+ */
+val AlternatesStripHeight = 40.dp
+
+/**
+ * The swipe-alternates strip: after a swipe commit it shows the top-3
+ * runner-up decoder guesses ([KeyboardState.swipeAlternates]); tapping one
+ * replaces the just-committed word. Always visible (space reserved,
+ * Gboard-style); while empty it shows a gray italic placeholder so the row
+ * explains itself.
+ *
+ * Two render modes, exactly like [UtilityRow]: on the key layouts the strip
+ * lives INSIDE the gesture surface, so cells are purely visual and register
+ * their bounds for the container gesture loop's hit-testing
+ * ([onAlternatePositioned], [pressedIndex] drives the held highlight); on
+ * the panel/voice surfaces (null callback) it is inert — the alts are
+ * already cleared by the layout switch / voice transition anyway.
+ */
+@Composable
+fun SwipeAlternatesStrip(
+    alternates: List<String>,
+    colors: KeyboardColors,
+    modifier: Modifier = Modifier,
+    pressedIndex: Int? = null,
+    onAlternatePositioned: ((Int, LayoutCoordinates) -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(AlternatesStripHeight),
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (alternates.isEmpty()) {
+            Text(
+                text = "Alternatives will appear here",
+                color = colors.keyText.copy(alpha = 0.4f),
+                fontSize = 14.sp,
+                fontStyle = FontStyle.Italic,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            alternates.forEachIndexed { index, word ->
+                Box(
+                    modifier = Modifier
+                        .then(
+                            if (onAlternatePositioned != null) {
+                                Modifier.onGloballyPositioned {
+                                    onAlternatePositioned(index, it)
+                                }
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (index == pressedIndex) {
+                                colors.keyBackgroundActive
+                            } else {
+                                Color.Transparent
+                            },
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = word,
+                        color = colors.keyText,
+                        fontSize = 16.sp,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
+}

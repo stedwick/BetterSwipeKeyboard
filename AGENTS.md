@@ -139,6 +139,36 @@ Data flow (deliberately layered, keep it this way):
   money keys on the bottom row. `popupIndexAt` takes the choices list — never
   re-couple it to `PUNCTUATION_POPUP.size`.
 
+### Swipe alternates strip
+
+- An always-visible row between the utility row and the content below it,
+  on EVERY surface (key layouts and panels/voice alike — blank there), so
+  the total surface height is static:
+  `UtilityRowHeight + 6 + AlternatesStripHeight (40.dp) + 6 +
+  KeyboardContentHeight` = 322.dp (`ui/keyboard/SwipeAlternatesStrip.kt`;
+  the gesture-surface Box height in `KeyboardScreen` matches). Empty strip
+  shows the gray italic placeholder "Alternatives will appear here".
+- Data flow mirrors crossedLetters: the commit site passes
+  `swipeAlternates(results)` (pure, `swipe/SwipeAlternates.kt` — drops
+  top-1, rejects runners-up ≥ `MAX_COMMIT_SCORE`, caps at 3) on
+  `KeyboardAction.CommitWord.alternates`; the reducer stores them in
+  `KeyboardState.swipeAlternates` CAPS-TRANSFORMED at commit time (one-shot
+  shift is already consumed by tap time, so caps cannot be re-derived
+  then), with exactly the `lastCommitWasSwipe` lifetime (every action that
+  clears the flag clears the strip; voice transitions and fresh field
+  starts clear it too).
+- The strip lives INSIDE the gesture surface like the utility row: cells
+  are purely visual, register rects, and taps are re-dispatched in the
+  gesture loop as `KeyboardAction.SelectAlternate` (a clickable child
+  would be swallowed by the container `pointerInput`). The reduction is
+  guarded by `lastCommitWasSwipe` (a stale strip never deletes text) and
+  RE-ARMS the flag, so chained swaps and word-delete on the replacement
+  work; the service applies `KeyboardEffect.ReplaceSwipedWord` as
+  `deleteWordBackward()` + `commitWord()`, so leading-space rules reapply
+  and the text ends up exactly as if the alternate had been swiped. The
+  replacement has no trail: nothing new enters `SwipedWordLog`, and the
+  replaced word's entry invalidates itself at proofread reconciliation.
+
 ### Swipe decoding (`swipe/`)
 
 - `SwipeDecoder` (pure Kotlin, no Android deps): SHARK-style scoring — every

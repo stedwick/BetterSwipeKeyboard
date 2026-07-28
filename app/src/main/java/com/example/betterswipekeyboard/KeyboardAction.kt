@@ -32,9 +32,24 @@ sealed interface KeyboardAction {
      * A whole word decoded from a glide trail, committed as a single unit.
      * [crossedLetters] carries the ordered keys the trail crossed (see
      * swipe/CrossedLetters.kt) as proofreader context; null for commits
-     * with no trail (only swipes produce it).
+     * with no trail (only swipes produce it). [alternates] carries the
+     * runner-up words for the alternates strip (see
+     * swipe/SwipeAlternates.kt); the reducer stores them in
+     * [KeyboardState.swipeAlternates] and never commits them itself.
      */
-    data class CommitWord(val word: String, val crossedLetters: String? = null) : KeyboardAction
+    data class CommitWord(
+        val word: String,
+        val crossedLetters: String? = null,
+        val alternates: List<String> = emptyList(),
+    ) : KeyboardAction
+
+    /**
+     * Tap an alternate in the swipe-alternates strip: replace the word the
+     * last swipe committed with this one. Only meaningful while
+     * [KeyboardState.lastCommitWasSwipe] is armed; the reducer ignores it
+     * otherwise.
+     */
+    data class SelectAlternate(val word: String) : KeyboardAction
 
     /** Tap the sparkly key: toggles auto-proofreading on/off (like Shift). */
     data object ToggleProofread : KeyboardAction
@@ -93,6 +108,16 @@ sealed interface KeyboardEffect {
      * grapheme cluster.
      */
     data object DeleteWordBackward : KeyboardEffect
+
+    /**
+     * Replace the word a swipe just committed with an alternate picked from
+     * the strip (see [KeyboardAction.SelectAlternate]): the service applies
+     * it as delete-word-backward + commit-word, so the cursor and the
+     * leading-space rules end up exactly as if [word] had been swiped in the
+     * first place. [word] is already caps-transformed (the reducer stored
+     * the strip words transformed at commit time), so it commits verbatim.
+     */
+    data class ReplaceSwipedWord(val word: String) : KeyboardEffect
     data object PerformEnter : KeyboardEffect
 
     /**

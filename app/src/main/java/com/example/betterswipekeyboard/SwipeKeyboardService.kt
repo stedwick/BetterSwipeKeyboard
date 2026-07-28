@@ -295,6 +295,9 @@ class SwipeKeyboardService : InputMethodService(),
             fieldStartLayout(info.inputType, viewModel.state.value.layout)
                 ?.let { onKeyboardAction(KeyboardAction.SwitchLayout(it)) }
         }
+        // A fresh field ends the strip's replace context: its words belong
+        // to the previous field's text.
+        if (!restarting) viewModel.clearSwipeAlternates()
         // Pick up custom words saved in MainActivity: rebuild the decoder
         // only when the stored word string actually changed. Words saved
         // while the keyboard is open go live on the next keyboard show.
@@ -381,6 +384,20 @@ class SwipeKeyboardService : InputMethodService(),
                 // leading-space rule) is deliberately left alone — typing
                 // or swiping a replacement word still earns its space.
                 editor.deleteWordBackward()
+                textDirtySinceProofread = true
+                scheduleAutoProofread()
+            }
+            is KeyboardEffect.ReplaceSwipedWord -> {
+                // Strip tap: delete the just-swiped word (with its leading
+                // space — the cursor returns to the pre-swipe state), then
+                // commit the alternate through the normal swipe-commit path
+                // so the leading-space rule reapplies. The replacement has
+                // no trail, so nothing is recorded in the SwipedWordLog;
+                // the replaced word's entry invalidates itself at the next
+                // proofread reconciliation (text-anchored).
+                editor.deleteWordBackward()
+                editor.commitWord(effect.word)
+                lastCommitWasSwipe = true
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
             }
