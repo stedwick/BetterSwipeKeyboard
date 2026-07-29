@@ -148,11 +148,22 @@ Data flow (deliberately layered, keep it this way):
   KeyboardContentHeight` = 322.dp (`ui/keyboard/SwipeAlternatesStrip.kt`;
   the gesture-surface Box height in `KeyboardScreen` matches). Empty strip
   shows the gray italic placeholder "Alternatives will appear here".
+- The strip shows the COMMITTED word as a green bold CENTER cell
+  (`KeyboardState.swipedWord`, tap = no-op) with the score-ranked runners-up
+  flanking it, so it is obvious which word was actually written. Cell layout
+  is pure (`ui/keyboard/StripCells.kt` `stripCells` — best runner-up nearest
+  the center, alternating sides by rank: `[a3, a1, CENTER, a2, a4]`), and the
+  number of alts tracks width (`alternateCountForWidth`: 2 below 600.dp, 4
+  at/above — every portrait phone gets the skinny 3-cell strip, foldables/
+  tablets/landscape get 5 cells). `KeyboardScreen` computes the cell list
+  once and shares it between rendering and gesture hit-testing.
 - Data flow mirrors crossedLetters: the commit site passes
   `swipeAlternates(results)` (pure, `swipe/SwipeAlternates.kt` — drops
-  top-1, rejects runners-up ≥ `MAX_COMMIT_SCORE`, caps at 3) on
+  top-1, rejects runners-up ≥ `MAX_COMMIT_SCORE`, caps at 4, the decoder's
+  topN=5 minus the commit) on
   `KeyboardAction.CommitWord.alternates`; the reducer stores them in
-  `KeyboardState.swipeAlternates` CAPS-TRANSFORMED at commit time (one-shot
+  `KeyboardState.swipeAlternates` and the committed word in
+  `KeyboardState.swipedWord`, both CAPS-TRANSFORMED at commit time (one-shot
   shift is already consumed by tap time, so caps cannot be re-derived
   then), with exactly the `lastCommitWasSwipe` lifetime (every action that
   clears the flag clears the strip; voice transitions and fresh field
@@ -163,7 +174,10 @@ Data flow (deliberately layered, keep it this way):
   would be swallowed by the container `pointerInput`). The reduction is
   guarded by `lastCommitWasSwipe` (a stale strip never deletes text) and
   RE-ARMS the flag, so chained swaps and word-delete on the replacement
-  work; the service applies `KeyboardEffect.ReplaceSwipedWord` as
+  work; the tapped word moves into `swipedWord` (the strip's center) and
+  leaves the alternates — the replaced-away old word disappears (no
+  swap-back, Philip's call). The service applies
+  `KeyboardEffect.ReplaceSwipedWord` as
   `deleteWordBackward()` + `commitWord()`, so leading-space rules reapply
   and the text ends up exactly as if the alternate had been swiped. The
   replacement has no trail: nothing new enters `SwipedWordLog`, and the
