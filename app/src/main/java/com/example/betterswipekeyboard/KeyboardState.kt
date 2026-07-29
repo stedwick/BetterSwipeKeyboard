@@ -41,6 +41,15 @@ data class KeyboardState(
      */
     val lastCommitWasSwipe: Boolean = false,
     /**
+     * The word the last swipe committed, shown as the green center cell of
+     * the alternates strip so it is obvious which word was written. Stored
+     * caps-transformed exactly as committed (see [swipeAlternates]); a tap
+     * on it is a no-op. Same lifetime as [swipeAlternates]: set by the
+     * CommitWord reduction, updated by SelectAlternate (the replacement
+     * becomes the new center word), cleared by any other input action.
+     */
+    val swipedWord: String? = null,
+    /**
      * The runner-up words shown in the alternates strip after a swipe
      * commit, already caps-transformed the same way the committed word was
      * (the strip renders exactly what a tap commits — one-shot shift is

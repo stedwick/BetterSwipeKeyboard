@@ -331,7 +331,16 @@ class KeyboardViewModelTest {
     fun `commit word stores the alternates in state`() {
         val vm = viewModel()
         vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+        assertEquals("hello", vm.state.value.swipedWord)
         assertEquals(listOf("hell", "help"), vm.state.value.swipeAlternates)
+    }
+
+    @Test
+    fun `commit word with no surviving alternates still arms the center word`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        assertEquals("hello", vm.state.value.swipedWord)
+        assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
     }
 
     @Test
@@ -339,11 +348,13 @@ class KeyboardViewModelTest {
         val oneShot = viewModel()
         oneShot.onAction(KeyboardAction.Shift)
         oneShot.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
+        assertEquals("Hello", oneShot.state.value.swipedWord)
         assertEquals(listOf("Hell", "Help"), oneShot.state.value.swipeAlternates)
 
         val locked = viewModel()
         locked.onAction(KeyboardAction.CapsLock)
         locked.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        assertEquals("HELLO", locked.state.value.swipedWord)
         assertEquals(listOf("HELL"), locked.state.value.swipeAlternates)
     }
 
@@ -355,8 +366,10 @@ class KeyboardViewModelTest {
         val effect = vm.onAction(KeyboardAction.SelectAlternate("hell"))
         assertEquals(KeyboardEffect.ReplaceSwipedWord("hell"), effect)
         // Re-armed: the next backspace word-deletes the replacement, and the
-        // strip keeps the other alternate for another swap.
+        // strip keeps the other alternate for another swap. The tapped word
+        // becomes the green center word; the replaced-away "hello" is gone.
         assertEquals(true, vm.state.value.lastCommitWasSwipe)
+        assertEquals("hell", vm.state.value.swipedWord)
         assertEquals(listOf("help"), vm.state.value.swipeAlternates)
         assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
     }
@@ -366,7 +379,9 @@ class KeyboardViewModelTest {
         val vm = viewModel()
         vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell", "help")))
         assertEquals(KeyboardEffect.ReplaceSwipedWord("hell"), vm.onAction(KeyboardAction.SelectAlternate("hell")))
+        assertEquals("hell", vm.state.value.swipedWord)
         assertEquals(KeyboardEffect.ReplaceSwipedWord("help"), vm.onAction(KeyboardAction.SelectAlternate("help")))
+        assertEquals("help", vm.state.value.swipedWord)
         assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
         assertEquals(true, vm.state.value.lastCommitWasSwipe)
     }
@@ -402,6 +417,7 @@ class KeyboardViewModelTest {
             vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
             vm.onAction(action)
             assertEquals("after $action", emptyList<String>(), vm.state.value.swipeAlternates)
+            assertNull("after $action", vm.state.value.swipedWord)
         }
     }
 
@@ -411,6 +427,7 @@ class KeyboardViewModelTest {
         vm.onAction(KeyboardAction.GestureStarted)
         vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
         vm.onAction(KeyboardAction.GestureEnded)
+        assertEquals("hello", vm.state.value.swipedWord)
         assertEquals(listOf("hell"), vm.state.value.swipeAlternates)
     }
 
@@ -420,6 +437,7 @@ class KeyboardViewModelTest {
         vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
         vm.setVoiceState(VoiceState.LISTENING)
         assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+        assertNull(vm.state.value.swipedWord)
     }
 
     @Test
@@ -428,6 +446,7 @@ class KeyboardViewModelTest {
         vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
         vm.clearSwipeAlternates()
         assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+        assertNull(vm.state.value.swipedWord)
         assertEquals(true, vm.state.value.lastCommitWasSwipe)
     }
 }
