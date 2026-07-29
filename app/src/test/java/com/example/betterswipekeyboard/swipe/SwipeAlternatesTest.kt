@@ -17,7 +17,7 @@ class SwipeAlternatesTest {
     }
 
     @Test
-    fun `caps the strip at three alternates`() {
+    fun `caps the strip at four alternates`() {
         val alts = swipeAlternates(
             results(
                 "hello" to 0.1f,
@@ -27,7 +27,7 @@ class SwipeAlternatesTest {
                 "helm" to 0.5f,
             ),
         )
-        assertEquals(listOf("hell", "help", "held"), alts)
+        assertEquals(listOf("hell", "help", "held", "helm"), alts)
     }
 
     @Test
