@@ -49,6 +49,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -212,6 +213,18 @@ fun KeyboardScreen(
     // The gesture loop reads the AI key's enabled state at tap time;
     // pointerInput captures would otherwise freeze it at composition time.
     val currentState by rememberUpdatedState(state)
+    // Alternates-strip cells (committed word centered, runners-up flanking):
+    // computed once here so the strip rendering and the gesture loop's
+    // hit-testing see the SAME list. The alt count tracks the keyboard
+    // width (the IME spans the screen): 2 alts on phones, 4 on wide screens.
+    // The gesture loop reads them via rememberUpdatedState for the same
+    // pointerInput-capture reason as currentState.
+    val altCells = stripCells(
+        state.swipedWord,
+        state.swipeAlternates,
+        alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat()),
+    )
+    val currentAltCells by rememberUpdatedState(altCells)
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
     // Canonical character-key width: one slot of a full 10-key row. Every
@@ -255,7 +268,7 @@ fun KeyboardScreen(
                     // transitions clear the alts) so the window height stays
                     // pixel-equal with the key layouts. Inert outside the
                     // gesture surface.
-                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
+                    SwipeAlternatesStrip(cells = altCells, colors = colors)
                     // While dictating, the voice panel replaces the key rows,
                     // so there is no stale key geometry to hit-test against.
                     VoicePanel(
@@ -275,7 +288,7 @@ fun KeyboardScreen(
                     )
                     // Blank strip (SwitchLayout cleared the alts); keeps the
                     // surface height pixel-equal with the key layouts.
-                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
+                    SwipeAlternatesStrip(cells = altCells, colors = colors)
                     EmojiPanel(
                         colors = colors,
                         onAction = onAction,
@@ -292,7 +305,7 @@ fun KeyboardScreen(
                     )
                     // Blank strip (SwitchLayout cleared the alts); keeps the
                     // surface height pixel-equal with the key layouts.
-                    SwipeAlternatesStrip(alternates = state.swipeAlternates, colors = colors)
+                    SwipeAlternatesStrip(cells = altCells, colors = colors)
                     ClipboardPanel(
                         colors = colors,
                         entries = state.clipboard,
@@ -356,7 +369,7 @@ fun KeyboardScreen(
                                     val downAlt = altRects.entries
                                         .firstOrNull { it.value.contains(down.position) }
                                         ?.key
-                                        ?.takeIf { it < currentState.swipeAlternates.size }
+                                        ?.takeIf { it < currentAltCells.size }
                                     // Space-bar overshoot slack: a down in
                                     // the bar's top slack strip counts as
                                     // "no key", so an overshoot word-swipe
@@ -420,11 +433,15 @@ fun KeyboardScreen(
                                             // Alternates-strip tap: replace
                                             // the just-swiped word with the
                                             // picked alternate (the reducer
-                                            // ignores it when unarmed).
+                                            // ignores it when unarmed). The
+                                            // green center cell is the
+                                            // committed word itself — tapping
+                                            // it is a no-op.
                                             downAlt != null ->
-                                                currentState.swipeAlternates
+                                                currentAltCells
                                                     .getOrNull(downAlt)
-                                                    ?.let { onAction(KeyboardAction.SelectAlternate(it)) }
+                                                    ?.takeUnless { it.isCenter }
+                                                    ?.let { onAction(KeyboardAction.SelectAlternate(it.word)) }
                                             else -> downKey?.let { onAction(it.tapAction()) }
                                         }
 
@@ -756,7 +773,7 @@ fun KeyboardScreen(
                             // (a clickable child would have its touches
                             // swallowed by the container pointerInput).
                             SwipeAlternatesStrip(
-                                alternates = state.swipeAlternates,
+                                cells = altCells,
                                 colors = colors,
                                 pressedIndex = pressedAlt,
                                 onAlternatePositioned = { index, coordinates ->

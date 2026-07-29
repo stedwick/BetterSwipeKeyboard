@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -32,11 +33,20 @@ import androidx.compose.ui.unit.sp
 val AlternatesStripHeight = 40.dp
 
 /**
- * The swipe-alternates strip: after a swipe commit it shows the top-3
- * runner-up decoder guesses ([KeyboardState.swipeAlternates]); tapping one
- * replaces the just-committed word. Always visible (space reserved,
- * Gboard-style); while empty it shows a gray italic placeholder so the row
- * explains itself.
+ * Green of the strip's center cell (the committed word), so it is obvious
+ * which word was actually written. Theme-independent like ToggleOn in
+ * KeyboardScreen: the iOS system green reads on both the light and the dark
+ * keyboard background.
+ */
+private val CommittedWordGreen = Color(0xFF30D158)
+
+/**
+ * The swipe-alternates strip: after a swipe commit it shows the committed
+ * word as a green, bold CENTER cell (tap = no-op) with the score-ranked
+ * runner-ups flanking it ([stripCells]); tapping a runner-up replaces the
+ * just-committed word and moves it into the center. Always visible (space
+ * reserved, Gboard-style); while empty it shows a gray italic placeholder so
+ * the row explains itself.
  *
  * Two render modes, exactly like [UtilityRow]: on the key layouts the strip
  * lives INSIDE the gesture surface, so cells are purely visual and register
@@ -47,7 +57,7 @@ val AlternatesStripHeight = 40.dp
  */
 @Composable
 fun SwipeAlternatesStrip(
-    alternates: List<String>,
+    cells: List<StripCell>,
     colors: KeyboardColors,
     modifier: Modifier = Modifier,
     pressedIndex: Int? = null,
@@ -60,7 +70,7 @@ fun SwipeAlternatesStrip(
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (alternates.isEmpty()) {
+        if (cells.isEmpty()) {
             Text(
                 text = "Alternatives will appear here",
                 color = colors.keyText.copy(alpha = 0.4f),
@@ -69,7 +79,7 @@ fun SwipeAlternatesStrip(
                 style = MaterialTheme.typography.bodyMedium,
             )
         } else {
-            alternates.forEachIndexed { index, word ->
+            cells.forEachIndexed { index, cell ->
                 Box(
                     modifier = Modifier
                         .then(
@@ -93,9 +103,10 @@ fun SwipeAlternatesStrip(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = word,
-                        color = colors.keyText,
+                        text = cell.word,
+                        color = if (cell.isCenter) CommittedWordGreen else colors.keyText,
                         fontSize = 16.sp,
+                        fontWeight = if (cell.isCenter) FontWeight.Bold else FontWeight.Normal,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
