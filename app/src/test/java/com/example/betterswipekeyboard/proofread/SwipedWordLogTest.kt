@@ -117,4 +117,28 @@ class SwipedWordLogTest {
         // 'one' was evicted; the rest survive.
         assertEquals(listOf("two", "three", "four"), matches.map { it.entry.word })
     }
+
+    @Test
+    fun `alternates ride along from record through reconcile`() {
+        val log = SwipedWordLog()
+        log.record("east", "w·a·s·r·e", listOf("wars", "eats"))
+        val matches = log.reconcile("star east")
+        assertEquals(1, matches.size)
+        assertEquals(listOf("wars", "eats"), matches[0].entry.alternates)
+    }
+
+    @Test
+    fun `record without alternates defaults to an empty list`() {
+        val log = SwipedWordLog()
+        log.record("dog", "d·o·g")
+        assertEquals(emptyList<String>(), log.reconcile("dog")[0].entry.alternates)
+    }
+
+    @Test
+    fun `reconciliation matches on the word only - alternates play no part`() {
+        // The runner-ups annotate; they never widen what counts as a match.
+        val entries = listOf(SwipedWordLog.Entry("east", "p", listOf("wars")))
+        assertEquals(1, SwipedWordLog.reconcile(entries, "east").size)
+        assertTrue(SwipedWordLog.reconcile(entries, "wars").isEmpty())
+    }
 }
