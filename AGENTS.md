@@ -431,7 +431,14 @@ Data flow (deliberately layered, keep it this way):
   structure or comma-style edits without swipe-error evidence — added
   after Philip's AI runs showed the old 'meticulous proofreader'
   framing rewriting evidence-free text; the path carve-out remains the
-  one sanctioned way to touch a plausible word.
+  one sanctioned way to touch a plausible word. SYSTEM is a five-step
+  numbered procedure the model works through (inspect the written words,
+  swipe paths and listed guesses → decide whether the text makes sense
+  as-is → diagnose the error class → make the smallest fix under the
+  reasonable-mis-swipe rule → return the corrected text). The steps are
+  a SILENT procedure: the reply must be the corrected sentence alone —
+  no reasoning, no step labels, no preamble — because it is applied
+  verbatim into the text field (the echo guard depends on it).
 - Swipe-path annotation (crossed letters + decoder alternates as
   proofreader evidence): at swipe-commit time `KeyboardScreen` attaches
   `crossedLetters` to `KeyboardAction.CommitWord` (the ViewModel passes it

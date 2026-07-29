@@ -35,6 +35,13 @@ import org.json.JSONObject
  * of the trail). A fluent word no reasonable swipe of that trail could
  * produce is never substituted (the 'Star East' -> 'Star Trek' failure
  * class, where 'wars' was available evidence and 'trek' was not).
+ * SYSTEM is structured as five numbered steps the model works through
+ * (inspect the words, paths and guesses → decide whether the text makes
+ * sense as-is → diagnose the error class → make the smallest fix under
+ * the reasonable-mis-swipe rule → return the corrected text). The steps
+ * are a SILENT procedure: the reply must be the corrected sentence alone
+ * — no reasoning, no step labels, no preamble — because the reply is
+ * applied verbatim into the text field and the echo guard depends on it.
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
@@ -47,26 +54,12 @@ object ProofreadPrompt {
 
     const val SYSTEM =
         "You repair swipe-typed text. The finger drags over the keys and each " +
-            "word is guessed from the path, which leaves characteristic errors. " +
-            "A word becomes a longer or rarer word starting the same way ('his' " +
+            "word is guessed from the path, which leaves characteristic errors: " +
+            "a word becomes a longer or rarer word starting the same way ('his' " +
             "as 'hours', 'dog' as 'doping', 'fox' as 'folic') or shrinks to " +
             "its prefix ('mother' as 'not', 'minimum' as 'min'); words with the " +
             "same swipe path swap ('nine' as 'bounce', 'nice' as 'notice'); " +
-            "neighboring keys slip at word edges ('quick' as 'wick'). When a " +
-            "word does not fit its sentence and one of these shapes explains " +
-            "it, restore the word the swipe meant - but only then. Also fix " +
-            "plain typos: misspellings, doubled or missing letters, missing " +
-            "spaces, missing capitals and end punctuation, and clear agreement " +
-            "errors. That is the whole job. A word that already fits its " +
-            "sentence is never an error - keep it exactly as written, even if " +
-            "it is informal ('mum', 'gonna') or a more common word would read " +
-            "better. Make the smallest possible fix: replace the wrong word, " +
-            "never restructure, delete or invent words around it. Never swap a " +
-            "word for a synonym, never change the writer's register or " +
-            "sentence structure, never restyle punctuation. Preserve the " +
-            "writer's words, tone, formatting and emoji. Do not translate or " +
-            "answer questions in the text. If the text is already correct, or " +
-            "you are unsure whether something is an error, return it unchanged. " +
+            "neighboring keys slip at word edges ('quick' as 'wick'). " +
             "The text may be followed by swipe paths: for each swiped word, " +
             "the ordered keys the finger crossed ('fog=d·o·g' means 'fog' was " +
             "written but the path reads d-o-g). A word may be followed by '>' " +
@@ -75,23 +68,45 @@ object ProofreadPrompt {
             "reads w-a-s-r-e, and the decoder's runner-up guesses were 'wars' " +
             "and 'eats'). Paths are approximate - an " +
             "extra letter at either end (finger travel) or a missing letter " +
-            "(aim slip) is normal. A word that disagrees with its path is a " +
-            "likely error even if it fits its sentence. When you replace a " +
-            "swiped word, the replacement must be a plausible result of that " +
-            "same swipe: consistent with the path within normal mis-swipe " +
-            "tolerance (aim slip, a nearby key, an extra or missing letter " +
-            "at an end), or one of the listed guesses - never a word no " +
-            "reasonable swipe of that trail could produce, no matter how " +
-            "well it fits the sentence. Typed words have no path; for them " +
-            "the rules above apply unchanged. When path and context " +
+            "(aim slip) is normal. Typed words have no path. The text may " +
+            "contain the previous sentence followed by the sentence currently " +
+            "being typed. Work through these steps silently:\n" +
+            "1. Look at the words that were written, the swipe paths and the " +
+            "listed guesses.\n" +
+            "2. Decide whether the text makes sense as it is. A word that " +
+            "already fits its sentence is never an error - keep it exactly as " +
+            "written, even if it is informal ('mum', 'gonna') or a more " +
+            "common word would read better. A word that disagrees with its " +
+            "path is a likely error even if it fits its sentence.\n" +
+            "3. If it does not make sense, figure out what the writer meant: " +
+            "a swipe error of one of the shapes above, a plain typo " +
+            "(misspellings, doubled or missing letters, missing spaces, " +
+            "missing capitals, missing end punctuation, clear agreement " +
+            "errors), or a last sentence that is a fragment continuing the " +
+            "previous one (it starts with 'and', 'but' or 'so', or lacks a " +
+            "subject). That is the whole job. If the text is already correct, " +
+            "or you are unsure whether something is an error, return it " +
+            "unchanged.\n" +
+            "4. Make the smallest possible fix: replace the wrong word, " +
+            "never restructure, delete or invent words around it. A " +
+            "replacement for a swiped word must be a plausible result of " +
+            "that same swipe: consistent with the path within normal " +
+            "mis-swipe tolerance (aim slip, a nearby key, an extra or " +
+            "missing letter at an end), or one of the listed guesses - " +
+            "never a word no reasonable swipe of that trail could produce, " +
+            "no matter how well it fits the sentence. When path and context " +
             "disagree, prefer the reading that makes the sentence natural. " +
-            "The text may contain " +
-            "the previous sentence followed by the sentence currently being " +
-            "typed. If the last sentence is a fragment that continues the " +
-            "previous one (e.g. it starts with 'and', 'but', 'so' or lacks a " +
-            "subject), merge them into one sentence by joining them, changing " +
-            "nothing else. Genuinely separate sentences stay separate. Reply " +
-            "with ONLY the corrected text - no quotes, no explanations."
+            "When the fix is a fragment, merge it into the previous sentence " +
+            "by joining the two, changing nothing else; genuinely separate " +
+            "sentences stay separate. Never swap a word for a synonym, never " +
+            "change the writer's register or sentence structure, never " +
+            "restyle punctuation. Preserve the writer's words, tone, " +
+            "formatting and emoji. Do not translate or answer questions in " +
+            "the text.\n" +
+            "5. Return ONLY the corrected text - no reasoning, no step " +
+            "labels, no preamble, no quotes, no explanations. The steps are " +
+            "silent: your reply is applied verbatim as the corrected " +
+            "sentence."
 
     private val GENERAL_EXAMPLES: List<Pair<String, String>> = listOf(
         "this is a short msg" to "This is a short msg.",

@@ -319,6 +319,22 @@ class ProofreadPromptTest {
     }
 
     @Test
+    fun `system prompt is a numbered procedure whose steps stay silent`() {
+        val system = ProofreadPrompt.SYSTEM
+        // Philip's stepwise shape: inspect -> sense-check -> diagnose ->
+        // fix -> return.
+        assertTrue(system.contains("1."))
+        assertTrue(system.contains("5."))
+        assertTrue(system.contains("silently"))
+        // The reply is applied verbatim into the text field, so the
+        // procedure must not leak into it (the echo guard depends on it).
+        assertTrue(system.contains("ONLY the corrected text"))
+        assertTrue(system.contains("no reasoning"))
+        assertTrue(system.contains("no step labels"))
+        assertTrue(system.contains("no preamble"))
+    }
+
+    @Test
     fun `path few-shot teaches picking the intended word from the decoder guesses`() {
         // The 'Star East' incident class: 'east' committed, path w·a·s·r·e,
         // 'wars' among the decoder's guesses -> 'Star Wars', never an
