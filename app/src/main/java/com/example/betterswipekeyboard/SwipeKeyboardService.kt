@@ -361,7 +361,14 @@ class SwipeKeyboardService : InputMethodService(),
             is KeyboardEffect.CommitWord -> {
                 // commitWord inserts the leading space for tap → swipe itself.
                 editor.commitWord(effect.word)
-                effect.crossedLetters?.let { swipedWordLog.record(effect.word, it) }
+                effect.crossedLetters?.let {
+                    // The runner-ups ride the ACTION (raw decoder words,
+                    // uncapped), not the effect: only KeyboardAction.CommitWord
+                    // produces this effect, and the reducer's caps-transformed
+                    // copies in KeyboardState are for the strip, not the log.
+                    val alternates = (action as? KeyboardAction.CommitWord)?.alternates.orEmpty()
+                    swipedWordLog.record(effect.word, it, alternates)
+                }
                 lastCommitWasSwipe = true
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
@@ -485,10 +492,10 @@ class SwipeKeyboardService : InputMethodService(),
                 // the separate voice prompt.
                 val input = if (proofreader is OpenRouterProofreader && mode != ProofreadMode.VOICE) {
                     val windowStart = before.length - window.text.length
-                    val paths = swipedWordLog.reconcile(before)
+                    val swiped = swipedWordLog.reconcile(before)
                         .filter { it.startIndex >= windowStart }
-                        .map { it.entry.word to it.entry.letters }
-                    ProofreadPrompt.withSwipePaths(window.text.trim(), paths)
+                        .map { it.entry }
+                    ProofreadPrompt.withSwipePaths(window.text.trim(), swiped)
                 } else {
                     window.text.trim()
                 }
