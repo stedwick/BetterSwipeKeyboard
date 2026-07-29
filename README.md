@@ -19,6 +19,13 @@ Privacy defaults are strict: proofreading stays on-device when it can,
 the clipboard history lives only in memory, and clips flagged as
 sensitive (password managers) are never stored.
 
+## Screenshots
+
+| Dark | Light |
+| --- | --- |
+| ![Dark mode](docs/screenshots/keyboard-dark.jpg) | ![Light mode](docs/screenshots/keyboard-light.jpg) |
+| ![Dark mode, foldable](docs/screenshots/keyboard-dark-foldable.jpg) | ![Light mode, foldable](docs/screenshots/keyboard-light-foldable.jpg) |
+
 ## Building
 
 You need Android SDK 36 and a `local.properties` pointing at it, then:
