@@ -28,10 +28,13 @@ import org.json.JSONObject
  * a word disagreeing with its crossed-letters path is fixed even when it
  * fits its sentence. Since swipe-evidence v2 the annotation also carries
  * the decoder's runner-up guesses per swiped word (`>alt1,alt2`), and the
- * replacement for a swiped word must be spelled by its path OR be a listed
- * guess — a fluent word supported by neither is never substituted (the
- * 'Star East' -> 'Star Trek' failure class, where 'wars' was available
- * evidence and 'trek' was not).
+ * replacement for a swiped word must be a plausible result of that same
+ * swipe — consistent with the path within normal mis-swipe tolerance
+ * (aim slip, a nearby key, an extra or missing letter at an end) OR one
+ * of the listed guesses (the decoder's own reasonable mis-swipe readings
+ * of the trail). A fluent word no reasonable swipe of that trail could
+ * produce is never substituted (the 'Star East' -> 'Star Trek' failure
+ * class, where 'wars' was available evidence and 'trek' was not).
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
@@ -73,15 +76,16 @@ object ProofreadPrompt {
             "and 'eats'). Paths are approximate - an " +
             "extra letter at either end (finger travel) or a missing letter " +
             "(aim slip) is normal. A word that disagrees with its path is a " +
-            "likely error even if it fits its sentence: restore the word the " +
-            "path spells, or one of its listed guesses if a guess fits the " +
-            "sentence better. When you replace a swiped word, the replacement " +
-            "must be spelled by its path or be one of its listed guesses - " +
-            "never substitute a word that matches neither, no matter how well " +
-            "it fits the sentence. Typed words have no path; for them the " +
-            "rules above " +
-            "apply unchanged. When path and context disagree, prefer the " +
-            "reading that makes the sentence natural. The text may contain " +
+            "likely error even if it fits its sentence. When you replace a " +
+            "swiped word, the replacement must be a plausible result of that " +
+            "same swipe: consistent with the path within normal mis-swipe " +
+            "tolerance (aim slip, a nearby key, an extra or missing letter " +
+            "at an end), or one of the listed guesses - never a word no " +
+            "reasonable swipe of that trail could produce, no matter how " +
+            "well it fits the sentence. Typed words have no path; for them " +
+            "the rules above apply unchanged. When path and context " +
+            "disagree, prefer the reading that makes the sentence natural. " +
+            "The text may contain " +
             "the previous sentence followed by the sentence currently being " +
             "typed. If the last sentence is a fragment that continues the " +
             "previous one (e.g. it starts with 'and', 'but', 'so' or lacks a " +

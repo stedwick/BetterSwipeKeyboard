@@ -453,9 +453,13 @@ Data flow (deliberately layered, keep it this way):
   text. The prompt teaches that a word disagreeing with its path is a
   likely error even if it fits its sentence (the one exception to the
   anti-overcorrection rule — this is what fixes fog→dog), and — since
-  swipe-evidence v2 — that a replacement for a swiped word must be
-  spelled by its path OR be one of its listed guesses, never a fluent
-  word supported by neither (the 'Star East'→'Star Trek' failure class:
+  swipe-evidence v2 — that a replacement for a swiped word must be a
+  plausible result of that same swipe: consistent with the path within
+  normal mis-swipe tolerance (aim slip, a nearby key, an extra or missing
+  letter at an end) OR one of the decoder's listed guesses (the decoder's
+  own reasonable mis-swipe readings of the trail) — never a fluent word
+  no reasonable swipe of that trail could produce (the
+  'Star East'→'Star Trek' failure class:
   'wars' was in the decoder's guesses, 'trek' was invented). A reply
   echoing the marker is discarded by the echo guard, never applied.
 - The OpenRouter API key is stored in plain SharedPreferences by

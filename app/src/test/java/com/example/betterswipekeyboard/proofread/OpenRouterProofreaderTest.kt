@@ -304,15 +304,18 @@ class ProofreadPromptTest {
     }
 
     @Test
-    fun `system prompt teaches the alternates menu and the supported-replacement rule`() {
+    fun `system prompt teaches the alternates menu and the reasonable-mis-swipe rule`() {
         val system = ProofreadPrompt.SYSTEM
         // The '>' suffix introducing the decoder's runner-up guesses.
         assertTrue(system.contains("decoder's other guesses"))
         assertTrue(system.contains(">wars,eats"))
-        // The kill rule for the 'Star East' -> 'Star Trek' class: a
-        // replacement must be supported by the path or the guesses, never
-        // by fluency alone.
-        assertTrue(system.contains("must be spelled by its path or be one of its listed guesses"))
+        // The rule for the 'Star East' -> 'Star Trek' class: a replacement
+        // must be a plausible result of the same swipe (path-consistent
+        // within normal mis-swipe tolerance, or a listed guess), never a
+        // fluent word no reasonable swipe of that trail could produce.
+        assertTrue(system.contains("must be a plausible result of that same swipe"))
+        assertTrue(system.contains("mis-swipe tolerance"))
+        assertTrue(system.contains("no reasonable swipe of that trail could produce"))
     }
 
     @Test
