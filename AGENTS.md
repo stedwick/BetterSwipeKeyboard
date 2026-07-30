@@ -260,7 +260,18 @@ Data flow (deliberately layered, keep it this way):
   unconditionally: the finger starts at rest on an aimed key); and words
   whose first letter matches mid-trail pay
   an unexplained-head charge mirroring the tail term (0.5kw free — touch-
-  down aim is much better than lift-off aim). Lower score =
+  down aim is much better than lift-off aim). The LAST letter also pays
+  an end-key surcharge (`END_KEY_SURCHARGE_WEIGHT` 0.5): its match
+  distance beyond the tunnel radius, charged AGAIN undiluted, after the
+  lift-off re-match — the per-letter mean shrugs an unvisited neighbor of
+  the visited end key off to ~0.2 ("help"'s p next to "hello"'s o), and
+  the frequency prior then decides the word (rank 163 vs 1905 = a
+  constant +0.68 for help; 6/13 captured hello trails committed "help").
+  Measured: 10/13 hello, fixture floors held 13/32/34/60/62/36 at
+  w=0.4-0.7; the binding constraint is set5 dog#8 (re-matched g at
+  0.76kw — margin 0.072 at 0.5, flips at 0.8), and the re-match tension
+  (re-match licenses ≤0.8kw, surcharge charges past 0.5kw) is deliberate.
+  Lower score =
   better; `KeyboardScreen` commits the top word when
   `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
   trails — correct swipes at normal speed land up to ~1.8). Two-tier
@@ -269,9 +280,11 @@ Data flow (deliberately layered, keep it this way):
   swipe (no candidate below the cutoff, nothing committed) flashes the
   trail RED (`FailedSwipeFlash`); a commit with a close runner-up
   (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.25, calibrated on the
-  six captured trail sets — flags 9/17 wrong commits at 6.3% false
-  positives, recalibrated after the re-match: the wrong pool shrank
-  20→17 because four wrong commits became correct swipes) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
+  six captured trail sets — flags 8/16 wrong commits at 5.9% false
+  positives; recalibrated after the re-match (wrong pool 20→17) and
+  again after the end-key surcharge (17→16: the signed-off lazy→last
+  wrong commit set2#35 was pushed past `MAX_COMMIT_SCORE` into silence —
+  denominator changes both times, not flag-rate changes)) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
   confident commits flash nothing. Segment alpha in
   `ui/keyboard/TrailFade.kt`.
 - Tuning rules learned the hard way (the test suite guards these):

@@ -1208,3 +1208,145 @@ scale the extra-letter cost up).
   overshoot-and-return (and #2's m-region dip note was geometry-true but
   not the killer). PLAN-DRAG's remaining members: set3 mother x2, set4
   the #48 / past #35 / nine #31 / nice #32, set5 minimum #13.
+
+
+---
+
+# ADDENDUM 7 — hello→help: the end-key surcharge (LANDED 2026-07-30)
+
+Source: Philip's report — swiping 'hello' very often commits 'help' although
+his finger never touches P. Data: 13 fresh captured trails
+(`swipe_trails_word_hello.jsonl`, Downloads). Investigation branch
+`investigate/hello-help` (report-only), implementation approved as Option A.
+
+## Capture contents and the regression verdict
+
+13/13 trails intended 'hello'. Pre-lever commits: **help x6, hell x2,
+hello x5** — 8/13 wrong, hello-vs-help margins 0.02-0.13. The capture
+reproduces exactly under the current decoder (max score delta 0.0), so it
+was recorded WITH the lift-off re-match merged — and the re-match is still
+ruled out three ways: (a) A/B REBASIN_RADIUS_KEYS 0.8 vs 0.0 — zero flips,
+every score identical; (b) per-candidate the re-match never fires for
+hello/help/hell (`basinsClosed=0` for p on all 13 — the trail approaches O
+monotonically, distance-to-P falls through the whole final approach, no
+depart-and-return basin ever closes, gate 1 can't open); (c) set6#36
+archived the same flip (margin 0.01) BEFORE the re-match branch existed.
+**Pre-existing disease, not a regression.**
+
+## The mechanism (term-by-term autopsy, all 13 trails identical in shape)
+
+Representative trail #0 (help -1.4112 beats hello -1.2795): both words
+tunnel the trail perfectly (conformance ~0, backtrack ~0, tail 0, head 0).
+The entire geometric case against 'help' is:
+
+- the unvisited p's first-basin distance (0.81-0.95kw — O and P centers are
+  1.0kw apart) **diluted by the per-letter mean to ~0.22**;
+- a +0.30 missed-salient for o, present only when the lift-off region is
+  non-isolated (8/13 trails; the other 5 have no o evidence at all);
+- alignment +0.04 and length bonus +0.02.
+
+Against ~0.59 of geometry stands the frequency prior: help rank 163 vs
+hello rank 1905 = a **constant +0.676** (`3.0*ln(1905/163)/ln(maxRank)`).
+Frequency wins by ~0.1 on six trails.
+
+Why the geometric terms can't charge the neighbor key harder: the
+first-basin p match happens EARLY, while the trail (heading up-left to O)
+is still near the L->P corridor — the leg's points stay inside the free
+tunnel (conformance 0), and the actual O pass lands in the free 1.5kw tail
+slack (measured post-match arc 0.8-1.2kw). Direction can't separate
+adjacent same-row keys either: L->O and L->P differ only in +-0.5
+horizontal, so the up-left final motion has POSITIVE projection on both
+legs (0.86 vs 0.38) and backtrack is ~0 for both words (opposed-vs-L->P
+arc measured 0.00-0.04kw on all 13).
+
+The hell wins (#10/#12) are the same coin from the other side: those
+lift-offs are ISOLATED (graded anchor emits nothing -> salient=[h,e,l]),
+so hell wins on frequency (rank 800), the alignment denominator (3/4 vs
+3/5) and dilution, even though hello's o basin is genuinely visited at
+0.11-0.13kw.
+
+**Class**: frequency-overrule-on-sparse-end-evidence (sibling of once->one
+Addendum 3, past->part), sharpened by "the differing key is an unvisited
+NEIGHBOR of the visited end key, and its only cost is a diluted distance
+charge".
+
+**Why the guards didn't catch it**: both hello guards (realistic-trail +
+custom-words test) drive through key centers with a decelerating forward
+creep — a deliberate-stop model (set6 pass-1 shape), where the non-isolated
+end region makes o salient and help pays +0.9 missed-salient (hello margin
+0.35). The failing shape is the drift lift-off (pass-2): weak/no o
+evidence and a p basin at 0.81-0.95kw. No synthetic guard modeled a drift
+lift-off ending short of the last key.
+
+## The lever (LANDED): end-key surcharge
+
+`max(0, lastLetterMatchDist - TUNNEL_RADIUS_KEYS) * END_KEY_SURCHARGE_WEIGHT`
+(0.5), added UNDILUTED after the lift-off re-match (the re-matched distance
+is what gets charged). Framing: the tunnel grants position freedom
+mid-word, but a word's claim to END on the trail should cost when the
+trail ends off its last key.
+
+Measured (production-patched, this worktree):
+
+- hello trails: **10/13** (all six help commits flip; residuals #10/#12
+  hell + #11 help — the isolated-lift-off family, carried by the
+  alternates strip + crossed-letters proofreader evidence: 13/13 trails
+  crossed o, none crossed p). set6#36 unchanged (its drift genuinely
+  ended <=0.5kw from P — decoder defensible, correctly not charged).
+- Fixture floors UNCHANGED: **13/32/34/60/62/36** across w=0.4-0.7.
+  Exposure audit: 42/260 intended words pay small surcharges at w=0.5,
+  zero flips <=0.7 (competitors pay their own surcharges).
+- **Binding constraint**: set5 dog#8 — its lift-off-re-matched g sits at
+  0.76kw and pays (0.76-0.5)*w: margin 0.202 -> 0.072 at w=0.5
+  (production-re-confirmed 0.0715), 0.02 at 0.7, FLIPS at 0.8 (set5 61).
+  0.5 is mid-plateau with headroom.
+- Documented tension: the re-match licenses last-letter matches up to
+  REBASIN_RADIUS_KEYS 0.8kw while the surcharge charges past 0.5kw — at
+  0.5 the max surcharge on a re-matched letter is 0.15, tolerable.
+- Confidence calibration re-run (full table in LOW_CONFIDENCE_MARGIN's
+  KDoc): wrong pool 17->16 — the surcharge pushed the signed-off
+  lazy->last wrong commit (set2#35, pre-lever 1.647, margin 0.13) past
+  MAX_COMMIT_SCORE into silence; ratchets 9/17 -> 8/16 and 15/237 ->
+  14/237 (5.9%), denominator changes, not flag-rate changes. The constant
+  stays 0.25: 0.30 buys one flag (a single 0.27-margin commit) for zero
+  measured FPs — a one-commit artifact, not a knee shift.
+
+## Newly measured dead ends (from the investigation's options report)
+
+- **Frequency surgery (Option C)**: global weight 2.8 -> hello 5/13 AND
+  set5 quick#52->wick re-breaks (61/62 — the frequency prior's own signed-
+  off win); 2.6 -> 6/13, same break. Pair-specific rank surgery needs
+  Delta>=0.13-0.6 against a genuine corpus gap (help IS more frequent) —
+  unprincipled. Rejected.
+- **Evidence resurrection (Option D)**: crossed-last-letter credit (L2) ->
+  4/13, breaks set5 (61) + set6 (35, re-opens am->an); isolated-lift-off
+  anchor at 0.5kw (L3) -> 6/13 (fixes the hell pair) but re-breaks set6
+  we#22->were (the grading session's signed-off win); L1+L3 -> 13/13 but
+  set1 12 / set2 31 / set5 61. A 0.3kw distance-band anchor would separate
+  hello#10/#12 (0.18/0.25kw) from we#22 (0.5kw) but is exactly the
+  curve-fit rejected in Addendum 5 ("no principled cut exists"). Rejected.
+- **Final-leg direction/backtrack (Lever A of the report)**: measured
+  dead on the geometry — adjacent same-row legs are near-parallel, the
+  trail's final motion has positive projection on both (see above).
+
+## Guards landed
+
+`SwipeEndKeySurchargeTest` (new file, merge-clean rule): (1) drift
+lift-off toward the neighbor commits hello — the synthetic shape was
+verified to commit help PRE-lever (help -1.693 vs hello -1.532; a guard
+that never failed pins nothing), tuned into the real-trail envelope
+(lift-off 0.22kw from O / 1.18kw from P, p basin 0.90kw, salient
+[h,e,l,o]); (2) genuine neighbor-end stays help (through P's center —
+surcharge exactly zero, margin >1.0, both pre- and post-lever).
+
+## Not verified (carried from the report into the commits)
+
+- **No genuine 'help' swipe captured** — "a real help trail never pays the
+  surcharge" is geometric inference pinned only by synthetic guard 2.
+  Philip may record help/hell trails to close it; if a real help trail
+  pays, the radius/weight needs a revisit.
+- **#11 residual accepted** (stays help at w=0.5, margin was 0.575) —
+  isolated-lift-off family, carried by strip + proofreader.
+- Yellow-flash false-positive uptick on corrected hello commits (margins
+  0.06-0.18 < 0.25) — cosmetic; the calibration table was re-run (above)
+  and the constant stayed.
