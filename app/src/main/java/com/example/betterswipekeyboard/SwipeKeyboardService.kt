@@ -45,6 +45,7 @@ import com.example.betterswipekeyboard.proofread.ProofreadPrompt
 import com.example.betterswipekeyboard.proofread.Proofreader
 import com.example.betterswipekeyboard.proofread.ProofreaderBackend
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
+import com.example.betterswipekeyboard.proofread.ReplySanity
 import com.example.betterswipekeyboard.proofread.SentenceExtractor
 import com.example.betterswipekeyboard.proofread.SwipedWordLog
 import com.example.betterswipekeyboard.proofread.selectBackend
@@ -505,14 +506,24 @@ class SwipeKeyboardService : InputMethodService(),
                 // also invalidates the result when either of the two
                 // visible sentences changed. An echoed annotation block
                 // discards the result (fail soft) — it must never land in
-                // the text field.
+                // the text field. The sanity guard likewise swallows
+                // refusals and off-text replies ("Sorry, I can't ..." is
+                // not a correction).
+                val rejectReason = ReplySanity.rejectionReason(window.text.trim(), corrected)
+                if (rejectReason != null) {
+                    android.util.Log.w(
+                        "SwipeKeyboard",
+                        "proofread reply rejected ($rejectReason): ${corrected.take(120)}",
+                    )
+                }
                 val latest = SentenceExtractor.currentWindow(
                     editor.textBeforeCursor().orEmpty(),
                 )
                 if (latest == window &&
                     corrected.isNotBlank() &&
                     corrected != window.text.trim() &&
-                    !ProofreadPrompt.containsSwipePathsMarker(corrected)
+                    !ProofreadPrompt.containsSwipePathsMarker(corrected) &&
+                    rejectReason == null
                 ) {
                     // Preserve the fragment's surrounding whitespace.
                     editor.replaceBeforeCursor(
