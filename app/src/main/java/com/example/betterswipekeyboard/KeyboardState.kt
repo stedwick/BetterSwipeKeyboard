@@ -11,6 +11,18 @@ enum class ShiftMode { OFF, ONE_SHOT, LOCKED }
 enum class VoiceState { OFF, LISTENING, PERMISSION_REQUIRED, UNAVAILABLE }
 
 /**
+ * A FAILED swipe's near-miss offers: [offers] are the decoder's top
+ * candidates (top-1 first, all inside the near-miss band, capped at the
+ * strip's cell count) and [letters] the trail's crossed letters, kept so an
+ * offer tap's CommitWord carries the proofreader path evidence like a
+ * decoder-committed swipe. Exactly the swipedWord/swipeAlternates lifetime
+ * (every action that clears the pair clears this too), plus CommitWord: the
+ * pair describes the last COMMIT, this describes the last FAILED gesture and
+ * takes over the strip (no center cell — nothing was committed).
+ */
+data class FailedSwipe(val offers: List<String>, val letters: String)
+
+/**
  * Everything the keyboard UI needs to render. When swipe typing arrives,
  * transient swipe state (trail in progress, candidate words) should be added
  * here so the UI keeps a single source of truth.
@@ -58,6 +70,14 @@ data class KeyboardState(
      * reduction, cleared by any other input action.
      */
     val swipeAlternates: List<String> = emptyList(),
+    /**
+     * Last FAILED swipe's near-miss offers (see [FailedSwipe]); non-null
+     * takes over the alternates strip. Same lifetime as the
+     * [swipedWord]/[swipeAlternates] pair, plus cleared by CommitWord (an
+     * offer tap commits through that path and replaces this with the normal
+     * commit strip).
+     */
+    val failedSwipe: FailedSwipe? = null,
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF

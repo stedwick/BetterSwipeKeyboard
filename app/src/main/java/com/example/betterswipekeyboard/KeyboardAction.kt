@@ -51,6 +51,17 @@ sealed interface KeyboardAction {
      */
     data class SelectAlternate(val word: String) : KeyboardAction
 
+    /**
+     * A swipe FAILED to commit (top-1 above MAX_COMMIT_SCORE) but its top-1
+     * sits inside the near-miss band: show [offers] (top-1 first, capped at
+     * the strip's cell count) as one-tap insertions in the alternates strip
+     * instead of the placeholder. [letters] is the trail's crossed letters,
+     * kept so an offer tap's CommitWord carries the proofreader path evidence
+     * like a decoder-committed swipe. No offers (empty band) emits nothing
+     * and the placeholder shows, exactly as before.
+     */
+    data class OfferFailedSwipe(val offers: List<String>, val letters: String) : KeyboardAction
+
     /** Tap the sparkly key: toggles auto-proofreading on/off (like Shift). */
     data object ToggleProofread : KeyboardAction
 

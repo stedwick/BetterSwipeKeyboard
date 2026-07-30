@@ -182,6 +182,33 @@ Data flow (deliberately layered, keep it this way):
   and the text ends up exactly as if the alternate had been swiped. The
   replacement has no trail: nothing new enters `SwipedWordLog`, and the
   replaced word's entry invalidates itself at proofread reconciliation.
+- A FAILED swipe (nothing committed) can still take over the strip: when
+  top-1 sits in the near-miss band (`< NEAR_MISS_OFFER_MAX_SCORE` 3.2 —
+  measured on the six fixture sets plus the 14 captured keyboard trails:
+  2/2 rescue, 3/274 impostors, KDoc table in `swipe/SwipeAlternates.kt`),
+  the decode branch emits `KeyboardAction.OfferFailedSwipe(offers, letters)`
+  with `failedSwipeOffers(results, maxOffers)` (top-1 INCLUDED, capped at
+  the same width-adaptive cell count; empty band → no action → placeholder,
+  exactly as before) and the trail's crossed letters. The reduction stores
+  them in `KeyboardState.failedSwipe`, clears the swipedWord/swipeAlternates
+  pair AS A PAIR (a stale green center among the offers would lie), keeps
+  `lastCommitWasSwipe` untouched (the gesture committed nothing — the last
+  COMMIT still owns the word-delete) and consumes no one-shot shift.
+  `failedSwipe` is cleared everywhere the pair is cleared, plus by
+  CommitWord. The strip's single computation site prefers
+  `failedOfferCells(offers)` (plain cells in rank order, NO center — a
+  green center would lie) over `stripCells(...)`, so rendering and
+  hit-testing still share one list; the red failed-swipe flash still
+  fires (the yellow low-confidence flash is disjoint: commit-only), and
+  offer cells render lowercase even under armed shift — caps applies at
+  commit time.
+- An offer tap is re-dispatched failed-first in the gesture loop as
+  `KeyboardAction.CommitWord(picked, letters, offers - picked)`: the normal
+  commit path supplies leading-space rules, caps (consuming the still-armed
+  one-shot shift), word-delete arming, the green-center strip with the
+  remaining offers, and SwipedWordLog recording with the failed trail's
+  path evidence. After the tap the strip looks exactly like a decoder
+  commit.
 
 ### Swipe decoding (`swipe/`)
 
