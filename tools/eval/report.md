@@ -14,8 +14,8 @@
 | E | google/gemini-2.5-pro | I | 22 | 20/22 (91%) | 2 | 4/4 | 4.9s | 6.5s | $0.1243 |
 | amazon/nova-lite-v1 | amazon/nova-lite-v1 | R | 3 | 1/3 (33%) | 0 | - | 0.8s | 0.9s | $0.0002 |
 | amazon/nova-lite-v1 | amazon/nova-lite-v1 | I | 3 | 2/3 (67%) | 0 | 0/1 | 1.0s | 2.9s | $0.0001 |
-| amazon/nova-micro-v1 | amazon/nova-micro-v1 | R | 639 | 419/639 (66%) | 20 | - | 0.9s | 10.5s | $0.0302 |
-| amazon/nova-micro-v1 | amazon/nova-micro-v1 | I | 524 | 448/524 (85%) | 49 | 67/96 | 0.9s | 10.4s | $0.0216 |
+| amazon/nova-micro-v1 | amazon/nova-micro-v1 | R | 990 | 655/990 (66%) | 33 | - | 0.8s | 10.4s | $0.0425 |
+| amazon/nova-micro-v1 | amazon/nova-micro-v1 | I | 810 | 690/810 (85%) | 79 | 99/148 | 0.9s | 10.2s | $0.0302 |
 | google/gemini-2.5-flash-lite | google/gemini-2.5-flash-lite | R | 37 | 24/37 (65%) | 2 | - | 1.6s | 7.3s | $0.0032 |
 | google/gemini-2.5-flash-lite | google/gemini-2.5-flash-lite | I | 34 | 29/34 (85%) | 1 | 3/7 | 0.8s | 7.3s | $0.0025 |
 | google/gemini-3.1-flash-lite | google/gemini-3.1-flash-lite | R | 16 | 10/16 (62%) | 0 | - | 1.1s | 1.4s | $0.0035 |
@@ -36,35 +36,39 @@ Raw replies: results.jsonl (the table summarizes; the transcript is the evidence
 
 ---
 
-## m-loops: old-prompt ceiling on nova-micro (final)
+## p-loops: new-prompt ceiling on nova-micro (final)
 
-Baseline m0 (= n0, verified identical): R 17/27, I 19/22, unt 20/24.
-Loop discipline: one small change per loop, keep only if R improves without
-I/untouched regression, double-run any +1 keep, stop after 3 consecutive reverts.
-The corpus guard was explicitly relaxed for this experiment (the old prompt's 33
-examples are Philip's corpus by construction — this measures its ceiling).
+Baseline p0 (= shipped 4681f36, re-measured): R 17/27, I 18/22, unt 18/24.
+Same discipline as the m-loops but corpus guard fully in force (generic invented
+examples only); all 10 loops run regardless of verdicts, per Philip.
 
 | tag | change | R | I | unt | verdict |
 |-----|--------|---|---|-----|---------|
-| m0 | old prompt verbatim on nova-micro | 17/27 | 19/22 | 20/24 | baseline |
-| m1 | dotted->bare path notation (SYSTEM + 5 annotated examples) | 18/27 | 19/22 | 21/24 | KEPT (double-run confirmed) |
-| m2 | ex22 -> question-with-period identity | 19/27 | 19/22 | 22/24 | KEPT (m2b identical) |
-| m3 | SYSTEM: path-primacy sentence replaces "prefer natural reading" | 18/27 | 19/22 | 21/24 | REVERTED (broke mummy fix, fixed nothing) |
-| m4 | ex25 -> fluent-written-word vs path (boar=boat) | 19/27 | 19/22 | 22/24 | REVERTED (no movement) |
-| m5 | SYSTEM: expanded punctuation-restraint | 19/27 | 19/22 | 22/24 | REVERTED (no movement; targeted i-c1 still wrong) |
+| p0 | shipped n10 prompt | 17/27 | 18/22 | 18/24 | baseline |
+| p1 | SYSTEM: alts never a reason to alter a correct word | 16/27 | 19/22 | 19/24 | REVERTED (R -1) |
+| p2 | +store=story path-over-alts example | 17/27 | 19/22 | 20/24 | REVERTED (R flat) |
+| p3 | SYSTEM: telegraphic/casual phrasing is not an error | 18+20/27 | 18/22 | 20+21/24 | KEPT (double-run) |
+| p4 | +store=story example on p3 base | 18/27 | 19/22 | 21/24 | REVERTED (R in-band) |
+| p5 | +polished-input But-merge example | 18/27 | 19/22 | 20/24 | REVERTED (fixed i-d2, but echoed the new example into s5's reply) |
+| p6 | +question-with-period identity example | 19/27 | 19/22 | 20/24 | REVERTED (R in-band; fixed i-c1) |
+| p7 | +British-plural identity example | 17/27 | 19/22 | 20/24 | REVERTED (R -1, i-e3 still failed) |
+| p8 | +telegraphic run-on identity example | 18/27 | 18/22 | 19/24 | REVERTED (unt -1; second example-echo leak) |
+| p9 | SYSTEM: punctuation preserved verbatim (period stays period, no new commas; carve-outs for final period + fragment comma) | 20+19/27 | 19+18/22 | 22+21/24 | KEPT (double-run; both runs dominate p3 state) |
+| p10 | +question-with-period example on p9 base | 19/27 | 19/22 | 20/24 | REVERTED (unt -1; i-c1 unfixed; s5 drew a refusal) |
 
-Stopped after 3 consecutive reverts. Final state = m2 (tools/eval/m_prompt.json,
-backup m_prompt.kept.json).
+Final state = p3+p9 (tools/eval/p_prompt.json).
 
-### Ceiling comparison (nova-micro, 49-case corpus)
+### Ceiling comparison (nova-micro, 49-case corpus, temperature 0)
 
 | prompt | R | I | unt |
 |--------|---|---|-----|
+| new generic p3+p9 (ceiling) | 19-20/27 | 18-19/22 | 21-22/24 |
 | old + m1/m2 (ceiling) | 19/27 | 19/22 | 22/24 |
-| new generic (n10 ceiling, shipped) | 17-18/27 | 18/22 | 19-21/24 |
+| new generic shipped (p0) | 17/27 | 18/22 | 18/24 |
 
-Finding: nova-micro is remarkably prompt-insensitive — three targeted class-level
-changes produced zero behavioral movement; its failures (path-primacy overrides of
-fluent text, fragment-merge comma, register restraint) look like model-prior limits,
-not prompt gaps. The old prompt + two repairs beats the new generic prompt on every
-metric, though by margins (1-2 cases) within noise at n=22-27.
+The gap CLOSED: the p-loops lifted the generic prompt from 17/18/18 to statistical
+parity with the old prompt's ceiling on all three axes, with corpus-clean generic
+examples. Notable model findings: nova-micro echoes freshly-added example outputs
+into unrelated replies (p5, p8), occasionally emits refusals (p10 s5 - production
+is covered by the ReplySanity guard), and its grammar priors (committee-have,
+that-vs-the, path-primacy on fluent words) are prompt-immovable.
