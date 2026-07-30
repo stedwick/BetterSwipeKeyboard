@@ -26,27 +26,33 @@ enum class SwipeConfidence {
  * re-match turned four formerly wrong commits into CORRECT ones (they are
  * not lost flags, they are fixed swipes) and one formerly correct commit
  * into a wrong one; the flag rates are essentially unchanged (9/17 ≈ 53%
- * of wrong vs 11/20 = 55%, 6.3% vs 6.0% of correct at the knee):
+ * of wrong vs 11/20 = 55%, 6.3% vs 6.0% of correct at the knee).
+ * Re-measured after the end-key surcharge ([END_KEY_SURCHARGE_WEIGHT],
+ * the hello->help fix): 237 correct + 16 wrong — the surcharge pushed the
+ * signed-off lazy->last wrong commit (set2#35, pre-lever score 1.647) past
+ * MAX_COMMIT_SCORE into silence, a denominator change, not a flag-rate
+ * change; the flagged wrong count drops 9 -> 8 only because that flagged
+ * commit (margin 0.13) no longer exists:
  *
  *   margin < M    wrong flagged   correct flagged
- *   0.10          5/17            2/237  (0.8%)
- *   0.15          8/17            7/237  (3.0%)
- *   0.20          8/17            11/237 (4.6%)
- *   0.25          9/17            15/237 (6.3%)  <- chosen
- *   0.30          9/17            15/237 (6.3%)
- *   0.35          9/17            20/237 (8.4%)
- *   0.40          10/17           24/237 (10.1%)
- *   0.45          11/17           29/237 (12.2%)
+ *   0.10          5/16            3/237  (1.3%)
+ *   0.15          7/16            7/237  (3.0%)
+ *   0.20          7/16            11/237 (4.6%)
+ *   0.25          8/16            14/237 (5.9%)  <- chosen
+ *   0.30          9/16            14/237 (5.9%)
+ *   0.35          9/16            19/237 (8.0%)
+ *   0.40          10/16           23/237 (9.7%)
+ *   0.45          11/16           28/237 (11.8%)
  *
- * 0.25 is the knee of the trade, raised from 0.15 when Philip found the
- * yellow flash too rare: the recalibration leaves the trade's shape
- * unchanged — 0.30 flags nothing new over 0.25, 0.25→0.40 buys exactly one
- * more wrong commit for nine more false positives, and 0.45 breaks into
- * double-digit false positives. The eight wrong commits with healthy
- * margins (≥ 0.37, up to 0.53) are unreachable at any defensible rate.
- * Adding an absolute-score band (score > 1.2) was measured on the original
- * table and rejected (one more wrong commit for one more false positive
- * and a second knob); re-measure before reconsidering it.
+ * 0.25 stays the knee: 0.30 now buys exactly one wrong flag (a single
+ * 0.27-margin commit) for zero measured false positives — a one-commit
+ * margin artifact, not a knee shift, and the false-positive ceiling
+ * improved to 5.9% at 0.25; 0.35 still breaks into 8%+. The wrong commits
+ * with healthy margins (≥ 0.37, up to 0.79) remain unreachable at any
+ * defensible rate. Adding an absolute-score band (score > 1.2) was
+ * measured on the original table and rejected (one more wrong commit for
+ * one more false positive and a second knob); re-measure before
+ * reconsidering it.
  */
 const val LOW_CONFIDENCE_MARGIN = 0.25f
 

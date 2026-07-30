@@ -28,6 +28,17 @@ import org.junit.Test
  * commits, which has a genuinely close runner-up (a close race the
  * yellow flash exists for). Flag rates: 53% vs 55% of wrong, 6.3% vs
  * 6.0% of correct — unchanged.
+ *
+ * The end-key surcharge ([END_KEY_SURCHARGE_WEIGHT], the hello->help
+ * fix) moved the ratchets 9/17 -> 8/16 and 15/237 -> 14/237. Again a
+ * denominator change, not a flag-rate change: the surcharge pushed the
+ * signed-off lazy->last wrong commit (set2#35, pre-lever score 1.647)
+ * past MAX_COMMIT_SCORE into silence, and that commit (margin 0.13)
+ * was one of the 9 flagged — the floor drops only because it no longer
+ * exists. The correct ceiling IMPROVED 15 -> 14 (5.9%) and ceilings
+ * only move down. Flag rates: 50% vs 53% of wrong, 5.9% vs 6.3% of
+ * correct. The constant stays 0.25 (see its KDoc: 0.30's one extra
+ * flag is a one-commit margin artifact, not a knee shift).
  */
 class SwipeConfidenceCalibrationTest {
 
@@ -134,14 +145,15 @@ class SwipeConfidenceCalibrationTest {
             "swipe_trails6_short_words_philip",
         )
 
-        /** Measured at 0.25 on the six sets: 9/17 wrong commits flagged
-         * (see the class KDoc for why the re-match recalibration lowered
-         * this from 11/20 — the wrong pool shrank, the flag rate did not). */
-        const val MIN_WRONG_FLAGGED = 9
+        /** Measured at 0.25 on the six sets: 8/16 wrong commits flagged
+         * (was 9/17 — the end-key surcharge pushed the flagged lazy->last
+         * wrong commit set2#35 past MAX_COMMIT_SCORE into silence; the
+         * floor drops only because that commit no longer exists). */
+        const val MIN_WRONG_FLAGGED = 8
 
-        /** Measured at 0.25 on the six sets: 15/237 correct commits (6.3%)
-         * (was 14/234 = 6.0% — the re-match's newly-correct commits include
-         * one genuine close race the yellow flash exists for). */
-        const val MAX_CORRECT_FLAGGED = 15
+        /** Measured at 0.25 on the six sets: 14/237 correct commits (5.9%)
+         * (was 15/237 = 6.3% at the re-match recalibration — the end-key
+         * surcharge improved the ceiling, and ceilings only move down). */
+        const val MAX_CORRECT_FLAGGED = 14
     }
 }

@@ -259,6 +259,21 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         }
         distanceCost /= keys.size
 
+        // End-key surcharge: a word whose LAST letter matches beyond the
+        // tunnel radius pays the excess distance again, undiluted. The
+        // per-letter mean above shrugs an unvisited NEIGHBOR of the visited
+        // end key off to ~0.2 ("help"'s p next to "hello"'s o, 1.0kw away,
+        // never approached closer than 0.8kw) — and the frequency prior
+        // then decides the word (rank 163 vs 1905 is a constant +0.68 for
+        // "help"). Measured on 13 captured hello trails. Computed AFTER the
+        // lift-off re-match so a re-matched letter is charged on its
+        // re-matched distance, and outside every normalization: the tunnel
+        // grants position freedom mid-word, but the word's claim to END
+        // here should cost when the trail ends off its last key.
+        val lastDistKeys =
+            sqrt(sqDist(trail[matchIndices[matchIndices.size - 1]].position, keys[keys.size - 1])) / keyWidth
+        val endKeySurcharge = max(0f, lastDistKeys - TUNNEL_RADIUS_KEYS) * END_KEY_SURCHARGE_WEIGHT
+
         // Unexplained tail: trail arc length AFTER the last letter's
         // match. A word that tunnels only a PREFIX of the trail ("mit"
         // inside a "mother" swipe, "serif" inside "served") parks its
@@ -324,7 +339,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
             letters.length * LENGTH_BONUS_PER_LETTER +
             unexplainedTail * TAIL_ARC_WEIGHT +
-            unexplainedHead * HEAD_ARC_WEIGHT
+            unexplainedHead * HEAD_ARC_WEIGHT +
+            endKeySurcharge
     }
 
     /**
@@ -699,6 +715,29 @@ class SwipeDecoder(private val dictionary: Dictionary) {
          * corners mid-word). SHARK2's tunnel was "one key radius".
          */
         const val TUNNEL_RADIUS_KEYS = 0.5f
+
+        /**
+         * Weight of the end-key surcharge: a word whose LAST letter matches
+         * beyond [TUNNEL_RADIUS_KEYS] pays the excess distance again,
+         * undiluted (see score()). Mid-word the tunnel gives position
+         * freedom, but a word's claim to END on the trail should cost when
+         * the trail ends off its last key — otherwise an unvisited neighbor
+         * of the visited end key ("help"'s p next to "hello"'s o, 1.0kw
+         * away) pays only a per-letter-diluted ~0.2 and the frequency prior
+         * decides (rank 163 vs 1905 = a constant +0.68 for help).
+         * Tuning starting point. Measured on 13 captured hello trails plus
+         * the six fixture sets: 10/13 hello at 0.5 (all six help commits
+         * flip; the residuals are the isolated-lift-off family), fixture
+         * floors held 13/32/34/60/62/36 across w=0.4-0.7. The binding
+         * constraint is set5 dog#8 — its lift-off-re-matched g sits at
+         * 0.76kw and pays (0.76-0.5)*w: margin 0.202 -> 0.072 at w=0.5,
+         * 0.02 at 0.7, and it FLIPS at 0.8 — so 0.5, mid-plateau with
+         * headroom. Documented tension: the lift-off re-match licenses
+         * last-letter matches up to [REBASIN_RADIUS_KEYS] 0.8kw while this
+         * charges past 0.5kw; at 0.5 the max surcharge on a re-matched
+         * letter is 0.15, measured tolerable.
+         */
+        const val END_KEY_SURCHARGE_WEIGHT = 0.5f
 
         /** Per-point conformance cost saturates here (Gboard: Sivek & Riley). */
         const val CONFORMANCE_CAP_KEYS = 2.0f
