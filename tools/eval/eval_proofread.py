@@ -31,10 +31,20 @@ outranks the benchmark.
 import argparse
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
 import urllib.request
+
+# CA bundle: python3.org's macOS Python does not use the system keychain, so
+# urllib fails CERTIFICATE_VERIFY_FAILED there; certifi supplies the bundle.
+try:
+    import certifi
+
+    SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    SSL_CTX = ssl.create_default_context()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORPUS = os.path.join(HERE, "corpus.jsonl")
@@ -71,7 +81,7 @@ def post(api_key, payload):
     )
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S, context=SSL_CTX) as resp:
             body = resp.read().decode()
             return time.monotonic() - started, resp.status, body, None
     except urllib.error.HTTPError as e:
