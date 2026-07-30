@@ -131,9 +131,11 @@ object ProofreadPrompt {
             "(Swipe paths, approximate: i=i, need=need, to=to, tie=tie, " +
             "my=my, she=shoe>shoe, before=before, we=we, leave=leave)" to
             "I need to tie my shoe before we leave.",
-        // A fragment continuing the previous sentence merges into it.
-        "i went to the gym. And ran into an old friend." to
-            "I went to the gym and ran into an old friend.",
+        // End punctuation is the writer's choice too: a question asked
+        // with a period keeps its period (caps still fixed). Never insert
+        // a question mark the writer did not write.
+        "are you coming over later." to
+            "Are you coming over later.",
         // Plain typed errors (no paths): caps, spelling, doubled letters.
         "the resturant on fifth street opens at noon tommorow" to
             "The restaurant on fifth street opens at noon tomorrow.",
