@@ -113,12 +113,14 @@ object ProofreadPrompt {
      */
     val EXAMPLES: List<Pair<String, String>> = listOf(
         // A word contradicting its crossed path is fixed to the path's
-        // reading (path-primacy), even though the written word fits its
-        // sentence.
-        "she loves her joy and talks about it often\n" +
-            "(Swipe paths, approximate: she=she, loves=loves, her=her, " +
-            "joy=job, and=and, talks=talks, about=about, it=it, often=often)" to
-            "She loves her job and talks about it often.",
+        // reading (path-primacy), even when the written word is a real
+        // word that fits its sentence AND the intended word is not among
+        // the listed guesses: spell the path, ignore junk guesses.
+        "the ferry crosses the english chandler\n" +
+            "(Swipe paths, approximate: the=the, ferry=ferry, " +
+            "crosses=crosses, english=english, " +
+            "chandler=channsel>chandler,chandelier)" to
+            "The ferry crosses the English channel.",
         // The intended word sits in the decoder's listed guesses: take it —
         // never invent a fluent word the evidence does not support.
         "we had tomato soap for lunch\n" +
