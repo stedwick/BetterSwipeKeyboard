@@ -35,9 +35,11 @@ import json
 import os
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # CA bundle: python3.org's macOS Python does not use the system keychain, so
 # urllib fails CERTIFICATE_VERIFY_FAILED there; certifi supplies the bundle.
@@ -71,7 +73,7 @@ def load_env(path):
     return env
 
 
-def post(api_key, payload):
+def post(api_key, payload, timeout):
     req = urllib.request.Request(
         ENDPOINT,
         data=json.dumps(payload).encode(),
@@ -83,8 +85,26 @@ def post(api_key, payload):
     )
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S, context=SSL_CTX) as resp:
-            body = resp.read().decode()
+        with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as resp:
+            # urllib's timeout is PER READ, not total: a model that dribbles
+            # bytes slowly (gpt-5-nano streamed one call over 196s at a 5s
+            # "timeout") never trips it. Enforce a TOTAL deadline instead:
+            # shrink the socket timeout to the remaining budget before every
+            # chunk read, so no response can outlive `timeout`.
+            chunks = []
+            while True:
+                remaining = timeout - (time.monotonic() - started)
+                if remaining <= 0.05:
+                    raise TimeoutError(f"total deadline {timeout}s exceeded")
+                try:
+                    resp.fp.raw._sock.settimeout(remaining)
+                except AttributeError:
+                    pass  # non-socket fp (tests); the deadline check still bounds chunks
+                chunk = resp.read1(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            body = b"".join(chunks).decode()
             return time.monotonic() - started, resp.status, body, None
     except urllib.error.HTTPError as e:
         return time.monotonic() - started, e.code, e.read().decode(errors="replace"), None
@@ -92,17 +112,26 @@ def post(api_key, payload):
         return time.monotonic() - started, None, "", str(e)
 
 
-def preflight(api_key, models):
+def preflight(api_key, models, timeout, concurrent=False):
     """One minimal ZDR-filtered request per model; returns the OK set."""
-    ok = set()
-    for model in sorted(models):
+    def check(model):
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": "Say ok."}],
             "temperature": 0,
             "provider": PROVIDER_BLOCK,
         }
-        latency, status, body, err = post(api_key, payload)
+        latency, status, body, err = post(api_key, payload, timeout)
+        return model, latency, status, body, err
+
+    if concurrent:
+        with ThreadPoolExecutor(max_workers=len(models) or 1) as pool:
+            results = list(pool.map(check, sorted(models)))
+    else:
+        results = [check(m) for m in sorted(models)]
+
+    ok = set()
+    for model, latency, status, body, err in results:
         if status == 200:
             print(f"pre-flight {model}: OK ({latency:.1f}s, ZDR endpoint exists)")
             ok.add(model)
@@ -147,6 +176,10 @@ def main():
                          "latency, verdict 'slow', never retried, request not aborted)")
     ap.add_argument("--repeat-tag", default="r1", help="run tag; results dedupe on case+arm+tag")
     ap.add_argument("--cases", default=None, help="comma-separated case id filter (debug)")
+    ap.add_argument("--corpus", default=CORPUS, help="corpus jsonl path (default: full corpus)")
+    ap.add_argument("--request-timeout-s", type=int, default=None,
+                    help="per-request HTTP ceiling; default 5s in --models sweep mode "
+                         "(bounds stragglers — a timeout is a slow-fail), else 90s")
     args = ap.parse_args()
 
     env = load_env(os.path.join(HERE, ".env"))
@@ -154,8 +187,10 @@ def main():
     if not api_key:
         sys.exit("no API key: put OPENROUTER_API_KEY=... in tools/eval/.env (gitignored)")
 
+    timeout = args.request_timeout_s or (5 if args.models else REQUEST_TIMEOUT_S)
+
     arms = [a.strip() for a in args.arms.split(",") if a.strip()]
-    cases = [json.loads(line) for line in open(CORPUS) if line.strip()]
+    cases = [json.loads(line) for line in open(args.corpus) if line.strip()]
     if args.cases:
         wanted = set(args.cases.split(","))
         cases = [c for c in cases if c["id"] in wanted]
@@ -174,7 +209,7 @@ def main():
         models = set(arms)
     else:
         models = {c["requests"][a]["model"] for c in cases for a in arms}
-    ok_models = preflight(api_key, models)
+    ok_models = preflight(api_key, models, timeout, concurrent=bool(args.models))
 
     done = set()
     if os.path.isfile(RESULTS):
@@ -185,11 +220,14 @@ def main():
 
     out = open(RESULTS, "a")
     total = skipped = failed = 0
+    write_lock = threading.Lock()
 
-    # SEQUENTIAL by Philip's decision (he countermanded a one-off
-    # parallelization of this loop): per-call latency doubles as the
-    # measurement the latency table reports, and concurrent workers would
-    # contaminate it. Resume-skip keeps any already-logged results.
+    # SEQUENTIAL for --arms runs (Philip's standing call — per-call latency
+    # doubles as the latency measurement). --models sweep mode is CONCURRENT
+    # under Philip's explicit speed-sweep authorization: the whole sweep
+    # must finish under 30s, so all case x model calls fire at once
+    # (ThreadPoolExecutor, one worker per call, lock on the results append,
+    # 5s request ceiling bounding stragglers; pre-flight concurrent too).
     def run_one(case, arm, req):
         payload = {
             "model": req["model"],
@@ -198,7 +236,7 @@ def main():
             "provider": PROVIDER_BLOCK,
             "usage": {"include": True},
         }
-        latency, status, body, err = post(api_key, payload)
+        latency, status, body, err = post(api_key, payload, timeout)
         record = {
             "id": case["id"], "arm": arm, "tag": args.repeat_tag,
             "subcorpus": case["subcorpus"], "class": case["class"],
@@ -237,13 +275,15 @@ def main():
         slow = latency * 1000 > args.max_latency_ms
         if slow:
             record["slow"] = True
-        out.write(json.dumps(record, ensure_ascii=False) + "\n")
-        out.flush()
+        with write_lock:
+            out.write(json.dumps(record, ensure_ascii=False) + "\n")
+            out.flush()
         verdict = "slow" if slow else classify(
             record.get("reply", "\x00"), case["expected"], case["input"])
         return call_failed or slow, f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}"
 
     started = time.monotonic()
+    work = []
     for case in cases:
         for arm in arms:
             if (case["id"], arm, args.repeat_tag) in done:
@@ -252,6 +292,17 @@ def main():
             req = request_for(case, arm)
             if req["model"] not in ok_models:
                 continue
+            work.append((case, arm, req))
+    if args.models:
+        with ThreadPoolExecutor(max_workers=len(work) or 1) as pool:
+            futures = [pool.submit(run_one, case, arm, req) for case, arm, req in work]
+            for fut in as_completed(futures):
+                call_failed, line = fut.result()
+                failed += int(call_failed)
+                total += 1
+                print(line)
+    else:
+        for case, arm, req in work:
             call_failed, line = run_one(case, arm, req)
             failed += int(call_failed)
             total += 1
