@@ -15,6 +15,8 @@ OpenRouter chat API for every arm and scores the results:
 Usage:
     cp tools/eval/.env.template tools/eval/.env   # fill in the key
     python3 tools/eval/eval_proofread.py [--arms A,B,C] [--repeat-tag r2]
+    python3 tools/eval/eval_proofread.py --models google/gemini-2.5-flash-lite,... --repeat-tag r2
+    python3 tools/eval/eval_proofread.py --max-latency-ms 1000   # default; slower = failed ('slow')
 
 The API key lives in tools/eval/.env (gitignored — NEVER commit it) as
 OPENROUTER_API_KEY=sk-or-... . Results append to results.jsonl (resumable:
@@ -137,6 +139,12 @@ def percentile(values, p):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arms", default="A,B,C,D,E")
+    ap.add_argument("--models", default=None,
+                    help="comma-separated model ids for a model sweep: one arm per model, "
+                         "all using arm B (new prompt) messages; overrides --arms")
+    ap.add_argument("--max-latency-ms", type=int, default=1000,
+                    help="a call SLOWER than this counts as failed (recorded with its real "
+                         "latency, verdict 'slow', never retried, request not aborted)")
     ap.add_argument("--repeat-tag", default="r1", help="run tag; results dedupe on case+arm+tag")
     ap.add_argument("--cases", default=None, help="comma-separated case id filter (debug)")
     args = ap.parse_args()
@@ -154,7 +162,18 @@ def main():
     if not cases:
         sys.exit("empty corpus selection")
 
-    models = {c["requests"][a]["model"] for c in cases for a in arms}
+    # Model sweep mode: each listed model is its own arm (arm label = model
+    # id), all sharing arm B's (new prompt) messages.
+    def request_for(case, arm):
+        if args.models:
+            return {"model": arm, "messages": case["requests"]["B"]["messages"]}
+        return case["requests"][arm]
+
+    if args.models:
+        arms = [m.strip() for m in args.models.split(",") if m.strip()]
+        models = set(arms)
+    else:
+        models = {c["requests"][a]["model"] for c in cases for a in arms}
     ok_models = preflight(api_key, models)
 
     done = set()
@@ -210,10 +229,19 @@ def main():
         else:
             record["error"] = (err or body)[:500]
             call_failed = True
+        # Philip's acceptance rule: a proofread call taking longer than
+        # --max-latency-ms is a FAILURE. Classified after the fact — the
+        # request is never aborted mid-flight, and slow calls are kept with
+        # their real latency (and reply, for accuracy-among-passing
+        # analysis), never retried.
+        slow = latency * 1000 > args.max_latency_ms
+        if slow:
+            record["slow"] = True
         out.write(json.dumps(record, ensure_ascii=False) + "\n")
         out.flush()
-        verdict = classify(record.get("reply", "\x00"), case["expected"], case["input"])
-        return call_failed, f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}"
+        verdict = "slow" if slow else classify(
+            record.get("reply", "\x00"), case["expected"], case["input"])
+        return call_failed or slow, f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}"
 
     started = time.monotonic()
     for case in cases:
@@ -221,7 +249,7 @@ def main():
             if (case["id"], arm, args.repeat_tag) in done:
                 skipped += 1
                 continue
-            req = case["requests"][arm]
+            req = request_for(case, arm)
             if req["model"] not in ok_models:
                 continue
             call_failed, line = run_one(case, arm, req)
