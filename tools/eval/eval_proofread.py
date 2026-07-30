@@ -33,9 +33,11 @@ import json
 import os
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # CA bundle: python3.org's macOS Python does not use the system keychain, so
 # urllib fails CERTIFICATE_VERIFY_FAILED there; certifi supplies the bundle.
@@ -165,7 +167,14 @@ def main():
                 done.add((r["id"], r["arm"], r["tag"]))
 
     out = open(RESULTS, "a")
+    write_lock = threading.Lock()
     total = skipped = failed = 0
+
+    # Work list built up front (resume-skip preserved), then fired
+    # CONCURRENTLY — 245 sequential calls was the design flaw; the API is
+    # happy with 16 in flight and the wall clock drops an order of
+    # magnitude. Pre-flight already happened once per model above.
+    work = []
     for case in cases:
         for arm in arms:
             if (case["id"], arm, args.repeat_tag) in done:
@@ -174,38 +183,66 @@ def main():
             req = case["requests"][arm]
             if req["model"] not in ok_models:
                 continue
-            payload = {
-                "model": req["model"],
-                "messages": req["messages"],
-                "temperature": 0,
-                "provider": PROVIDER_BLOCK,
-                "usage": {"include": True},
-            }
-            latency, status, body, err = post(api_key, payload)
-            record = {
-                "id": case["id"], "arm": arm, "tag": args.repeat_tag,
-                "subcorpus": case["subcorpus"], "class": case["class"],
-                "expected": case["expected"], "input": case["input"],
-                "model": req["model"], "latency_s": round(latency, 3), "http": status,
-            }
-            if status == 200:
-                try:
-                    parsed = json.loads(body)
-                    record["reply"] = parsed["choices"][0]["message"]["content"].strip()
+            work.append((case, arm, req))
+
+    def run_one(case, arm, req):
+        payload = {
+            "model": req["model"],
+            "messages": req["messages"],
+            "temperature": 0,
+            "provider": PROVIDER_BLOCK,
+            "usage": {"include": True},
+        }
+        latency, status, body, err = post(api_key, payload)
+        record = {
+            "id": case["id"], "arm": arm, "tag": args.repeat_tag,
+            "subcorpus": case["subcorpus"], "class": case["class"],
+            "expected": case["expected"], "input": case["input"],
+            "model": req["model"], "latency_s": round(latency, 3), "http": status,
+        }
+        call_failed = False
+        if status == 200:
+            try:
+                parsed = json.loads(body)
+                content = parsed["choices"][0]["message"].get("content")
+                # Thinking models may return null content (reasoning lives
+                # in a separate field) — a null reply is a failed call for
+                # scoring purposes, not a crash.
+                if isinstance(content, str) and content.strip():
+                    record["reply"] = content.strip()
                     record["usage"] = parsed.get("usage", {})
-                except (KeyError, json.JSONDecodeError) as e:
-                    record["error"] = f"bad response: {e}"
-                    failed += 1
-            else:
-                record["error"] = (err or body)[:500]
-                failed += 1
+                else:
+                    record["error"] = "empty or null content in response"
+                    record["usage"] = parsed.get("usage", {})
+                    call_failed = True
+            except (KeyError, json.JSONDecodeError) as e:
+                record["error"] = f"bad response: {e}"
+                # Keep the raw body snippet — a 200 without choices is
+                # otherwise undebuggable after the fact.
+                record["error_body"] = body[:500]
+                call_failed = True
+        else:
+            record["error"] = (err or body)[:500]
+            call_failed = True
+        verdict = classify(record.get("reply", "\x00"), case["expected"], case["input"])
+        with write_lock:
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
             out.flush()
+        return call_failed, f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}"
+
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        futures = [pool.submit(run_one, case, arm, req) for case, arm, req in work]
+        for future in as_completed(futures):
+            call_failed, line = future.result()
+            failed += int(call_failed)
             total += 1
-            verdict = classify(record.get("reply", "\x00"), case["expected"], case["input"])
-            print(f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}")
+            print(line)
     out.close()
-    print(f"done: {total} calls ({failed} failed), {skipped} skipped as already present")
+    print(
+        f"done: {total} calls ({failed} failed), {skipped} skipped as already present, "
+        f"wall {time.monotonic() - started:.1f}s for the pool"
+    )
     write_report()
 
 
