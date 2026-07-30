@@ -33,11 +33,9 @@ import json
 import os
 import ssl
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # CA bundle: python3.org's macOS Python does not use the system keychain, so
 # urllib fails CERTIFICATE_VERIFY_FAILED there; certifi supplies the bundle.
@@ -167,24 +165,12 @@ def main():
                 done.add((r["id"], r["arm"], r["tag"]))
 
     out = open(RESULTS, "a")
-    write_lock = threading.Lock()
     total = skipped = failed = 0
 
-    # Work list built up front (resume-skip preserved), then fired
-    # CONCURRENTLY — 245 sequential calls was the design flaw; the API is
-    # happy with 16 in flight and the wall clock drops an order of
-    # magnitude. Pre-flight already happened once per model above.
-    work = []
-    for case in cases:
-        for arm in arms:
-            if (case["id"], arm, args.repeat_tag) in done:
-                skipped += 1
-                continue
-            req = case["requests"][arm]
-            if req["model"] not in ok_models:
-                continue
-            work.append((case, arm, req))
-
+    # SEQUENTIAL by Philip's decision (he countermanded a one-off
+    # parallelization of this loop): per-call latency doubles as the
+    # measurement the latency table reports, and concurrent workers would
+    # contaminate it. Resume-skip keeps any already-logged results.
     def run_one(case, arm, req):
         payload = {
             "model": req["model"],
@@ -224,24 +210,28 @@ def main():
         else:
             record["error"] = (err or body)[:500]
             call_failed = True
+        out.write(json.dumps(record, ensure_ascii=False) + "\n")
+        out.flush()
         verdict = classify(record.get("reply", "\x00"), case["expected"], case["input"])
-        with write_lock:
-            out.write(json.dumps(record, ensure_ascii=False) + "\n")
-            out.flush()
         return call_failed, f"{case['id']:>28} {arm} {status} {latency:5.1f}s {verdict}"
 
     started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        futures = [pool.submit(run_one, case, arm, req) for case, arm, req in work]
-        for future in as_completed(futures):
-            call_failed, line = future.result()
+    for case in cases:
+        for arm in arms:
+            if (case["id"], arm, args.repeat_tag) in done:
+                skipped += 1
+                continue
+            req = case["requests"][arm]
+            if req["model"] not in ok_models:
+                continue
+            call_failed, line = run_one(case, arm, req)
             failed += int(call_failed)
             total += 1
             print(line)
     out.close()
     print(
         f"done: {total} calls ({failed} failed), {skipped} skipped as already present, "
-        f"wall {time.monotonic() - started:.1f}s for the pool"
+        f"wall {time.monotonic() - started:.1f}s"
     )
     write_report()
 
