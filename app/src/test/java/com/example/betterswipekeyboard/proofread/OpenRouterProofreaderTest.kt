@@ -133,6 +133,10 @@ class ProofreadPromptTest {
         assertTrue(system.contains("unchanged"))
         // Restraint.
         assertTrue(system.contains("Never reword"))
+        // The p-loop eval survivors: telegraphic phrasing is not an error,
+        // and the writer's punctuation is preserved verbatim.
+        assertTrue(system.contains("telegraphic"))
+        assertTrue(system.contains("period to a question mark"))
     }
 
     @Test

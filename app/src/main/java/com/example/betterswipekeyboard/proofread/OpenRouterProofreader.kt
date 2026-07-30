@@ -51,6 +51,13 @@ import org.json.JSONObject
  * still needs the sentence — keep the rule verbatim-removable
  * (SYSTEM.replace(EVIDENCE_RULE, "")).
  *
+ * The two restraint clauses after "emoji are theirs" (telegraphic/casual
+ * phrasing is not an error; the writer's punctuation is preserved verbatim)
+ * are the survivors of the tools/eval p-loop sweep on the shipping model
+ * (tags p0-p10, report in tools/eval/report.md): ten candidate prompt
+ * changes measured over the 49-case corpus, only these two improved
+ * accuracy without regressions — both SYSTEM clauses, no example changes.
+ *
  * Backend split: this prompt only reaches the OpenRouter path. ML Kit's
  * ProofreadingRequest takes plain text (no system prompt, no few-shot), so
  * on-device proofreading never sees any of this. The VOICE variant targets
@@ -93,8 +100,16 @@ object ProofreadPrompt {
             "spaces, capitals or punctuation, clear agreement errors. " +
             "Never reword, restructure, formalize or otherwise improve " +
             "text that is already fine - the writer's words, tone, " +
-            "formatting and emoji are theirs. If the text is already " +
-            "correct, or you are unsure whether something is an error, " +
+            "formatting and emoji are theirs. Casual or telegraphic " +
+            "phrasing (dropped subjects, missing commas, run-on " +
+            "sentences) is not an error: do not normalize it into " +
+            "polished prose. Keep the writer's punctuation exactly as " +
+            "written: never change a period to a question mark, and " +
+            "never insert commas or other marks the writer did not " +
+            "type; the only punctuation changes allowed are adding a " +
+            "missing final period and the comma when joining a " +
+            "fragment. If the text is already correct, or you are " +
+            "unsure whether something is an error, " +
             "return it unchanged. Do not translate or answer questions in " +
             "the text. Return ONLY the corrected text: no preamble, no " +
             "labels, no explanations, no quotes. Your reply is applied " +

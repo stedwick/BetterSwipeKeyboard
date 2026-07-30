@@ -501,6 +501,16 @@ Data flow (deliberately layered, keep it this way):
   can remove exactly that sentence and test whether a stronger model
   still needs it. The prompt teaches mechanisms, not error-class
   instances; whether the model generalizes is measured (below), not hoped.
+  Two SYSTEM restraint clauses (telegraphic/casual phrasing is not an
+  error; the writer's punctuation is preserved verbatim) are the survivors
+  of the p-loop sweep (eval tags p0-p10) on the shipping model — the only
+  two of ten measured changes that improved accuracy without regressions.
+  Nova-micro quirks measured in the sweeps, relevant to any future prompt
+  work on this model: it echoes freshly-added few-shot outputs into
+  unrelated replies (twice observed), occasionally emits refusals
+  (production is covered by `ReplySanity`), and its grammar priors
+  (committee-have, that-vs-the, path-primacy on fluent words) are
+  prompt-immovable — model limits, not prompt gaps.
 - Prompt eval harness (`tools/eval/`, the quality gate for any prompt or
   model change — no merge without its table): `./gradlew
   :app:generateEvalCorpus` rebuilds `corpus.jsonl` — sub-corpus R (the six
