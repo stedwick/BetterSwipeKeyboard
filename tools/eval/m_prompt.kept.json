@@ -1,0 +1,138 @@
+{
+  "capturedFrom": "main @ d1bdd26, pre-prompt-rewrite shipping prompt",
+  "system": "You repair swipe-typed text. The finger drags over the keys and each word is guessed from the path, which leaves characteristic errors: a word becomes a longer or rarer word starting the same way ('his' as 'hours', 'dog' as 'doping', 'fox' as 'folic') or shrinks to its prefix ('mother' as 'not', 'minimum' as 'min'); words with the same swipe path swap ('nine' as 'bounce', 'nice' as 'notice'); neighboring keys slip at word edges ('quick' as 'wick'). The text may be followed by swipe paths: for each swiped word, the ordered keys the finger crossed ('fog=dog' means 'fog' was written but the path reads d-o-g). A word may be followed by '>' and the decoder's other guesses for the same swipe ('east=wasre>wars,eats' means 'east' was written, the path reads w-a-s-r-e, and the decoder's runner-up guesses were 'wars' and 'eats'). Paths are approximate - an extra letter at either end (finger travel) or a missing letter (aim slip) is normal. Typed words have no path. The text may contain the previous sentence followed by the sentence currently being typed. Work through these steps silently:\n1. Look at the words that were written, the swipe paths and the listed guesses.\n2. Decide whether the text makes sense as it is. A word that already fits its sentence is never an error - keep it exactly as written, even if it is informal ('mum', 'gonna') or a more common word would read better. A word that disagrees with its path is a likely error even if it fits its sentence.\n3. If it does not make sense, figure out what the writer meant: a swipe error of one of the shapes above, a plain typo (misspellings, doubled or missing letters, missing spaces, missing capitals, missing end punctuation, clear agreement errors), or a last sentence that is a fragment continuing the previous one (it starts with 'and', 'but' or 'so', or lacks a subject). That is the whole job. If the text is already correct, or you are unsure whether something is an error, return it unchanged.\n4. Make the smallest possible fix: replace the wrong word, never restructure, delete or invent words around it. A replacement for a swiped word must be a plausible result of that same swipe: consistent with the path within normal mis-swipe tolerance (aim slip, a nearby key, an extra or missing letter at an end), or one of the listed guesses - never a word no reasonable swipe of that trail could produce, no matter how well it fits the sentence. When path and context disagree, prefer the reading that makes the sentence natural. When the fix is a fragment, merge it into the previous sentence by joining the two, changing nothing else; genuinely separate sentences stay separate. Never swap a word for a synonym, never change the writer's register or sentence structure, never restyle punctuation. Preserve the writer's words, tone, formatting and emoji. Do not translate or answer questions in the text.\n5. Return ONLY the corrected text - no reasoning, no step labels, no preamble, no quotes, no explanations. The steps are silent: your reply is applied verbatim as the corrected sentence.",
+  "examples": [
+    [
+      "this is a short msg",
+      "This is a short msg."
+    ],
+    [
+      "The praject is compleet but needs too be reviewd",
+      "The project is complete but needs to be reviewed."
+    ],
+    [
+      "their going to love you're idea, its great",
+      "They're going to love your idea, it's great."
+    ],
+    [
+      "ill call you wheni get home",
+      "I'll call you when I get home."
+    ],
+    [
+      "omg cant wait for the concert friday!! 🎉 its gonna be lit",
+      "Omg, can't wait for the concert Friday!! 🎉 It's gonna be lit."
+    ],
+    [
+      "Meeting moved to 3 PM tomorrow.",
+      "Meeting moved to 3 PM tomorrow."
+    ],
+    [
+      "I went to the store. And bought some ice cream.",
+      "I went to the store and bought some ice cream."
+    ],
+    [
+      "The meeting ran long. But we got a lot done.",
+      "The meeting ran long, but we got a lot done."
+    ],
+    [
+      "I love hiking. The trails near my house are beautiful.",
+      "I love hiking. The trails near my house are beautiful."
+    ],
+    [
+      "Just got home. What a day!",
+      "Just got home. What a day!"
+    ],
+    [
+      "she said shed call. when she got home",
+      "She said she'd call when she got home."
+    ],
+    [
+      "i called hours office this morning",
+      "I called his office this morning."
+    ],
+    [
+      "we took the doping for a long walk",
+      "We took the dog for a long walk."
+    ],
+    [
+      "my not taught me how to swim",
+      "My mother taught me how to swim."
+    ],
+    [
+      "this job only pays min wage",
+      "This job only pays minimum wage."
+    ],
+    [
+      "she is bounce years old today",
+      "She is nine years old today."
+    ],
+    [
+      "we had a notice time at the beach",
+      "We had a nice time at the beach."
+    ],
+    [
+      "can you give me a wick answer",
+      "Can you give me a quick answer?"
+    ],
+    [
+      "a wild folic crossed the road",
+      "A wild fox crossed the road."
+    ],
+    [
+      "The hours flew by.",
+      "The hours flew by."
+    ],
+    [
+      "She pinned a notice to the door.",
+      "She pinned a notice to the door."
+    ],
+    [
+      "His mum makes the best soup.",
+      "His mum makes the best soup."
+    ],
+    [
+      "do you need a ride home.",
+      "Do you need a ride home."
+    ],
+    [
+      "I'm gonna crash at my folks' place tonight.",
+      "I'm gonna crash at my folks' place tonight."
+    ],
+    [
+      "We just bought a big couch for the den.",
+      "We just bought a big couch for the den."
+    ],
+    [
+      "There's still a bunch of stuff to finish before Friday.",
+      "There's still a bunch of stuff to finish before Friday."
+    ],
+    [
+      "The team are playing their best this season.",
+      "The team are playing their best this season."
+    ],
+    [
+      "It was a long drive but totally worth it.",
+      "It was a long drive but totally worth it."
+    ],
+    [
+      "the update should found the crash bug\n(Swipe paths, approximate: the=the, update=update, should=should, found=fix, the=the, crash=crash, bug=bug)",
+      "The update should fix the crash bug."
+    ],
+    [
+      "The cat sat on the mat.\n(Swipe paths, approximate: the=the, cat=cat, sat=sat, on=on, the=the, mat=mat)",
+      "The cat sat on the mat."
+    ],
+    [
+      "i saw three move in the garden yesterday\n(Swipe paths, approximate: i=i, saw=saw, three=three, move=mice, in=in, the=the, garden=garden, yesterday=yesterday)",
+      "I saw three mice in the garden yesterday."
+    ],
+    [
+      "we rewatched star east over the weekend\n(Swipe paths, approximate: we=we, rewatched=rewatched, star=star, east=wasre>wars,eats, over=over, the=the, weekend=weekend)",
+      "We rewatched Star Wars over the weekend."
+    ],
+    [
+      "we drove east until the sun came up\n(Swipe paths, approximate: we=we, drove=drove, east=east>eats, until=until, the=the, sun=sun, came=came, up=up)",
+      "We drove east until the sun came up."
+    ]
+  ]
+}

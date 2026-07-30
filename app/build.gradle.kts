@@ -42,6 +42,19 @@ android {
     }
 }
 
+// Proofread eval harness (tools/eval/): JVM entry point living in the test
+// source set, run via JavaExec against the unit-test task's classpath (test
+// classes + assets + dependencies).
+tasks.register<JavaExec>("generateEvalCorpus") {
+    group = "verification"
+    description = "Builds tools/eval/corpus.jsonl from the swipe fixtures and invented cases."
+    mainClass.set("com.example.betterswipekeyboard.eval.CorpusGeneratorKt")
+    val unitTest = tasks.named<Test>("testDebugUnitTest")
+    classpath = files({ unitTest.get().classpath })
+    workingDir = rootDir
+    dependsOn("assembleDebugUnitTest")
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

@@ -13,249 +13,167 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The proofreading prompt: a scoped repair system message plus a few-shot
- * example per behavior we want (conservative fixes, nearby-key typos,
- * homophones, missing spaces, tone/emoji preservation, leaving correct text
- * alone, the swipe decoder's measured error classes, and merging a
- * continuation fragment into the previous sentence — needed when an earlier
- * pass terminated the sentence during a mid-thought pause).
- * The typed prompt REPAIRS, it does not restyle: SYSTEM scopes the job to
- * swipe-error shapes, plain typos and path disagreement ("That is the whole
- * job"), and RESTYLE_EXAMPLES teaches by identity example that register,
- * word choice, sentence structure and comma style are the writer's own —
- * the old 'meticulous proofreader' framing rewrote evidence-free text in
- * Philip's AI runs. The one sanctioned override stays the path carve-out:
- * a word disagreeing with its crossed-letters path is fixed even when it
- * fits its sentence. Since swipe-evidence v2 the annotation also carries
- * the decoder's runner-up guesses per swiped word (`>alt1,alt2`), and the
- * replacement for a swiped word must be a plausible result of that same
- * swipe — consistent with the path within normal mis-swipe tolerance
- * (aim slip, a nearby key, an extra or missing letter at an end) OR one
- * of the listed guesses (the decoder's own reasonable mis-swipe readings
- * of the trail). A fluent word no reasonable swipe of that trail could
- * produce is never substituted (the 'Star East' -> 'Star Trek' failure
- * class, where 'wars' was available evidence and 'trek' was not).
- * SYSTEM is structured as five numbered steps the model works through
- * (inspect the words, paths and guesses → decide whether the text makes
- * sense as-is → diagnose the error class → make the smallest fix under
- * the reasonable-mis-swipe rule → return the corrected text). The steps
- * are a SILENT procedure: the reply must be the corrected sentence alone
- * — no reasoning, no step labels, no preamble — because the reply is
- * applied verbatim into the text field and the echo guard depends on it.
- * The VOICE variant targets speech-recognition errors instead (homophones,
- * word boundaries, missing punctuation, filler false starts).
- * Pure data/functions so it is unit-testable.
+ * The proofreading prompt: a short job statement plus a handful of GENERIC
+ * invented few-shot pairs, one per mechanism the repair requires.
+ *
+ * Design (feature/proofread-rewrite, replacing the old five-step SYSTEM with
+ * its 33 Philip-derived examples): the prompt teaches MECHANISMS, not
+ * instances — every example below is authored from scratch, and a corpus
+ * guard (ProofreadPromptTest) asserts none of them contains any sentence,
+ * distinctive word or incident pair from the six captured trail sets, the
+ * ten-sentence TDD corpus, or the project's incident history. The keyboard
+ * must work for anyone, not for one person's writing; whether the model
+ * actually generalizes is measured, not hoped for, by the two-sub-corpus
+ * eval in tools/eval/ (real decoded sentences vs fresh invented ones — a
+ * prompt that wins on only one is overfit either way).
+ *
+ * What SYSTEM must state, because no model can infer it (protocol, not
+ * behavior teaching):
+ * - what swipe typing is and why a written word can be the decoder's wrong
+ *   guess for the path;
+ * - the annotation format [withSwipePaths] appends (the ordered keys the
+ *   finger crossed per swiped word, plus the decoder's other guesses after
+ *   '>'); typed words have no entry;
+ * - the window mechanics: the input may be the previous sentence plus the
+ *   one currently being typed, and a trailing continuation fragment merges
+ *   back (the auto-pass can fire mid-thought);
+ * - the reply contract: the reply is applied VERBATIM into the text field —
+ *   corrected text only, no preamble or explanation (the echo guard
+ *   [containsSwipePathsMarker] depends on it) — and correct-or-unsure text
+ *   is returned unchanged (the fail-soft bias that makes auto-applying AI
+ *   output acceptable).
+ * The one output constraint beyond the job itself is [EVIDENCE_RULE]: a
+ * replacement for a swiped word must be a word the same swipe could have
+ * produced. It is a constraint grounded in evidence the model holds, not a
+ * pattern to learn, and it is the historically measured catastrophic
+ * failure (inventing a fluent word the trail does not support). The eval
+ * runs a variant with the rule REMOVED to check whether a stronger model
+ * still needs the sentence — keep the rule verbatim-removable
+ * (SYSTEM.replace(EVIDENCE_RULE, "")).
+ *
+ * The two restraint clauses after "emoji are theirs" (telegraphic/casual
+ * phrasing is not an error; the writer's punctuation is preserved verbatim)
+ * are the survivors of the tools/eval p-loop sweep on the shipping model
+ * (tags p0-p10, report in tools/eval/report.md): ten candidate prompt
+ * changes measured over the 49-case corpus, only these two improved
+ * accuracy without regressions — both SYSTEM clauses, no example changes.
  *
  * Backend split: this prompt only reaches the OpenRouter path. ML Kit's
- * ProofreadingRequest takes plain text (no system prompt, no few-shot),
- * so on-device proofreading never sees any of this.
+ * ProofreadingRequest takes plain text (no system prompt, no few-shot), so
+ * on-device proofreading never sees any of this. The VOICE variant targets
+ * speech-recognition errors instead and is deliberately untouched by the
+ * rewrite (its examples remain).
  */
 object ProofreadPrompt {
 
+    /**
+     * The reasonable-mis-swipe constraint, held as a separate constant so
+     * the eval's no-constraint variant can remove exactly this sentence
+     * (see class KDoc). If you edit it, keep it a single sentence appearing
+     * verbatim inside [SYSTEM].
+     */
+    internal const val EVIDENCE_RULE =
+        "When you replace a swiped word, the replacement must be a word " +
+            "the same swipe could have produced: consistent with its path " +
+            "within normal mis-swipe tolerance (an aim slip, a nearby key, " +
+            "an extra or missing letter at an end), or one of the listed " +
+            "guesses - never a fluent word the evidence does not support, " +
+            "no matter how well it fits the sentence."
+
     const val SYSTEM =
-        "You repair swipe-typed text. The finger drags over the keys and each " +
-            "word is guessed from the path, which leaves characteristic errors: " +
-            "a word becomes a longer or rarer word starting the same way ('his' " +
-            "as 'hours', 'dog' as 'doping', 'fox' as 'folic') or shrinks to " +
-            "its prefix ('mother' as 'not', 'minimum' as 'min'); words with the " +
-            "same swipe path swap ('nine' as 'bounce', 'nice' as 'notice'); " +
-            "neighboring keys slip at word edges ('quick' as 'wick'). " +
-            "The text may be followed by swipe paths: for each swiped word, " +
-            "the ordered keys the finger crossed ('fog=d·o·g' means 'fog' was " +
-            "written but the path reads d-o-g). A word may be followed by '>' " +
-            "and the decoder's other guesses for the same swipe " +
-            "('east=w·a·s·r·e>wars,eats' means 'east' was written, the path " +
-            "reads w-a-s-r-e, and the decoder's runner-up guesses were 'wars' " +
-            "and 'eats'). Paths are approximate - an " +
-            "extra letter at either end (finger travel) or a missing letter " +
-            "(aim slip) is normal. Typed words have no path. The text may " +
-            "contain the previous sentence followed by the sentence currently " +
-            "being typed. Work through these steps silently:\n" +
-            "1. Look at the words that were written, the swipe paths and the " +
-            "listed guesses.\n" +
-            "2. Decide whether the text makes sense as it is. A word that " +
-            "already fits its sentence is never an error - keep it exactly as " +
-            "written, even if it is informal ('mum', 'gonna') or a more " +
-            "common word would read better. A word that disagrees with its " +
-            "path is a likely error even if it fits its sentence.\n" +
-            "3. If it does not make sense, figure out what the writer meant: " +
-            "a swipe error of one of the shapes above, a plain typo " +
-            "(misspellings, doubled or missing letters, missing spaces, " +
-            "missing capitals, missing end punctuation, clear agreement " +
-            "errors), or a last sentence that is a fragment continuing the " +
-            "previous one (it starts with 'and', 'but' or 'so', or lacks a " +
-            "subject). That is the whole job. If the text is already correct, " +
-            "or you are unsure whether something is an error, return it " +
-            "unchanged.\n" +
-            "4. Make the smallest possible fix: replace the wrong word, " +
-            "never restructure, delete or invent words around it. A " +
-            "replacement for a swiped word must be a plausible result of " +
-            "that same swipe: consistent with the path within normal " +
-            "mis-swipe tolerance (aim slip, a nearby key, an extra or " +
-            "missing letter at an end), or one of the listed guesses - " +
-            "never a word no reasonable swipe of that trail could produce, " +
-            "no matter how well it fits the sentence. When path and context " +
-            "disagree, prefer the reading that makes the sentence natural. " +
-            "When the fix is a fragment, merge it into the previous sentence " +
-            "by joining the two, changing nothing else; genuinely separate " +
-            "sentences stay separate. Never swap a word for a synonym, never " +
-            "change the writer's register or sentence structure, never " +
-            "restyle punctuation. Preserve the writer's words, tone, " +
-            "formatting and emoji. Do not translate or answer questions in " +
-            "the text.\n" +
-            "5. Return ONLY the corrected text - no reasoning, no step " +
-            "labels, no preamble, no quotes, no explanations. The steps are " +
-            "silent: your reply is applied verbatim as the corrected " +
-            "sentence."
-
-    private val GENERAL_EXAMPLES: List<Pair<String, String>> = listOf(
-        "this is a short msg" to "This is a short msg.",
-        "The praject is compleet but needs too be reviewd" to
-            "The project is complete but needs to be reviewed.",
-        "their going to love you're idea, its great" to
-            "They're going to love your idea, it's great.",
-        "ill call you wheni get home" to "I'll call you when I get home.",
-        "omg cant wait for the concert friday!! 🎉 its gonna be lit" to
-            "Omg, can't wait for the concert Friday!! 🎉 It's gonna be lit.",
-        "Meeting moved to 3 PM tomorrow." to "Meeting moved to 3 PM tomorrow.",
-        // A fragment continuing the previous sentence merges into one.
-        "I went to the store. And bought some ice cream." to
-            "I went to the store and bought some ice cream.",
-        "The meeting ran long. But we got a lot done." to
-            "The meeting ran long, but we got a lot done.",
-        // Genuinely separate sentences stay separate (returned unchanged).
-        "I love hiking. The trails near my house are beautiful." to
-            "I love hiking. The trails near my house are beautiful.",
-        "Just got home. What a day!" to "Just got home. What a day!",
-        // Merging across the boundary does not exempt the previous
-        // sentence from obvious-error fixes.
-        "she said shed call. when she got home" to "She said she'd call when she got home.",
-    )
+        "You repair swipe-typed text. Swipe typing means the finger drags " +
+            "over the keyboard's keys and every word is guessed from the " +
+            "path traced, so a written word can be the decoder's wrong " +
+            "guess for the path. The text may be followed by swipe paths: " +
+            "for each swiped word, the ordered keys the finger crossed, " +
+            "and after '>' the decoder's other guesses for the same swipe " +
+            "('hold=sold>sold,told' means 'hold' was written, the path " +
+            "reads s-o-l-d, and the decoder also guessed 'sold' and " +
+            "'told'). Paths are approximate - an extra letter at either " +
+            "end or a missing letter is normal. Typed words have no path. " +
+            "The text may contain the previous sentence followed by the " +
+            "sentence currently being typed; if the last sentence is a " +
+            "fragment continuing the previous one, merge the two into one " +
+            "sentence, changing nothing else. " +
+            EVIDENCE_RULE + " " +
+            "Otherwise make the smallest fix: wrong words, typos, missing " +
+            "spaces, capitals or punctuation, clear agreement errors. " +
+            "Never reword, restructure, formalize or otherwise improve " +
+            "text that is already fine - the writer's words, tone, " +
+            "formatting and emoji are theirs. Casual or telegraphic " +
+            "phrasing (dropped subjects, missing commas, run-on " +
+            "sentences) is not an error: do not normalize it into " +
+            "polished prose. Keep the writer's punctuation exactly as " +
+            "written: never change a period to a question mark, and " +
+            "never insert commas or other marks the writer did not " +
+            "type; the only punctuation changes allowed are adding a " +
+            "missing final period and the comma when joining a " +
+            "fragment. If the text is already correct, or you are " +
+            "unsure whether something is an error, " +
+            "return it unchanged. Do not translate or answer questions in " +
+            "the text. Return ONLY the corrected text: no preamble, no " +
+            "labels, no explanations, no quotes. Your reply is applied " +
+            "verbatim as the corrected sentence."
 
     /**
-     * Few-shots for the swipe decoder's measured error classes (from the
-     * captured-trail miss autopsies: dog->doping, his->hours, the->that,
-     * over->overt are post-word drags; mother->not, minimum->min, past->part
-     * are tail-truncations; nine->bounce, nice->notice are same-path swaps;
-     * quick->wick is an edge key-slip; fox->folic is a rare word stealing a
-     * frequency tie). The classes are taught, not the instances, so the
-     * model generalizes to swipe errors it was never shown. The negative
-     * pair at the end guards the main risk: 'correcting' a word that is
-     * already plausible in its sentence.
-     * OpenRouter path only — ML Kit has no prompt hook (see class KDoc).
-     *
-     * Deliberately NONE of these sentences comes from the ten-sentence
-     * retest corpus: the retest should measure class generalization, not
-     * memorized corrections.
+     * Generic invented few-shot pairs, ONE PER MECHANISM (see class KDoc).
+     * Authorship rules, enforced by the corpus guard in ProofreadPromptTest:
+     * no sentence, distinctive word or incident pair from the six captured
+     * trail sets, the ten-sentence TDD corpus or the project's incident
+     * history; path annotations use the PRODUCTION wire format (bare
+     * crossed letters, `>` before the guesses); the committed word never
+     * appears among its own guesses (swipeAlternates drops top-1 — that
+     * shape cannot occur in a real annotation). Negative pairs return their
+     * input's intent unchanged (caps/punctuation fixes still apply).
      */
-    val SWIPE_EXAMPLES: List<Pair<String, String>> = listOf(
-        // Post-word drag: travel after the last letter reads as extra
-        // letters, so a short word becomes a longer word starting the same.
-        "i called hours office this morning" to "I called his office this morning.",
-        "we took the doping for a long walk" to "We took the dog for a long walk.",
-        // Same class reversed: the long word shrinks to its prefix.
-        "my not taught me how to swim" to "My mother taught me how to swim.",
-        "this job only pays min wage" to "This job only pays minimum wage.",
-        // Same swipe path, wrong word.
-        "she is bounce years old today" to "She is nine years old today.",
-        "we had a notice time at the beach" to "We had a nice time at the beach.",
-        // Neighboring keys slip at word edges (q and w are neighbors).
-        "can you give me a wick answer" to "Can you give me a quick answer?",
-        // A rare word steals a close trail from the obvious common one.
-        "a wild folic crossed the road" to "A wild fox crossed the road.",
-        // Already plausible in context: never 'fix' a word that fits.
-        "The hours flew by." to "The hours flew by.",
-        "She pinned a notice to the door." to "She pinned a notice to the door.",
-        // Informal words and short verbs are the writer's choice, not
-        // errors (guards mummy->mother and go->went style 'improvements').
-        "His mum makes the best soup." to "His mum makes the best soup.",
-        "We go out on Fridays." to "We go out on Fridays.",
+    val EXAMPLES: List<Pair<String, String>> = listOf(
+        // A word contradicting its crossed path is fixed to the path's
+        // reading (path-primacy), even when the written word is a real
+        // word that fits its sentence AND the intended word is not among
+        // the listed guesses: spell the path, ignore junk guesses.
+        "the ferry crosses the english chandler\n" +
+            "(Swipe paths, approximate: the=the, ferry=ferry, " +
+            "crosses=crosses, english=english, " +
+            "chandler=channsel>chandelier,handler)" to
+            "The ferry crosses the English channel.",
+        // The intended word sits in the decoder's listed guesses: take it —
+        // never invent a fluent word the evidence does not support.
+        "we had tomato soap for lunch\n" +
+            "(Swipe paths, approximate: we=we, had=had, tomato=tomato, " +
+            "soap=soup>soup,soak, for=for, lunch=lunch)" to
+            "We had tomato soup for lunch.",
+        // Path approximation: an extra letter in the path is normal — the
+        // short word the path spells wins over the written one.
+        "i need to tie my she before we leave\n" +
+            "(Swipe paths, approximate: i=i, need=need, to=to, tie=tie, " +
+            "my=my, she=shoe>shoe, before=before, we=we, leave=leave)" to
+            "I need to tie my shoe before we leave.",
+        // End punctuation is the writer's choice too: a question asked
+        // with a period keeps its period (caps still fixed). Never insert
+        // a question mark the writer did not write.
+        "are you coming over later." to
+            "Are you coming over later.",
+        // A fragment continuing the previous sentence merges into it.
+        "we drove out to the lake. But it started raining." to
+            "We drove out to the lake, but it started raining.",
+        // Plain typed errors (no paths): caps, spelling, doubled letters.
+        "the resturant on fifth street opens at noon tommorow" to
+            "The restaurant on fifth street opens at noon tomorrow.",
+        // Guesses exist but none fits better: the written word stays (a
+        // guess list does not force a swap). Caps/punctuation still fixed.
+        "keep the change\n" +
+            "(Swipe paths, approximate: keep=keep, the=the, " +
+            "change=change>chance,changes)" to
+            "Keep the change.",
+        // Informal register is the writer's choice, not an error (identity).
+        "We're meeting at Mario's around seven, wanna join?" to
+            "We're meeting at Mario's around seven, wanna join?",
+        // Casual writing with a dropped subject is voice, not a grammar
+        // error to repair: imperfect-looking but intended text returns
+        // verbatim (identity).
+        "Was a long day, we head out early tomorrow anyway." to
+            "Was a long day, we head out early tomorrow anyway.",
     )
-
-    /**
-     * Identity few-shots (input returned verbatim) killing the restyle
-     * classes the typed prompt must NOT perform: register formalization,
-     * synonym upgrades, restructuring a grammatical sentence, recasting
-     * defensible grammar, and comma/style restyling. They operationalize
-     * SYSTEM's "That is the whole job" scoping — a word with no swipe-error
-     * evidence stays exactly as written. Added after Philip's AI runs showed
-     * the old 'meticulous proofreader' prompt rewriting evidence-free text.
-     * All avoid the ten-sentence retest corpus.
-     */
-    val RESTYLE_EXAMPLES: List<Pair<String, String>> = listOf(
-        // Register formalization (gonna->going to, folks->parents; the
-        // mummy->mother class).
-        "I'm gonna crash at my folks' place tonight." to
-            "I'm gonna crash at my folks' place tonight.",
-        // Synonym upgrade (big->large, couch->sofa).
-        "We just bought a big couch for the den." to
-            "We just bought a big couch for the den.",
-        // Restructuring a grammatical sentence.
-        "There's still a bunch of stuff to finish before Friday." to
-            "There's still a bunch of stuff to finish before Friday.",
-        // Recasting defensible grammar (team 'are' is British agreement,
-        // not an error).
-        "The team are playing their best this season." to
-            "The team are playing their best this season.",
-        // Comma/style restyle (no comma insertion before 'but').
-        "It was a long drive but totally worth it." to
-            "It was a long drive but totally worth it.",
-    )
-
-    /**
-     * Few-shots teaching the swipe-path annotation format the service
-     * appends ([withSwipePaths]): one disagreement fix (the path overrides
-     * a plausible-looking wrong word), one agreement negative (paths match
-     * the text — return it unchanged, never invent changes), and one
-     * path-over-fluency fix — 'move' with path m·i·c·e becomes 'mice',
-     * never the more fluent 'men' (the ai3 run's 'Nine nice men' failure:
-     * the model took a fluent guess over path evidence; the path spelling
-     * wins). The last two teach the alternates menu: a disagreement fix
-     * where the intended word sits in the decoder's listed guesses
-     * ('east' with path w·a·s·r·e and guesses wars,eats becomes 'Wars' —
-     * Philip's 'Star East' incident, where the model invented the
-     * unsupported but fluent 'Star Trek'), and a negative where guesses
-     * exist but none fits better, so the committed word stays (guesses do
-     * not force a swap, and an unsupported fluent word is never invented).
-     * The committed word NEVER appears among its own guesses —
-     * swipeAlternates drops top-1, so that shape cannot occur in a real
-     * annotation; a guard test keeps the examples to real shapes.
-     * All avoid the ten-sentence retest corpus (Philip's §8.2 call:
-     * the negative pair deliberately does NOT quote "the dog ran over the
-     * hill", and the mice pair avoids "nine nice mice ran past the fox").
-     */
-    val PATH_EXAMPLES: List<Pair<String, String>> = listOf(
-        "the update should found the crash bug\n" +
-            "(Swipe paths, approximate: the=t·h·e, update=u·p·d·a·t·e, " +
-            "should=s·h·o·u·l·d, found=f·i·x, the=t·h·e, crash=c·r·a·s·h, bug=b·u·g)" to
-            "The update should fix the crash bug.",
-        "The cat sat on the mat.\n" +
-            "(Swipe paths, approximate: the=t·h·e, cat=c·a·t, sat=s·a·t, " +
-            "on=o·n, the=t·h·e, mat=m·a·t)" to
-            "The cat sat on the mat.",
-        "i saw three move in the garden yesterday\n" +
-            "(Swipe paths, approximate: i=i, saw=s·a·w, three=t·h·r·e·e, " +
-            "move=m·i·c·e, in=i·n, the=t·h·e, garden=g·a·r·d·e·n, " +
-            "yesterday=y·e·s·t·e·r·d·a·y)" to
-            "I saw three mice in the garden yesterday.",
-        // The intended word is in the decoder's guesses: take it (never a
-        // fluent invention the evidence does not support).
-        "we rewatched star east over the weekend\n" +
-            "(Swipe paths, approximate: we=w·e, rewatched=r·e·w·a·t·c·h·e·d, " +
-            "star=s·t·a·r, east=w·a·s·r·e>wars,eats, over=o·v·e·r, the=t·h·e, " +
-            "weekend=w·e·e·k·e·n·d)" to
-            "We rewatched Star Wars over the weekend.",
-        // Guesses exist but none fits better: the written word stays, and
-        // no unsupported word is invented ('east' must not become 'west').
-        "we drove east until the sun came up\n" +
-            "(Swipe paths, approximate: we=w·e, drove=d·r·o·v·e, " +
-            "east=e·a·s·t>eats, until=u·n·t·i·l, the=t·h·e, sun=s·u·n, " +
-            "came=c·a·m·e, up=u·p)" to
-            "We drove east until the sun came up.",
-    )
-
-    val EXAMPLES: List<Pair<String, String>> =
-        GENERAL_EXAMPLES + SWIPE_EXAMPLES + RESTYLE_EXAMPLES + PATH_EXAMPLES
 
     /** Marker prefix of the annotation block [withSwipePaths] appends —
      * shared with the echo guard ([containsSwipePathsMarker]). */
@@ -330,6 +248,9 @@ object ProofreadPrompt {
         return JSONObject()
             .put("model", model)
             .put("messages", messages)
+            // Deterministic repair, not creative writing — and the eval
+            // scores the same sampling settings the app ships.
+            .put("temperature", 0)
             // Privacy: route only to zero-data-retention endpoints that do
             // not train on user data. Narrows the provider pool; if none is
             // available the request fails and the caller fails soft.
@@ -397,7 +318,17 @@ class OpenRouterProofreader(
     internal companion object {
         const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
-        /** Very fast, very cheap (~$0.10/M input tokens) — ideal for proofreading. */
-        const val MODEL = "google/gemini-2.5-flash-lite"
+        /**
+         * Very fast, very cheap (~$0.06/M input tokens) and — decisive for a
+         * keyboard — sub-second: the tools/eval speed sweeps (tags r2-r5,
+         * t1/t2) measured it at p50 ~0.6s with an 88-97% sub-1s rate while
+         * the gemini-2.5-flash-lite incumbent failed the 1s bar half the time
+         * under provider congestion. Accuracy trails flash-lite on the
+         * hardest real-trail cases; closing that gap by iterating the PROMPT
+         * (not the model) is the branch's mission. The zero-data-retention
+         * pre-flight passed (the request's provider filter fails loud
+         * otherwise).
+         */
+        const val MODEL = "amazon/nova-micro-v1"
     }
 }
