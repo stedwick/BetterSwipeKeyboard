@@ -442,8 +442,9 @@ Data flow (deliberately layered, keep it this way):
 - `Proofreader` interface; `MlKitProofreader` (on-device Gemini Nano via
   `com.google.mlkit:genai-proofreading`, keyboard-tuned input type, kicks off
   model download itself) and `OpenRouterProofreader` (OkHttp + org.json,
-  model `google/gemini-2.5-flash-lite`, few-shot prompt in `ProofreadPrompt`,
-  requests restricted to zero-data-retention providers).
+  model `google/gemini-2.5-flash-lite` — under eval against flash/pro, see
+  "Prompt eval harness" below — few-shot prompt in `ProofreadPrompt`,
+  temperature 0, requests restricted to zero-data-retention providers).
 - `selectBackend`: on-device wins when available; cloud when an API key is
   configured; otherwise none.
 - Auto-proofread is debounced 2 s after the last *user activity*, not just
@@ -468,31 +469,54 @@ Data flow (deliberately layered, keep it this way):
   clobber newer text).
   Proofread failures are logged and swallowed — the keyboard must never
   depend on the AI.
-- The merge behavior is taught only on the OpenRouter path (few-shot
-  examples in `ProofreadPrompt`). The ML Kit API takes plain text only —
-  no system prompt, no few-shot — so on-device merging is best-effort
-  model behavior and parity between backends is not guaranteed.
-- The typed prompt also teaches the swipe decoder's measured error
-  classes (`ProofreadPrompt.SWIPE_EXAMPLES`): post-word drags (his→hours),
-  tail truncations (mother→not), same-path swaps (nine→bounce), edge
-  key-slips (quick→wick) and rare-word frequency-tie steals (fox→folic),
-  plus negative examples guarding against 'correcting' plausible words.
-  Examples deliberately avoid the ten-sentence retest corpus so the
-  retest measures class generalization, not memorization. OpenRouter
-  path only, same ML Kit caveat as merging. The typed prompt is scoped
-  repair-NOT-restyle (SYSTEM's "That is the whole job" plus the
-  `RESTYLE_EXAMPLES` identity negatives): no register, synonym,
-  structure or comma-style edits without swipe-error evidence — added
-  after Philip's AI runs showed the old 'meticulous proofreader'
-  framing rewriting evidence-free text; the path carve-out remains the
-  one sanctioned way to touch a plausible word. SYSTEM is a five-step
-  numbered procedure the model works through (inspect the written words,
-  swipe paths and listed guesses → decide whether the text makes sense
-  as-is → diagnose the error class → make the smallest fix under the
-  reasonable-mis-swipe rule → return the corrected text). The steps are
-  a SILENT procedure: the reply must be the corrected sentence alone —
-  no reasoning, no step labels, no preamble — because it is applied
-  verbatim into the text field (the echo guard depends on it).
+- The merge behavior is taught only on the OpenRouter path (a generic
+  few-shot example in `ProofreadPrompt.EXAMPLES`). The ML Kit API takes
+  plain text only — no system prompt, no few-shot — so on-device merging is
+  best-effort model behavior and parity between backends is not guaranteed.
+- The typed prompt (rewritten on feature/proofread-rewrite, replacing the
+  old five-step SYSTEM + 33 Philip-derived examples): a short job statement
+  plus ~8 GENERIC invented few-shot pairs, one per mechanism (a word
+  contradicting its crossed path, picking the intended word from the
+  decoder's guesses instead of inventing a fluent unsupported one, path
+  approximation, fragment merge, plain-typo repair, restraint identities).
+  The examples are deliberately NOT derived from captured trails, test
+  sentences or project incidents — the keyboard must work for anyone, not
+  be tuned to one person's writing. A strengthened corpus guard in
+  `ProofreadPromptTest` enforces this mechanically: no example may contain
+  any captured sentence (all six sets, via
+  `eval/CapturedSentences.kt` — single source shared with the eval corpus
+  generator), any distinctive corpus/incident word (mummy, folic, wars,
+  mice...), any incident word PAIR (star+east, nine+mice, his+hours...),
+  or overlap the invented eval cases. SYSTEM states only what the model
+  cannot infer: what swipe typing is, the annotation format, the
+  window/merge mechanics, the reply protocol (applied VERBATIM into the
+  text field — corrected text only; correct-or-unsure text returned
+  unchanged — the echo guard and fail-soft bias depend on both), restraint
+  (fix errors, never restyle), and EVIDENCE_RULE — the reasonable-
+  mis-swipe constraint, held as a separate constant so the eval's arm E
+  can remove exactly that sentence and test whether a stronger model
+  still needs it. The prompt teaches mechanisms, not error-class
+  instances; whether the model generalizes is measured (below), not hoped.
+- Prompt eval harness (`tools/eval/`, the quality gate for any prompt or
+  model change — no merge without its table): `./gradlew
+  :app:generateEvalCorpus` rebuilds `corpus.jsonl` — sub-corpus R (the six
+  fixture sets replayed through the current decoder, reconstructed into
+  the sentences actually swiped: real wrong commits, real crossed-letter
+  annotations built by the shipped `withSwipePaths`; fully-correct
+  sentences become capitalized untouched-rate cases) and sub-corpus I
+  (~20 hand-authored invented cases, mechanism-labeled, disjoint from the
+  prompt examples). `eval_proofread.py` (key from gitignored
+  `tools/eval/.env`, template provided) runs the arms — A: frozen shipping
+  prompt (`baseline_prompt.json`, main @ d1bdd26) + flash-lite; B: new
+  prompt + flash-lite (isolates the prompt variable); C/D: new prompt +
+  flash/pro; E: new prompt minus EVIDENCE_RULE + pro — after a ZDR
+  pre-flight (a model with no zero-retention endpoint fails loud and its
+  arms are skipped; the privacy contract outranks the benchmark). Scoring
+  splits R and I columns (the overfit check: winning only one column is
+  overfit either way), plus untouched-rate, per-class table, p50/p95
+  latency vs the 15 s app timeout, and real cost from usage accounting.
+  Ship rule: beat A on intent-recovery on BOTH sub-corpora, no untouched
+  regression, p95 well under timeout.
 - Swipe-path annotation (crossed letters + decoder alternates as
   proofreader evidence): at swipe-commit time `KeyboardScreen` attaches
   `crossedLetters` to `KeyboardAction.CommitWord` (the ViewModel passes it
@@ -506,20 +530,22 @@ Data flow (deliberately layered, keep it this way):
   sensitive, commit order) and every invalidation — edited, deleted,
   retried or externally changed word — resolves to a safe drop. Matching
   words inside the window annotate the request as
-  `(Swipe paths, approximate: word=p·a·t·h>alt1,alt2)` (max 20 most
+  `(Swipe paths, approximate: word=path>alt1,alt2)` — `path` is the BARE
+  concatenated crossed keys (`fog=dog`; the old prompt's few-shots showed
+  a dotted `d·o·g` notation that production never sent — the rewrite's
+  examples and SYSTEM use the real wire format; max 20 most
   recent; the `>alts` suffix is omitted when the decoder offered no
   score-gated runner-ups, and the committed word can never appear among
   its own guesses — `swipeAlternates` drops top-1), ONLY
   for the OpenRouter typed prompt — ML Kit and voice requests get plain
-  text. The prompt teaches that a word disagreeing with its path is a
-  likely error even if it fits its sentence (the one exception to the
-  anti-overcorrection rule — this is what fixes fog→dog), and — since
-  swipe-evidence v2 — that a replacement for a swiped word must be a
-  plausible result of that same swipe: consistent with the path within
+  text. The prompt teaches (generic examples + EVIDENCE_RULE) that a word
+  disagreeing with its path is a likely error even if it fits its
+  sentence, and that a replacement for a swiped word must be a plausible
+  result of that same swipe: consistent with the path within
   normal mis-swipe tolerance (aim slip, a nearby key, an extra or missing
   letter at an end) OR one of the decoder's listed guesses (the decoder's
   own reasonable mis-swipe readings of the trail) — never a fluent word
-  no reasonable swipe of that trail could produce (the
+  no reasonable swipe of that trail could produce (the historical
   'Star East'→'Star Trek' failure class:
   'wars' was in the decoder's guesses, 'trek' was invented). A reply
   echoing the marker is discarded by the echo guard, never applied.
