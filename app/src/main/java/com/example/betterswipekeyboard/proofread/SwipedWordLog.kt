@@ -2,10 +2,11 @@ package com.example.betterswipekeyboard.proofread
 
 /**
  * Per-word crossed-letter memory for the AI proofreader: which words were
- * SWIPED (not typed/pasted/dictated) and the ordered keys each trail
- * crossed. The service appends on every swipe commit; at proofread time
- * the log is reconciled against the actual text before the cursor and
- * surviving entries annotate the OpenRouter request (see ProofreadPrompt).
+ * SWIPED (not typed/pasted/dictated), the ordered keys each trail crossed,
+ * and the decoder's runner-up guesses for the same trail. The service
+ * appends on every swipe commit; at proofread time the log is reconciled
+ * against the actual text before the cursor and surviving entries annotate
+ * the OpenRouter request (see ProofreadPrompt).
  *
  * Alignment is TEXT-ANCHORED, never position-tracked: the keyboard does
  * not observe external edits, so any stored offset would go stale the
@@ -15,7 +16,9 @@ package com.example.betterswipekeyboard.proofread
  * deleted or externally changed word simply no longer matches, and the
  * proofreader never receives stale letters. Word-delete-after-swipe
  * (DeleteWordBackward) removes the whole word, so a retried swipe cleanly
- * replaces its entry.
+ * replaces its entry. A strip-tap replacement (ReplaceSwipedWord) has no
+ * trail and records nothing; the replaced word's entry drops at the next
+ * reconciliation because the text no longer contains it.
  *
  * In-memory only, dies with the service — nothing is persisted
  * (clipboard-history precedent). Alignment bugs feed the model wrong
@@ -24,7 +27,17 @@ package com.example.betterswipekeyboard.proofread
  */
 class SwipedWordLog(private val cap: Int = MAX_ENTRIES) {
 
-    data class Entry(val word: String, val letters: String)
+    /**
+     * [word] is the caps-transformed committed word (reconciliation matches
+     * the text case-sensitively); [letters] the ordered crossed keys.
+     * [alternates] are the decoder's RAW runner-up words for the same trail
+     * (lowercase, uncapped — the caps-transformed copies live in
+     * KeyboardState for the alternates strip; the proofreader wants the
+     * decoder's actual guesses and derives casing from sentence context).
+     * The committed word never appears among them (swipeAlternates drops
+     * top-1).
+     */
+    data class Entry(val word: String, val letters: String, val alternates: List<String> = emptyList())
 
     /** A reconciled entry: [endIndex] is the index just past its word's
      * match in the text, so callers can tell whether the match falls
@@ -33,9 +46,9 @@ class SwipedWordLog(private val cap: Int = MAX_ENTRIES) {
 
     private val entries = ArrayDeque<Entry>()
 
-    fun record(word: String, letters: String) {
+    fun record(word: String, letters: String, alternates: List<String> = emptyList()) {
         if (word.isBlank() || letters.isBlank()) return
-        entries.addLast(Entry(word, letters))
+        entries.addLast(Entry(word, letters, alternates))
         while (entries.size > cap) entries.removeFirst()
     }
 

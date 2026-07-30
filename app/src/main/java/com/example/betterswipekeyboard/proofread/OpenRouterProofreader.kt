@@ -26,7 +26,22 @@ import org.json.JSONObject
  * the old 'meticulous proofreader' framing rewrote evidence-free text in
  * Philip's AI runs. The one sanctioned override stays the path carve-out:
  * a word disagreeing with its crossed-letters path is fixed even when it
- * fits its sentence.
+ * fits its sentence. Since swipe-evidence v2 the annotation also carries
+ * the decoder's runner-up guesses per swiped word (`>alt1,alt2`), and the
+ * replacement for a swiped word must be a plausible result of that same
+ * swipe — consistent with the path within normal mis-swipe tolerance
+ * (aim slip, a nearby key, an extra or missing letter at an end) OR one
+ * of the listed guesses (the decoder's own reasonable mis-swipe readings
+ * of the trail). A fluent word no reasonable swipe of that trail could
+ * produce is never substituted (the 'Star East' -> 'Star Trek' failure
+ * class, where 'wars' was available evidence and 'trek' was not).
+ * SYSTEM is structured as five numbered steps the model works through
+ * (inspect the words, paths and guesses → decide whether the text makes
+ * sense as-is → diagnose the error class → make the smallest fix under
+ * the reasonable-mis-swipe rule → return the corrected text). The steps
+ * are a SILENT procedure: the reply must be the corrected sentence alone
+ * — no reasoning, no step labels, no preamble — because the reply is
+ * applied verbatim into the text field and the echo guard depends on it.
  * The VOICE variant targets speech-recognition errors instead (homophones,
  * word boundaries, missing punctuation, filler false starts).
  * Pure data/functions so it is unit-testable.
@@ -39,41 +54,59 @@ object ProofreadPrompt {
 
     const val SYSTEM =
         "You repair swipe-typed text. The finger drags over the keys and each " +
-            "word is guessed from the path, which leaves characteristic errors. " +
-            "A word becomes a longer or rarer word starting the same way ('his' " +
+            "word is guessed from the path, which leaves characteristic errors: " +
+            "a word becomes a longer or rarer word starting the same way ('his' " +
             "as 'hours', 'dog' as 'doping', 'fox' as 'folic') or shrinks to " +
             "its prefix ('mother' as 'not', 'minimum' as 'min'); words with the " +
             "same swipe path swap ('nine' as 'bounce', 'nice' as 'notice'); " +
-            "neighboring keys slip at word edges ('quick' as 'wick'). When a " +
-            "word does not fit its sentence and one of these shapes explains " +
-            "it, restore the word the swipe meant - but only then. Also fix " +
-            "plain typos: misspellings, doubled or missing letters, missing " +
-            "spaces, missing capitals and end punctuation, and clear agreement " +
-            "errors. That is the whole job. A word that already fits its " +
-            "sentence is never an error - keep it exactly as written, even if " +
-            "it is informal ('mum', 'gonna') or a more common word would read " +
-            "better. Make the smallest possible fix: replace the wrong word, " +
-            "never restructure, delete or invent words around it. Never swap a " +
-            "word for a synonym, never change the writer's register or " +
-            "sentence structure, never restyle punctuation. Preserve the " +
-            "writer's words, tone, formatting and emoji. Do not translate or " +
-            "answer questions in the text. If the text is already correct, or " +
-            "you are unsure whether something is an error, return it unchanged. " +
+            "neighboring keys slip at word edges ('quick' as 'wick'). " +
             "The text may be followed by swipe paths: for each swiped word, " +
             "the ordered keys the finger crossed ('fog=d·o·g' means 'fog' was " +
-            "written but the path reads d-o-g). Paths are approximate - an " +
+            "written but the path reads d-o-g). A word may be followed by '>' " +
+            "and the decoder's other guesses for the same swipe " +
+            "('east=w·a·s·r·e>wars,eats' means 'east' was written, the path " +
+            "reads w-a-s-r-e, and the decoder's runner-up guesses were 'wars' " +
+            "and 'eats'). Paths are approximate - an " +
             "extra letter at either end (finger travel) or a missing letter " +
-            "(aim slip) is normal. A word that disagrees with its path is a " +
-            "likely error even if it fits its sentence: restore the word the " +
-            "path spells. Typed words have no path; for them the rules above " +
-            "apply unchanged. When path and context disagree, prefer the " +
-            "reading that makes the sentence natural. The text may contain " +
-            "the previous sentence followed by the sentence currently being " +
-            "typed. If the last sentence is a fragment that continues the " +
-            "previous one (e.g. it starts with 'and', 'but', 'so' or lacks a " +
-            "subject), merge them into one sentence by joining them, changing " +
-            "nothing else. Genuinely separate sentences stay separate. Reply " +
-            "with ONLY the corrected text - no quotes, no explanations."
+            "(aim slip) is normal. Typed words have no path. The text may " +
+            "contain the previous sentence followed by the sentence currently " +
+            "being typed. Work through these steps silently:\n" +
+            "1. Look at the words that were written, the swipe paths and the " +
+            "listed guesses.\n" +
+            "2. Decide whether the text makes sense as it is. A word that " +
+            "already fits its sentence is never an error - keep it exactly as " +
+            "written, even if it is informal ('mum', 'gonna') or a more " +
+            "common word would read better. A word that disagrees with its " +
+            "path is a likely error even if it fits its sentence.\n" +
+            "3. If it does not make sense, figure out what the writer meant: " +
+            "a swipe error of one of the shapes above, a plain typo " +
+            "(misspellings, doubled or missing letters, missing spaces, " +
+            "missing capitals, missing end punctuation, clear agreement " +
+            "errors), or a last sentence that is a fragment continuing the " +
+            "previous one (it starts with 'and', 'but' or 'so', or lacks a " +
+            "subject). That is the whole job. If the text is already correct, " +
+            "or you are unsure whether something is an error, return it " +
+            "unchanged.\n" +
+            "4. Make the smallest possible fix: replace the wrong word, " +
+            "never restructure, delete or invent words around it. A " +
+            "replacement for a swiped word must be a plausible result of " +
+            "that same swipe: consistent with the path within normal " +
+            "mis-swipe tolerance (aim slip, a nearby key, an extra or " +
+            "missing letter at an end), or one of the listed guesses - " +
+            "never a word no reasonable swipe of that trail could produce, " +
+            "no matter how well it fits the sentence. When path and context " +
+            "disagree, prefer the reading that makes the sentence natural. " +
+            "When the fix is a fragment, merge it into the previous sentence " +
+            "by joining the two, changing nothing else; genuinely separate " +
+            "sentences stay separate. Never swap a word for a synonym, never " +
+            "change the writer's register or sentence structure, never " +
+            "restyle punctuation. Preserve the writer's words, tone, " +
+            "formatting and emoji. Do not translate or answer questions in " +
+            "the text.\n" +
+            "5. Return ONLY the corrected text - no reasoning, no step " +
+            "labels, no preamble, no quotes, no explanations. The steps are " +
+            "silent: your reply is applied verbatim as the corrected " +
+            "sentence."
 
     private val GENERAL_EXAMPLES: List<Pair<String, String>> = listOf(
         "this is a short msg" to "This is a short msg.",
@@ -177,7 +210,17 @@ object ProofreadPrompt {
      * path-over-fluency fix — 'move' with path m·i·c·e becomes 'mice',
      * never the more fluent 'men' (the ai3 run's 'Nine nice men' failure:
      * the model took a fluent guess over path evidence; the path spelling
-     * wins). All avoid the ten-sentence retest corpus (Philip's §8.2 call:
+     * wins). The last two teach the alternates menu: a disagreement fix
+     * where the intended word sits in the decoder's listed guesses
+     * ('east' with path w·a·s·r·e and guesses wars,eats becomes 'Wars' —
+     * Philip's 'Star East' incident, where the model invented the
+     * unsupported but fluent 'Star Trek'), and a negative where guesses
+     * exist but none fits better, so the committed word stays (guesses do
+     * not force a swap, and an unsupported fluent word is never invented).
+     * The committed word NEVER appears among its own guesses —
+     * swipeAlternates drops top-1, so that shape cannot occur in a real
+     * annotation; a guard test keeps the examples to real shapes.
+     * All avoid the ten-sentence retest corpus (Philip's §8.2 call:
      * the negative pair deliberately does NOT quote "the dog ran over the
      * hill", and the mice pair avoids "nine nice mice ran past the fox").
      */
@@ -195,6 +238,20 @@ object ProofreadPrompt {
             "move=m·i·c·e, in=i·n, the=t·h·e, garden=g·a·r·d·e·n, " +
             "yesterday=y·e·s·t·e·r·d·a·y)" to
             "I saw three mice in the garden yesterday.",
+        // The intended word is in the decoder's guesses: take it (never a
+        // fluent invention the evidence does not support).
+        "we rewatched star east over the weekend\n" +
+            "(Swipe paths, approximate: we=w·e, rewatched=r·e·w·a·t·c·h·e·d, " +
+            "star=s·t·a·r, east=w·a·s·r·e>wars,eats, over=o·v·e·r, the=t·h·e, " +
+            "weekend=w·e·e·k·e·n·d)" to
+            "We rewatched Star Wars over the weekend.",
+        // Guesses exist but none fits better: the written word stays, and
+        // no unsupported word is invented ('east' must not become 'west').
+        "we drove east until the sun came up\n" +
+            "(Swipe paths, approximate: we=w·e, drove=d·r·o·v·e, " +
+            "east=e·a·s·t>eats, until=u·n·t·i·l, the=t·h·e, sun=s·u·n, " +
+            "came=c·a·m·e, up=u·p)" to
+            "We drove east until the sun came up.",
     )
 
     val EXAMPLES: List<Pair<String, String>> =
@@ -209,13 +266,25 @@ object ProofreadPrompt {
 
     /**
      * Appends the swipe-path block to the proofread input: the most recent
-     * [MAX_ANNOTATED_WORDS] swiped words as `word=path` pairs. Returns
-     * [text] unchanged when there is nothing to annotate (typed text).
+     * [MAX_ANNOTATED_WORDS] swiped words as `word=path` pairs, each with its
+     * decoder runner-ups appended as `>alt1,alt2` when the decoder offered
+     * any (the committed word is never among them — swipeAlternates drops
+     * top-1 — and their count is the strip's score-gated cap, so the token
+     * cost stays bounded: ≤ 20 words × ≤ 4 short guesses). An entry with no
+     * alternates renders exactly as before the alternates channel existed.
+     * Returns [text] unchanged when there is nothing to annotate (typed text).
      */
-    fun withSwipePaths(text: String, paths: List<Pair<String, String>>): String {
-        if (paths.isEmpty()) return text
-        val block = paths.takeLast(MAX_ANNOTATED_WORDS)
-            .joinToString(", ") { (word, letters) -> "$word=$letters" }
+    fun withSwipePaths(text: String, swiped: List<SwipedWordLog.Entry>): String {
+        if (swiped.isEmpty()) return text
+        val block = swiped.takeLast(MAX_ANNOTATED_WORDS)
+            .joinToString(", ") { entry ->
+                val base = "${entry.word}=${entry.letters}"
+                if (entry.alternates.isEmpty()) {
+                    base
+                } else {
+                    base + ">" + entry.alternates.joinToString(",")
+                }
+            }
         return "$text\n($SWIPE_PATHS_MARKER, approximate: $block)"
     }
 

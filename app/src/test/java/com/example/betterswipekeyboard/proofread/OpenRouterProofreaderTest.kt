@@ -258,10 +258,28 @@ class ProofreadPromptTest {
     fun `withSwipePaths appends the marker block`() {
         val annotated = ProofreadPrompt.withSwipePaths(
             "the fog ram",
-            listOf("fog" to "d·o·g", "ram" to "r·a·n"),
+            listOf(
+                SwipedWordLog.Entry("fog", "d·o·g"),
+                SwipedWordLog.Entry("ram", "r·a·n"),
+            ),
         )
         assertEquals(
             "the fog ram\n(Swipe paths, approximate: fog=d·o·g, ram=r·a·n)",
+            annotated,
+        )
+    }
+
+    @Test
+    fun `withSwipePaths appends decoder alternates after a greater-than`() {
+        val annotated = ProofreadPrompt.withSwipePaths(
+            "star east",
+            listOf(
+                SwipedWordLog.Entry("star", "s·t·a·r"),
+                SwipedWordLog.Entry("east", "w·a·s·r·e", listOf("wars", "eats")),
+            ),
+        )
+        assertEquals(
+            "star east\n(Swipe paths, approximate: star=s·t·a·r, east=w·a·s·r·e>wars,eats)",
             annotated,
         )
     }
@@ -273,7 +291,7 @@ class ProofreadPromptTest {
 
     @Test
     fun `withSwipePaths caps the block at the most recent words`() {
-        val paths = (1..25).map { "w$it" to "p$it" }
+        val paths = (1..25).map { SwipedWordLog.Entry("w$it", "p$it") }
         val annotated = ProofreadPrompt.withSwipePaths("text", paths)
         // w1..w5 dropped, w6..w25 kept.
         assertTrue(!annotated.contains("w5="))
@@ -283,6 +301,78 @@ class ProofreadPromptTest {
             ProofreadPrompt.MAX_ANNOTATED_WORDS,
             Regex("w\\d+=").findAll(annotated).count(),
         )
+    }
+
+    @Test
+    fun `system prompt teaches the alternates menu and the reasonable-mis-swipe rule`() {
+        val system = ProofreadPrompt.SYSTEM
+        // The '>' suffix introducing the decoder's runner-up guesses.
+        assertTrue(system.contains("decoder's other guesses"))
+        assertTrue(system.contains(">wars,eats"))
+        // The rule for the 'Star East' -> 'Star Trek' class: a replacement
+        // must be a plausible result of the same swipe (path-consistent
+        // within normal mis-swipe tolerance, or a listed guess), never a
+        // fluent word no reasonable swipe of that trail could produce.
+        assertTrue(system.contains("must be a plausible result of that same swipe"))
+        assertTrue(system.contains("mis-swipe tolerance"))
+        assertTrue(system.contains("no reasonable swipe of that trail could produce"))
+    }
+
+    @Test
+    fun `system prompt is a numbered procedure whose steps stay silent`() {
+        val system = ProofreadPrompt.SYSTEM
+        // Philip's stepwise shape: inspect -> sense-check -> diagnose ->
+        // fix -> return.
+        assertTrue(system.contains("1."))
+        assertTrue(system.contains("5."))
+        assertTrue(system.contains("silently"))
+        // The reply is applied verbatim into the text field, so the
+        // procedure must not leak into it (the echo guard depends on it).
+        assertTrue(system.contains("ONLY the corrected text"))
+        assertTrue(system.contains("no reasoning"))
+        assertTrue(system.contains("no step labels"))
+        assertTrue(system.contains("no preamble"))
+    }
+
+    @Test
+    fun `path few-shot teaches picking the intended word from the decoder guesses`() {
+        // The 'Star East' incident class: 'east' committed, path w·a·s·r·e,
+        // 'wars' among the decoder's guesses -> 'Star Wars', never an
+        // unsupported fluent invention ('Star Trek').
+        assertTrue(
+            ProofreadPrompt.PATH_EXAMPLES.any { (input, output) ->
+                input.contains("east=w·a·s·r·e>wars,eats") && output.contains("Star Wars")
+            },
+        )
+    }
+
+    @Test
+    fun `path few-shot teaches that guesses do not force a swap`() {
+        // Negative: guesses exist but none fits the sentence better; the
+        // written word stays and no unsupported word is invented.
+        assertTrue(
+            ProofreadPrompt.PATH_EXAMPLES.any { (input, output) ->
+                input.contains("east=e·a·s·t>eats") && output.contains(" east ")
+            },
+        )
+    }
+
+    @Test
+    fun `path examples never list the committed word among its own guesses`() {
+        // swipeAlternates drops top-1, so a real annotation can never carry
+        // the committed word in its own guess list; few-shots must not
+        // teach impossible shapes.
+        val withGuesses = Regex("(\\w+)=\\S+?>([\\w',]+)")
+        var checked = 0
+        for ((input, _) in ProofreadPrompt.PATH_EXAMPLES) {
+            for (match in withGuesses.findAll(input)) {
+                val word = match.groupValues[1]
+                val guesses = match.groupValues[2].split(",")
+                assertTrue("$word listed among its own guesses", word !in guesses)
+                checked++
+            }
+        }
+        assertTrue("no guess lists found — the guard would be vacuous", checked > 0)
     }
 
     @Test

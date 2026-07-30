@@ -445,22 +445,43 @@ Data flow (deliberately layered, keep it this way):
   structure or comma-style edits without swipe-error evidence — added
   after Philip's AI runs showed the old 'meticulous proofreader'
   framing rewriting evidence-free text; the path carve-out remains the
-  one sanctioned way to touch a plausible word.
-- Swipe-path annotation (crossed letters as proofreader evidence): at
-  swipe-commit time `KeyboardScreen` attaches `crossedLetters` to
-  `KeyboardAction.CommitWord` (the ViewModel passes it through; caps
-  applies to the word, never the letters), and the service records it in
-  `SwipedWordLog` (pure, in-memory, cap 100). The keyboard never observes
+  one sanctioned way to touch a plausible word. SYSTEM is a five-step
+  numbered procedure the model works through (inspect the written words,
+  swipe paths and listed guesses → decide whether the text makes sense
+  as-is → diagnose the error class → make the smallest fix under the
+  reasonable-mis-swipe rule → return the corrected text). The steps are
+  a SILENT procedure: the reply must be the corrected sentence alone —
+  no reasoning, no step labels, no preamble — because it is applied
+  verbatim into the text field (the echo guard depends on it).
+- Swipe-path annotation (crossed letters + decoder alternates as
+  proofreader evidence): at swipe-commit time `KeyboardScreen` attaches
+  `crossedLetters` to `KeyboardAction.CommitWord` (the ViewModel passes it
+  through; caps applies to the word, never the letters), and the service
+  records it in `SwipedWordLog` (pure, in-memory, cap 100) — together with
+  the action's `alternates` (the decoder's RAW runner-up words, uncapped;
+  the caps-transformed copies in `KeyboardState.swipeAlternates` are for
+  the strip). The keyboard never observes
   external edits, so alignment is TEXT-ANCHORED: at proofread time the
   log is reconciled against `textBeforeCursor` (whole-word, case-
   sensitive, commit order) and every invalidation — edited, deleted,
   retried or externally changed word — resolves to a safe drop. Matching
   words inside the window annotate the request as
-  `(Swipe paths, approximate: word=p·a·t·h)` (max 20 most recent), ONLY
+  `(Swipe paths, approximate: word=p·a·t·h>alt1,alt2)` (max 20 most
+  recent; the `>alts` suffix is omitted when the decoder offered no
+  score-gated runner-ups, and the committed word can never appear among
+  its own guesses — `swipeAlternates` drops top-1), ONLY
   for the OpenRouter typed prompt — ML Kit and voice requests get plain
   text. The prompt teaches that a word disagreeing with its path is a
   likely error even if it fits its sentence (the one exception to the
-  anti-overcorrection rule — this is what fixes fog→dog), and a reply
+  anti-overcorrection rule — this is what fixes fog→dog), and — since
+  swipe-evidence v2 — that a replacement for a swiped word must be a
+  plausible result of that same swipe: consistent with the path within
+  normal mis-swipe tolerance (aim slip, a nearby key, an extra or missing
+  letter at an end) OR one of the decoder's listed guesses (the decoder's
+  own reasonable mis-swipe readings of the trail) — never a fluent word
+  no reasonable swipe of that trail could produce (the
+  'Star East'→'Star Trek' failure class:
+  'wars' was in the decoder's guesses, 'trek' was invented). A reply
   echoing the marker is discarded by the echo guard, never applied.
 - The OpenRouter API key is stored in plain SharedPreferences by
   `ApiKeyStore` (acceptable for a personal app; noted in code as
