@@ -295,14 +295,16 @@ class OpenRouterProofreader(
         const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
         /**
-         * Very fast, very cheap (~$0.10/M input tokens). The rewrite branch
-         * evaluates gemini-2.5-flash and gemini-2.5-pro against this
-         * incumbent (tools/eval/ — intent recovery on real and invented
-         * corpora, untouched-rate, latency); MODEL flips to the winner only
-         * after the eval verdict, and only if a zero-data-retention
-         * endpoint exists for it (the request's provider filter fails loud
+         * Very fast, very cheap (~$0.06/M input tokens) and — decisive for a
+         * keyboard — sub-second: the tools/eval speed sweeps (tags r2-r5,
+         * t1/t2) measured it at p50 ~0.6s with an 88-97% sub-1s rate while
+         * the gemini-2.5-flash-lite incumbent failed the 1s bar half the time
+         * under provider congestion. Accuracy trails flash-lite on the
+         * hardest real-trail cases; closing that gap by iterating the PROMPT
+         * (not the model) is the branch's mission. The zero-data-retention
+         * pre-flight passed (the request's provider filter fails loud
          * otherwise).
          */
-        const val MODEL = "google/gemini-2.5-flash-lite"
+        const val MODEL = "amazon/nova-micro-v1"
     }
 }

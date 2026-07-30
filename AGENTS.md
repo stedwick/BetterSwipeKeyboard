@@ -442,9 +442,13 @@ Data flow (deliberately layered, keep it this way):
 - `Proofreader` interface; `MlKitProofreader` (on-device Gemini Nano via
   `com.google.mlkit:genai-proofreading`, keyboard-tuned input type, kicks off
   model download itself) and `OpenRouterProofreader` (OkHttp + org.json,
-  model `google/gemini-2.5-flash-lite` — under eval against flash/pro, see
-  "Prompt eval harness" below — few-shot prompt in `ProofreadPrompt`,
-  temperature 0, requests restricted to zero-data-retention providers).
+  model `amazon/nova-micro-v1` — picked on feature/proofread-rewrite after
+  the tools/eval speed sweeps (tags r2-r5, t1/t2): the only ZDR-compliant
+  candidate reliably under Philip's 1s bar (p50 ~0.6s, 88-97% sub-1s);
+  its accuracy gap vs the flash-lite incumbent on hard real-trail cases is
+  being closed by prompt iteration, eval tags n0+ — few-shot prompt in
+  `ProofreadPrompt`, temperature 0, requests restricted to
+  zero-data-retention providers).
 - `selectBackend`: on-device wins when available; cloud when an API key is
   configured; otherwise none.
 - Auto-proofread is debounced 2 s after the last *user activity*, not just
