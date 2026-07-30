@@ -177,6 +177,12 @@ def main():
                          "--message-arm A --models X = old frozen prompt evaluated on X")
     ap.add_argument("--sequential", action="store_true",
                     help="force the sequential loop even in --models sweep mode")
+    ap.add_argument("--messages-file", default=None,
+                    help="JSON {system, examples:[[in,out],...]}: build each request's "
+                         "messages from THIS prompt (file prefix + the case's user "
+                         "message) instead of the corpus's stored arm messages. For "
+                         "the old-prompt m-loops — mutates a scratch copy of "
+                         "baseline_prompt.json, never ProofreadPrompt.kt")
     ap.add_argument("--max-latency-ms", type=int, default=1000,
                     help="a call SLOWER than this counts as failed (recorded with its real "
                          "latency, verdict 'slow', never retried, request not aborted)")
@@ -204,8 +210,22 @@ def main():
         sys.exit("empty corpus selection")
 
     # Model sweep mode: each listed model is its own arm (arm label = model
-    # id), all sharing the --message-arm's messages.
+    # id), all sharing the --message-arm's messages. --messages-file instead
+    # builds messages from a scratch prompt file: [system + example pairs]
+    # + the case's own user message (taken from arm A's stored messages).
+    msg_prefix = None
+    if args.messages_file:
+        spec = json.load(open(args.messages_file))
+        msg_prefix = [{"role": "system", "content": spec["system"]}]
+        for pair in spec["examples"]:
+            msg_prefix.append({"role": "user", "content": pair[0]})
+            msg_prefix.append({"role": "assistant", "content": pair[1]})
+
     def request_for(case, arm):
+        if msg_prefix is not None:
+            user_msg = case["requests"]["A"]["messages"][-1]
+            model = arm if args.models else case["requests"][arm]["model"]
+            return {"model": model, "messages": msg_prefix + [user_msg]}
         if args.models:
             return {"model": arm, "messages": case["requests"][args.message_arm]["messages"]}
         return case["requests"][arm]

@@ -47,10 +47,13 @@ def score(records, model=None):
 
 
 def main():
-    tags = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = sys.argv[1:]
     model = None
-    if "--model" in sys.argv:
-        model = sys.argv[sys.argv.index("--model") + 1]
+    if "--model" in args:
+        i = args.index("--model")
+        model = args[i + 1]
+        del args[i:i + 2]
+    tags = args
     records = [json.loads(l) for l in open(RESULTS) if l.strip()]
     for tag in tags:
         rows = [r for r in records if r["tag"] == tag]
