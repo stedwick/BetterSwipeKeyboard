@@ -14,3 +14,5 @@
 .cxx
 local.properties
 /temp-icons/
+# Proofread eval API key (tools/eval/) — never commit it.
+tools/eval/.env
