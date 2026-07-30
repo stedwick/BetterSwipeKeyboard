@@ -119,7 +119,7 @@ object ProofreadPrompt {
         "the ferry crosses the english chandler\n" +
             "(Swipe paths, approximate: the=the, ferry=ferry, " +
             "crosses=crosses, english=english, " +
-            "chandler=channsel>chandler,chandelier)" to
+            "chandler=channsel>chandelier,handler)" to
             "The ferry crosses the English channel.",
         // The intended word sits in the decoder's listed guesses: take it —
         // never invent a fluent word the evidence does not support.
@@ -138,6 +138,9 @@ object ProofreadPrompt {
         // a question mark the writer did not write.
         "are you coming over later." to
             "Are you coming over later.",
+        // A fragment continuing the previous sentence merges into it.
+        "we drove out to the lake. But it started raining." to
+            "We drove out to the lake, but it started raining.",
         // Plain typed errors (no paths): caps, spelling, doubled letters.
         "the resturant on fifth street opens at noon tommorow" to
             "The restaurant on fifth street opens at noon tomorrow.",
