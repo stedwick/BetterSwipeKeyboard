@@ -14,8 +14,8 @@
 | E | google/gemini-2.5-pro | I | 22 | 20/22 (91%) | 2 | 4/4 | 4.9s | 6.5s | $0.1243 |
 | amazon/nova-lite-v1 | amazon/nova-lite-v1 | R | 3 | 1/3 (33%) | 0 | - | 0.8s | 0.9s | $0.0002 |
 | amazon/nova-lite-v1 | amazon/nova-lite-v1 | I | 3 | 2/3 (67%) | 0 | 0/1 | 1.0s | 2.9s | $0.0001 |
-| amazon/nova-micro-v1 | amazon/nova-micro-v1 | R | 45 | 26/45 (58%) | 2 | - | 0.6s | 2.1s | $0.0015 |
-| amazon/nova-micro-v1 | amazon/nova-micro-v1 | I | 40 | 33/40 (82%) | 2 | 3/8 | 0.7s | 1.7s | $0.0011 |
+| amazon/nova-micro-v1 | amazon/nova-micro-v1 | R | 126 | 76/126 (60%) | 7 | - | 0.8s | 6.5s | $0.0053 |
+| amazon/nova-micro-v1 | amazon/nova-micro-v1 | I | 106 | 90/106 (85%) | 8 | 12/20 | 0.7s | 5.1s | $0.0038 |
 | google/gemini-2.5-flash-lite | google/gemini-2.5-flash-lite | R | 37 | 24/37 (65%) | 2 | - | 1.6s | 7.3s | $0.0032 |
 | google/gemini-2.5-flash-lite | google/gemini-2.5-flash-lite | I | 34 | 29/34 (85%) | 1 | 3/7 | 0.8s | 7.3s | $0.0025 |
 | google/gemini-3.1-flash-lite | google/gemini-3.1-flash-lite | R | 16 | 10/16 (62%) | 0 | - | 1.1s | 1.4s | $0.0035 |

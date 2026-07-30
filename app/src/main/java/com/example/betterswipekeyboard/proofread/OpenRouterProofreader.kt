@@ -146,9 +146,11 @@ object ProofreadPrompt {
         // Informal register is the writer's choice, not an error (identity).
         "We're meeting at Mario's around seven, wanna join?" to
             "We're meeting at Mario's around seven, wanna join?",
-        // Defensible colloquial grammar is not recast (identity).
-        "Me and Jess are driving up on Friday." to
-            "Me and Jess are driving up on Friday.",
+        // Casual writing with a dropped subject is voice, not a grammar
+        // error to repair: imperfect-looking but intended text returns
+        // verbatim (identity).
+        "Was a long day, we head out early tomorrow anyway." to
+            "Was a long day, we head out early tomorrow anyway.",
     )
 
     /** Marker prefix of the annotation block [withSwipePaths] appends —
