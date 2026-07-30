@@ -170,7 +170,13 @@ def main():
     ap.add_argument("--arms", default="A,B,C,D,E")
     ap.add_argument("--models", default=None,
                     help="comma-separated model ids for a model sweep: one arm per model, "
-                         "all using arm B (new prompt) messages; overrides --arms")
+                         "sharing one arm's messages (see --message-arm); overrides --arms")
+    ap.add_argument("--message-arm", default="B",
+                    help="which corpus arm's MESSAGES a --models sweep sends (default B = "
+                         "new prompt); the sweep still overrides the model — e.g. "
+                         "--message-arm A --models X = old frozen prompt evaluated on X")
+    ap.add_argument("--sequential", action="store_true",
+                    help="force the sequential loop even in --models sweep mode")
     ap.add_argument("--max-latency-ms", type=int, default=1000,
                     help="a call SLOWER than this counts as failed (recorded with its real "
                          "latency, verdict 'slow', never retried, request not aborted)")
@@ -198,10 +204,10 @@ def main():
         sys.exit("empty corpus selection")
 
     # Model sweep mode: each listed model is its own arm (arm label = model
-    # id), all sharing arm B's (new prompt) messages.
+    # id), all sharing the --message-arm's messages.
     def request_for(case, arm):
         if args.models:
-            return {"model": arm, "messages": case["requests"]["B"]["messages"]}
+            return {"model": arm, "messages": case["requests"][args.message_arm]["messages"]}
         return case["requests"][arm]
 
     if args.models:
@@ -209,7 +215,8 @@ def main():
         models = set(arms)
     else:
         models = {c["requests"][a]["model"] for c in cases for a in arms}
-    ok_models = preflight(api_key, models, timeout, concurrent=bool(args.models))
+    ok_models = preflight(api_key, models, timeout,
+                          concurrent=bool(args.models) and not args.sequential)
 
     done = set()
     if os.path.isfile(RESULTS):
@@ -223,11 +230,11 @@ def main():
     write_lock = threading.Lock()
 
     # SEQUENTIAL for --arms runs (Philip's standing call — per-call latency
-    # doubles as the latency measurement). --models sweep mode is CONCURRENT
-    # under Philip's explicit speed-sweep authorization: the whole sweep
-    # must finish under 30s, so all case x model calls fire at once
+    # doubles as the latency measurement) and whenever --sequential is given.
+    # --models sweep mode defaults to CONCURRENT under Philip's explicit
+    # speed-sweep authorization: all case x model calls fire at once
     # (ThreadPoolExecutor, one worker per call, lock on the results append,
-    # 5s request ceiling bounding stragglers; pre-flight concurrent too).
+    # request ceiling bounding stragglers; pre-flight concurrent too).
     def run_one(case, arm, req):
         payload = {
             "model": req["model"],
@@ -293,7 +300,7 @@ def main():
             if req["model"] not in ok_models:
                 continue
             work.append((case, arm, req))
-    if args.models:
+    if args.models and not args.sequential:
         with ThreadPoolExecutor(max_workers=len(work) or 1) as pool:
             futures = [pool.submit(run_one, case, arm, req) for case, arm, req in work]
             for fut in as_completed(futures):
