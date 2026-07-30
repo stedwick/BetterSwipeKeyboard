@@ -75,4 +75,26 @@ class StripCellsTest {
             stripCells("hello", listOf("hell", "help", "held"), 4),
         )
     }
+
+    @Test
+    fun `failed-swipe offers render in rank order with no center cell`() {
+        // Nothing was committed, so no cell is the green center — the best
+        // rescue candidate is simply leftmost.
+        assertEquals(
+            listOf(
+                StripCell("keyboard", isCenter = false),
+                StripCell("keyword", isCenter = false),
+                StripCell("key West", isCenter = false),
+            ),
+            failedOfferCells(listOf("keyboard", "keyword", "key West")),
+        )
+    }
+
+    @Test
+    fun `a single failed-swipe offer is one plain cell`() {
+        assertEquals(
+            listOf(StripCell("keyboard", isCenter = false)),
+            failedOfferCells(listOf("keyboard")),
+        )
+    }
 }

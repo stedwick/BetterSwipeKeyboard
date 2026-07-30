@@ -44,3 +44,11 @@ fun stripCells(
         StripCell(committedWord, isCenter = true) +
         right.map { StripCell(it, isCenter = false) }
 }
+
+/**
+ * Cells for a FAILED swipe's offers: rank order, NO center cell — nothing was
+ * committed, so a green center would lie. Used for both rendering and tap
+ * hit-testing, same as [stripCells].
+ */
+fun failedOfferCells(offers: List<String>): List<StripCell> =
+    offers.map { StripCell(it, isCenter = false) }

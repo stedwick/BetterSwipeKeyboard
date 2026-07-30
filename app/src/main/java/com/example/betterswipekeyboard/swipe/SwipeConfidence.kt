@@ -21,30 +21,32 @@ enum class SwipeConfidence {
  * top2.score - top1.score is below this. Calibrated on the six captured
  * real-hand trail sets (254 committed swipes, 20 of them wrong, intents as
  * ground truth) — margin is the signal, NOT absolute score (wrong commits
- * score anywhere from -1.63 to 1.65):
+ * score anywhere from -2.17 to 1.65). Recalibrated after the last-letter
+ * lift-off re-match ([REBASIN_RADIUS_KEYS]): 237 correct + 17 wrong — the
+ * re-match turned four formerly wrong commits into CORRECT ones (they are
+ * not lost flags, they are fixed swipes) and one formerly correct commit
+ * into a wrong one; the flag rates are essentially unchanged (9/17 ≈ 53%
+ * of wrong vs 11/20 = 55%, 6.3% vs 6.0% of correct at the knee):
  *
  *   margin < M    wrong flagged   correct flagged
- *   0.10          7/20            3/234  (1.3%)
- *   0.15         10/20            8/234  (3.4%)
- *   0.20         10/20           11/234  (4.7%)
- *   0.25         11/20           14/234  (6.0%)  <- chosen
- *   0.30         11/20           14/234  (6.0%)
- *   0.35         11/20           19/234  (8.1%)
- *   0.40         12/20           22/234  (9.4%)
- *   0.45         13/20           27/234  (11.5%)
+ *   0.10          5/17            2/237  (0.8%)
+ *   0.15          8/17            7/237  (3.0%)
+ *   0.20          8/17            11/237 (4.6%)
+ *   0.25          9/17            15/237 (6.3%)  <- chosen
+ *   0.30          9/17            15/237 (6.3%)
+ *   0.35          9/17            20/237 (8.4%)
+ *   0.40          10/17           24/237 (10.1%)
+ *   0.45          11/17           29/237 (12.2%)
  *
  * 0.25 is the knee of the trade, raised from 0.15 when Philip found the
- * yellow flash too rare: the overall flash rate rises from 7.1% to 9.8%
- * of committed swipes while false positives stay at 6.0%, and the newly
- * flagged correct commits (margins 0.17–0.24) are still close races where
- * "maybe re-swipe" is honest. Past it the trade collapses — 0.25→0.40
- * buys exactly one more wrong commit for eight more false positives,
- * 0.30 flags nothing new over 0.25 at all, and 0.45 breaks into
- * double-digit false positives. The nine wrong commits with healthy
- * margins (≥ 0.37, up to 1.03) are unreachable at any defensible rate.
- * Adding an absolute-score band (score > 1.2) would catch one more wrong
- * commit for one more false positive and a second knob — measured,
- * rejected.
+ * yellow flash too rare: the recalibration leaves the trade's shape
+ * unchanged — 0.30 flags nothing new over 0.25, 0.25→0.40 buys exactly one
+ * more wrong commit for nine more false positives, and 0.45 breaks into
+ * double-digit false positives. The eight wrong commits with healthy
+ * margins (≥ 0.37, up to 0.53) are unreachable at any defensible rate.
+ * Adding an absolute-score band (score > 1.2) was measured on the original
+ * table and rejected (one more wrong commit for one more false positive
+ * and a second knob); re-measure before reconsidering it.
  */
 const val LOW_CONFIDENCE_MARGIN = 0.25f
 

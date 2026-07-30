@@ -449,4 +449,109 @@ class KeyboardViewModelTest {
         assertNull(vm.state.value.swipedWord)
         assertEquals(true, vm.state.value.lastCommitWasSwipe)
     }
+
+    @Test
+    fun `failed-swipe offer stores offers and letters, clears the strip pair, keeps the swipe flag`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+
+        val effect = vm.onAction(
+            KeyboardAction.OfferFailedSwipe(listOf("keyboard", "keyword"), "k·e·y·b·o·a·r·d"),
+        )
+        assertNull(effect)
+        assertEquals(
+            FailedSwipe(listOf("keyboard", "keyword"), "k·e·y·b·o·a·r·d"),
+            vm.state.value.failedSwipe,
+        )
+        // The pair is cleared AS A PAIR — a stale green center among the
+        // offers would lie...
+        assertNull(vm.state.value.swipedWord)
+        assertEquals(emptyList<String>(), vm.state.value.swipeAlternates)
+        // ...but the failed gesture committed nothing: the last COMMIT still
+        // owns the word-delete.
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `failed-swipe offer does not consume one-shot shift`() {
+        // The offer tap's CommitWord consumes the still-armed shift and
+        // capitalizes the picked word — nothing was committed by the offer.
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+        assertEquals(ShiftMode.ONE_SHOT, vm.state.value.shiftMode)
+    }
+
+    @Test
+    fun `gesture markers do not clear the failed-swipe offers`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.GestureStarted)
+        vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+        vm.onAction(KeyboardAction.GestureEnded)
+        assertEquals(FailedSwipe(listOf("keyboard"), "k·e·y"), vm.state.value.failedSwipe)
+    }
+
+    @Test
+    fun `any other input action clears the failed-swipe offers`() {
+        val clearingActions = listOf(
+            KeyboardAction.InsertText("a"),
+            KeyboardAction.Enter,
+            KeyboardAction.MoveCursor(-1),
+            KeyboardAction.SwitchLayout(LayoutId.SYMBOLS),
+            KeyboardAction.Shift,
+            KeyboardAction.CapsLock,
+            KeyboardAction.PasteClip("clip"),
+            KeyboardAction.ToggleProofread,
+            KeyboardAction.Backspace, // armed by the commit: word-delete path
+        )
+        for (action in clearingActions) {
+            val vm = viewModel()
+            vm.onAction(KeyboardAction.CommitWord("hello"))
+            vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+            vm.onAction(action)
+            assertNull("after $action", vm.state.value.failedSwipe)
+        }
+    }
+
+    @Test
+    fun `voice transitions and field starts clear the failed-swipe offers`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+        vm.setVoiceState(VoiceState.LISTENING)
+        assertNull(vm.state.value.failedSwipe)
+
+        val fieldStart = viewModel()
+        fieldStart.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+        fieldStart.clearSwipeAlternates()
+        assertNull(fieldStart.state.value.failedSwipe)
+    }
+
+    @Test
+    fun `offer-tap commit lands like a decoder commit and supersedes the offers`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard", "keyword"), "k·e·y"))
+
+        // The gesture loop builds exactly this CommitWord from the tapped
+        // cell: picked word, the failed trail's letters, remaining offers.
+        val effect = vm.onAction(KeyboardAction.CommitWord("keyboard", "k·e·y", listOf("keyword")))
+        assertEquals(KeyboardEffect.CommitWord("keyboard", "k·e·y"), effect)
+        assertEquals(true, vm.state.value.lastCommitWasSwipe)
+        assertEquals("keyboard", vm.state.value.swipedWord)
+        assertEquals(listOf("keyword"), vm.state.value.swipeAlternates)
+        assertNull(vm.state.value.failedSwipe)
+        // Armed like any swipe commit: the first backspace word-deletes it.
+        assertEquals(KeyboardEffect.DeleteWordBackward, vm.onAction(KeyboardAction.Backspace))
+    }
+
+    @Test
+    fun `offer-tap commit under one-shot shift capitalizes the picked word`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.Shift)
+        vm.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard", "keyword"), "k·e·y"))
+        vm.onAction(KeyboardAction.CommitWord("keyboard", "k·e·y", listOf("keyword")))
+        assertEquals("Keyboard", vm.state.value.swipedWord)
+        assertEquals(listOf("Keyword"), vm.state.value.swipeAlternates)
+        assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
+    }
 }

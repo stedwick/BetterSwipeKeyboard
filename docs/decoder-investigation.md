@@ -1119,3 +1119,92 @@ lose the free anchor (pass 2 gains).
   the outcome didn't change.
 - set4 excellent #23 + example #25 (wild first attempts, silence by
   design) + how #56 (control-sentence breach).
+
+## Addendum 6: the 'keyboard' overshoot-and-return fix (last-letter lift-off re-match)
+
+Data: 14 captured 'keyboard' swipes (`swipe_trails_word_keyboard.jsonl` in
+Philip's Downloads — the word was practically untypable by swipe).
+
+### Autopsy
+
+- Stock decoder: 7/14 commit. The 7 misses are all SILENT with 'keyboard'
+  as top-1 at 2.295–3.167 — just over MAX_COMMIT_SCORE 1.8.
+- The signature is overshoot-and-return on the final D: first-basin
+  matching locks d at the first approach mid-trail (charged
+  0.286–0.939kw); the finger's genuine return visit (often the trail's
+  closest approach to the key) sits in a LATER basin the first-basin rule
+  can never reach, and the post-match arc pays unexplained-tail on top.
+- This is NOT the excellent-class pile-up (multi-term accumulation landing
+  1.8–2.7 with no dominant term): here one structural mis-match produces
+  most of the cost, and fixing the match drops totals by 0.9–1.5 in one
+  move.
+
+### The lever
+
+The last letter — and only it, so no stolen match can cascade — may
+re-match into the basin still open at the trail's last point. Gates, all
+measured: a basin must have closed (depart-and-return), the re-match must
+beat the stock match, and it must land within REBASIN_RADIUS_KEYS 0.8kw.
+~30 lines + constant in SwipeDecoder.kt; KDoc carries the reasoning.
+
+### Measured (production decoder; all six fixture sets + the 14 trails)
+
+- keyboard set: **12/14 commit** (was 7/14). Residuals #0 (1.905) and #7
+  (1.909) are a DIFFERENT class: backtrack-dominated (r→d leg btrk
+  1.45/0.99kw over 22/18 points) — the finger zigzags, and no endpoint
+  lever fixes a zigzag. Carried by the failed-swipe alternates strip
+  (phase 2, same plan).
+- Fixtures: **234/260 → 237/260** (13/32/34/60/62/36). Flips: +dog #8,
+  +his #14, +fix #40 (set5), +and #2 (set6) — all overshoot-and-return
+  lift-offs; −lazy #34 (set3, lazy→last): a LOWERED ratchet, explicitly
+  signed off by Philip — the trail's lift-off basin sits 0.41kw from Y vs
+  0.49kw from T (genuine geometric ambiguity) and 'last' (rank 136)
+  outranks 'lazy' (rank 4711), so frequency arbitrates exactly as the
+  signed-off straight-trail rule prescribes.
+- Radius grid {0.5, 0.7, 0.8, 1.0}: 0.5/0.7 miss dog #8 (236/260); 1.0
+  flips set1#15 lazy→kay (breaks the set-1 13-ratchet). 0.8 is the
+  max-win point with no extra loss.
+- Confidence recalibration (a real re-run of the margin table, not
+  hand-moved numbers): 9/17 wrong flagged, 15/237 correct (6.3%) at the
+  unchanged 0.25 knee — denominator changes, not flag-rate changes (four
+  wrong commits became correct swipes; the wrong pool shrank 20→17).
+- Synthetic guards (`swipe/SwipeRebasinTest.kt`): overshoot-and-return
+  commits the intended word clear of its plural; a drift lift-off near a
+  foreign key summons nothing; a wild excursion still culls.
+- The investigation's instrumented replica remains parity-exact with the
+  production decoder at the production radius (max top-5 score delta
+  4.8e-7 over the 14 trails).
+
+### New measured dead ends
+
+- **Ungated re-matching** (no basin-closed / closer-than-stock / radius
+  gates, or re-matching non-final letters): impostors re-claim foreign
+  end-keys. The gates exist because the geometric ambiguity is real —
+  lazy→last happened WITH the gates.
+- **Salience/dwell evidence gates at the re-match point**: re-silence the
+  genuine overshoots — the finger slides through the return without
+  lingering, so evidence-gating rejects exactly the class it was meant to
+  rescue.
+
+### The plural contest (synthetic-probe lesson)
+
+On clean synthetic overshoot trails the live competitor is the PLURAL
+("keyboards"): it matches d as a MIDDLE letter at the first pass and parks
+s at the trail-end clamp (tail free, distance ~1.1kw spread over 9
+letters). On a collinear overshoot (past d along the leg) the re-match
+trades the tail for backtrack (~0.68kw on the return leg) and gains only
+~0.15 — the plural still wins; on a side overshoot (return not opposed to
+the leg) the re-match gains ~0.84 and keyboard wins 1.44 clear. Lessons:
+overshoot geometry decides which term eats the win, and longer-word
+competitors parking at the clamp are the pressure to check in guard
+design. On the real 14 trails the plural never stole (messy prefixes
+scale the extra-letter cost up).
+
+### Superseded "remaining misses" notes (previous session's list)
+
+- set5 dog #8 / his #14 / fix #40 and set6 and #2 were filed under
+  "post-word drag class (PLAN-DRAG)" / "mid-trail bottom-row dip" — all
+  four are FIXED by the re-match: their real disease was the last-letter
+  overshoot-and-return (and #2's m-region dip note was geometry-true but
+  not the killer). PLAN-DRAG's remaining members: set3 mother x2, set4
+  the #48 / past #35 / nine #31 / nice #32, set5 minimum #13.

@@ -78,6 +78,7 @@ import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import com.example.betterswipekeyboard.swipe.crossedLetters
+import com.example.betterswipekeyboard.swipe.failedSwipeOffers
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import com.example.betterswipekeyboard.swipe.swipeAlternates
 import com.example.betterswipekeyboard.swipe.swipeConfidence
@@ -219,12 +220,16 @@ fun KeyboardScreen(
     // width (the IME spans the screen): 2 alts on phones, 4 on wide screens.
     // The gesture loop reads them via rememberUpdatedState for the same
     // pointerInput-capture reason as currentState.
-    val altCells = stripCells(
-        state.swipedWord,
-        state.swipeAlternates,
-        alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat()),
-    )
+    // A FAILED swipe's near-miss offers take over the strip (plain cells,
+    // NO center — nothing was committed, a green center would lie); the
+    // OfferFailedSwipe reduction already cleared the pair, so the Elvis is
+    // belt-and-braces. maxAlternates is hoisted so the decode branch caps
+    // offers from the same width-adaptive count.
+    val maxAlternates = alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat())
+    val altCells = state.failedSwipe?.let { failedOfferCells(it.offers) }
+        ?: stripCells(state.swipedWord, state.swipeAlternates, maxAlternates)
     val currentAltCells by rememberUpdatedState(altCells)
+    val currentMaxAlternates by rememberUpdatedState(maxAlternates)
     val scope = rememberCoroutineScope()
     val trailStrokeWidth = with(LocalDensity.current) { 10.dp.toPx() }
     // Canonical character-key width: one slot of a full 10-key row. Every
@@ -430,18 +435,35 @@ fun KeyboardScreen(
                                                     ProofreaderStatus.AVAILABLE,
                                                 currentState.layout,
                                             )?.let(onAction)
-                                            // Alternates-strip tap: replace
-                                            // the just-swiped word with the
-                                            // picked alternate (the reducer
-                                            // ignores it when unarmed). The
-                                            // green center cell is the
-                                            // committed word itself — tapping
-                                            // it is a no-op.
-                                            downAlt != null ->
-                                                currentAltCells
-                                                    .getOrNull(downAlt)
-                                                    ?.takeUnless { it.isCenter }
-                                                    ?.let { onAction(KeyboardAction.SelectAlternate(it.word)) }
+                                            // Alternates-strip tap. A FAILED
+                                            // swipe's offer commits as a word:
+                                            // the normal CommitWord path gives
+                                            // leading-space rules, word-delete
+                                            // arming and the green-center strip
+                                            // (remaining offers as alternates),
+                                            // and the trail's crossed letters
+                                            // ride along as proofreader
+                                            // evidence. A committed strip's
+                                            // off-center cell replaces the word;
+                                            // its green center (the committed
+                                            // word itself) is a no-op.
+                                            downAlt != null -> {
+                                                val failed = currentState.failedSwipe
+                                                val cell = currentAltCells.getOrNull(downAlt)
+                                                when {
+                                                    failed != null && cell != null ->
+                                                        onAction(
+                                                            KeyboardAction.CommitWord(
+                                                                cell.word,
+                                                                failed.letters,
+                                                                failed.offers - cell.word,
+                                                            ),
+                                                        )
+                                                    cell != null && !cell.isCenter ->
+                                                        onAction(KeyboardAction.SelectAlternate(cell.word))
+                                                    else -> Unit
+                                                }
+                                            }
                                             else -> downKey?.let { onAction(it.tapAction()) }
                                         }
 
@@ -680,14 +702,19 @@ fun KeyboardScreen(
                                         onSwipeDecoded(decodedTrail, keyCenters, keyWidth, results)
                                         val best = results.firstOrNull()
                                         val confidence = swipeConfidence(results)
+                                        // The trail's crossed keys, hoisted:
+                                        // a commit AND a failed swipe's offers
+                                        // both carry them as proofreader
+                                        // evidence.
+                                        val letters = crossedLetters(
+                                            decodedTrail.map { it.position },
+                                            keyCenters,
+                                        )
                                         if (best != null && confidence != SwipeConfidence.FAILED) {
                                             onAction(
                                                 KeyboardAction.CommitWord(
                                                     best.word,
-                                                    crossedLetters(
-                                                        decodedTrail.map { it.position },
-                                                        keyCenters,
-                                                    ),
+                                                    letters,
                                                     // Runner-ups for the
                                                     // alternates strip; the
                                                     // reducer stores them in
@@ -696,6 +723,19 @@ fun KeyboardScreen(
                                                     swipeAlternates(results),
                                                 ),
                                             )
+                                        } else if (confidence == SwipeConfidence.FAILED) {
+                                            // Near-miss rescue: top-1 inside
+                                            // the offer band populates the
+                                            // strip as one-tap insertions
+                                            // (nothing committed; the red
+                                            // flash below still fires). An
+                                            // empty band emits nothing — the
+                                            // placeholder shows, exactly as
+                                            // before.
+                                            failedSwipeOffers(results, currentMaxAlternates)
+                                                ?.let {
+                                                    onAction(KeyboardAction.OfferFailedSwipe(it, letters))
+                                                }
                                         }
                                         when (confidence) {
                                             SwipeConfidence.CONFIDENT -> {

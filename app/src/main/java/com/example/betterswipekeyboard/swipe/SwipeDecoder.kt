@@ -50,7 +50,14 @@ const val MAX_COMMIT_SCORE = 1.8f
  *    mid-sweep ("swipe"'s i) still finds a cheap match on the passing
  *    trail, but a letter the trail never visits (the second M of "mummy"
  *    on a straight M→Y swipe) must match far off the trail and pays for it.
- *    Doubled letters still match a single pass over one key.
+ *    Doubled letters still match a single pass over one key. The LAST
+ *    letter alone may re-match at a later approach basin (the basin still
+ *    open at lift-off, within [REBASIN_RADIUS_KEYS]): a finger that
+ *    overshoots the final key and returns to it otherwise locks the
+ *    letter at the first approach mid-trail and pays distance + tail arc
+ *    for a visit that genuinely happened ("keyboard"'s d — measured on
+ *    captured real-hand trails). No letter follows the final one, so the
+ *    re-match cannot cascade the way a stolen mid-word match would.
  * 2. Line conformance (SHARK2's "tunnel"): between two consecutive matched
  *    letters, the trail should follow the straight key-to-key segment.
  *    Off-segment distance within [TUNNEL_RADIUS_KEYS] is free (users cut
@@ -157,6 +164,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val matchIndices = IntArray(keys.size)
         var distanceCost = 0f
         var searchFrom = 0
+        var lastLetterCharge = 0f
         for (i in keys.indices) {
             val center = keys[i]
             var bestIdx = searchFrom
@@ -179,10 +187,75 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             val salienceMultiplier =
                 if (bestIdx == 0 || bestIdx == trail.size - 1) 1f
                 else 1f + SALIENCE_WEIGHT * salience[bestIdx]
-            distanceCost += (sqrt(bestSq) / keyWidth) * salienceMultiplier
+            val charge = (sqrt(bestSq) / keyWidth) * salienceMultiplier
+            distanceCost += charge
+            lastLetterCharge = charge
             // Letters after the trail's end (clamp) match its last point at
             // full distance — a word longer than the trail must pay for it.
             searchFrom = min(bestIdx + 1, trail.size - 1)
+        }
+
+        // Last-letter lift-off-basin re-match (overshoot-and-return). First-
+        // basin rigidity is right for every letter but the last — a stolen
+        // mid-word match cascades every following letter off the trail, but
+        // no letter follows the final one, so nothing can cascade. The
+        // failure this fixes: the finger overshoots the last key and
+        // RETURNS to it (real lift-off behavior — 7 of 14 captured
+        // "keyboard" swipes); stock matching locks the letter at the first
+        // approach mid-trail, and the word pays distance + unexplained tail
+        // for a visit that genuinely happened, in a basin the first-basin
+        // rule can never reach. So the last letter may re-match, under
+        // three gates measured on the captured sets: the finger must have
+        // departed and returned (a basin must have closed — otherwise the
+        // stock match already holds the best point of the still-open first
+        // basin); the re-match is taken from the basin still open at the
+        // trail's last point (the lift-off approach — a mid-trail drift
+        // pass over a foreign key must not claim it, the same
+        // deliberate-vs-drift distinction as the lift-off salience
+        // grading); and the re-match must beat the stock match within
+        // REBASIN_RADIUS_KEYS (the undershoot clamp above stays free — the
+        // re-match only wins when the return visit is genuinely closer).
+        // Two rejected variants, both measured on the captured sets: an
+        // UNGATED re-match let impostor words re-claim foreign end-keys
+        // (the lazy→last flip shows the geometric ambiguity is real), and
+        // requiring salience/dwell evidence at the re-match point
+        // re-silenced the genuine overshoots — the finger slides through
+        // the return without lingering, so evidence-gating rejects exactly
+        // the class it was meant to rescue.
+        if (keys.size >= 2) {
+            val lastIdx = keys.size - 1
+            val lastKey = keys[lastIdx]
+            val stockDist = sqrt(sqDist(trail[matchIndices[lastIdx]].position, lastKey))
+            var p = min(matchIndices[lastIdx - 1] + 1, trail.size - 1)
+            var basinBestSq = sqDist(trail[p].position, lastKey)
+            var basinBestIdx = p
+            var basinsClosed = 0
+            while (p + 1 < trail.size) {
+                p++
+                val sq = sqDist(trail[p].position, lastKey)
+                if (sq < basinBestSq) {
+                    basinBestSq = sq
+                    basinBestIdx = p
+                } else if (sqrt(sq) - sqrt(basinBestSq) > LETTER_DEPART_KEYS * keyWidth) {
+                    basinsClosed++
+                    basinBestSq = sq
+                    basinBestIdx = p
+                }
+            }
+            val finalDist = sqrt(basinBestSq)
+            if (basinsClosed > 0 && finalDist < stockDist &&
+                finalDist <= REBASIN_RADIUS_KEYS * keyWidth
+            ) {
+                // Same endpoint exemption as the stock match above: the
+                // hardcoded endpoint salience is evidence-free and must not
+                // amplify a genuine lift-off match. (basinBestIdx is never
+                // 0 — the scan starts past the penultimate match.)
+                val rebasinSalienceMultiplier =
+                    if (basinBestIdx == trail.size - 1) 1f
+                    else 1f + SALIENCE_WEIGHT * salience[basinBestIdx]
+                distanceCost += finalDist / keyWidth * rebasinSalienceMultiplier - lastLetterCharge
+                matchIndices[lastIdx] = basinBestIdx
+            }
         }
         distanceCost /= keys.size
 
@@ -589,6 +662,17 @@ class SwipeDecoder(private val dictionary: Dictionary) {
          * weaker shape discrimination. Tuning starting point.
          */
         const val LETTER_DEPART_KEYS = 0.5f
+
+        /**
+         * The last letter may re-match into the lift-off basin when the
+         * basin's closest approach is within this many key-widths of the
+         * key (overshoot-and-return — see score()). Measured on the six
+         * captured fixture sets plus 14 captured "keyboard" trails: 0.5/0.7
+         * miss one fixture win (set5 dog#8); 1.0 flips set1#15 lazy→kay,
+         * breaking the set-1 ratchet. 0.8 is the grid's max-win point with
+         * no extra loss (12/14 keyboard commits, fixtures 237/260).
+         */
+        const val REBASIN_RADIUS_KEYS = 0.8f
 
         /** A region must stay within this radius to count as a hesitation. */
         const val STATIONARY_RADIUS_KEYS = 0.25f
