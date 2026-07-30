@@ -218,8 +218,17 @@ class SwipeRealTrailAccuracyTest {
          * salient key): lazy #34 fixed — the drift lift-off's free anchor
          * had been handing 'lay' its y. 34 -> 35, earned. The mother
          * misses shuffle impostors (#3 now silence via 'misinterpret',
-         * #21 wrong-commits 'norbert') — same class, unchanged count. */
-        const val MIN_COMMITTED_CORRECT_SET3 = 35
+         * #21 wrong-commits 'norbert') — same class, unchanged count.
+         *
+         * Last-letter lift-off re-match (overshoot-and-return,
+         * REBASIN_RADIUS_KEYS 0.8 — the 'keyboard' fix): lazy #34 flips
+         * back to 'last' (-0.54 over lazy's 0.13) — a LOWERED floor,
+         * 35 -> 34, explicitly signed off by Philip: the trail's lift-off
+         * basin sits 0.41kw from Y vs 0.49kw from T, genuine geometric
+         * ambiguity, and 'last' (rank 136) outranks 'lazy' (rank 4711),
+         * so frequency arbitrates the tie exactly as the signed-off
+         * straight-trail rule prescribes. Nothing else in this set moves. */
+        const val MIN_COMMITTED_CORRECT_SET3 = 34
 
         /** Fourth capture (ten-sentence TDD corpus, normal speed) baseline
          * at the B3 decoder: 60/67. The seven misses, by class:
@@ -249,8 +258,14 @@ class SwipeRealTrailAccuracyTest {
          * had #60 FLIPPED to has (by 0.10) — the symmetric cost: that
          * lift-off also shows no deceleration, but the drift happened to
          * end 0.38kw from the RIGHT key (d), so the dropped anchor was
-         * luck helping a thin margin, not evidence. Net 58 -> 59, earned. */
-        const val MIN_COMMITTED_CORRECT_SET5 = 59
+         * luck helping a thin margin, not evidence. Net 58 -> 59, earned.
+         *
+         * Last-letter lift-off re-match (REBASIN_RADIUS_KEYS 0.8): dog #8
+         * (doping -> dog), his #14 (hours -> his) and fix #40 (fox -> fix)
+         * — all three were overshoot-and-return lift-offs whose genuine
+         * final visit sat in a basin first-basin matching could not reach.
+         * 59 -> 62, earned. */
+        const val MIN_COMMITTED_CORRECT_SET5 = 62
 
         /** Sixth capture (short-word paragraph, two passes) baseline on
          * feature/endpoint-evidence 103d75b: 34/38. Pass 1 (deliberate
@@ -271,7 +286,11 @@ class SwipeRealTrailAccuracyTest {
          * as set5's we #36) — 34 -> 35, earned. Pass 1 unchanged (18/19):
          * deliberate stops decelerate, so their end regions are
          * non-isolated and keep their keys. Remaining: and #2, you #30
-         * (yoy), hello #36 (help). */
-        const val MIN_COMMITTED_CORRECT_SET6 = 35
+         * (yoy), hello #36 (help).
+         *
+         * Last-letter lift-off re-match (REBASIN_RADIUS_KEYS 0.8): and #2
+         * fixed (amd -> and, the pass-1 holdout — the deliberate stop
+         * overshot D and returned). 35 -> 36, earned. */
+        const val MIN_COMMITTED_CORRECT_SET6 = 36
     }
 }

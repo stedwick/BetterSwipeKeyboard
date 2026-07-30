@@ -196,7 +196,16 @@ Data flow (deliberately layered, keep it this way):
      jitter decides which of two visits to the same key wins, and a stolen
      match cascades every following letter off the trail ("follow"
      regressed to "flow" until first-basin matching). Crossed letters
-     ("swipe"'s i) match cheaply on the passing trail.
+     ("swipe"'s i) match cheaply on the passing trail. The LAST letter
+     alone may re-match at a later basin — the one still open at lift-off,
+     within `REBASIN_RADIUS_KEYS` 0.8 — because no letter follows it to
+     cascade: this fixes the overshoot-and-return signature (the finger
+     passes the final key, comes back to it, and first-basin matching
+     could never see the return visit; 7 of 14 captured "keyboard" swipes,
+     12/14 now commit). Gates measured on the captured sets: a basin must
+     have closed (depart-and-return), the re-match must beat the stock
+     match, and the radius holds — ungated re-matching let impostors claim
+     foreign end-keys.
   2. Line conformance (SHARK2's tunnel): trail points between two matched
      letters must follow the key-to-key segment; free inside 0.5
      key-widths, linear to a 2.0 saturation cap, hard cull at 1.75
@@ -233,8 +242,9 @@ Data flow (deliberately layered, keep it this way):
   swipe (no candidate below the cutoff, nothing committed) flashes the
   trail RED (`FailedSwipeFlash`); a commit with a close runner-up
   (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.25, calibrated on the
-  six captured trail sets — flags 11/20 wrong commits at 6.0% false
-  positives) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
+  six captured trail sets — flags 9/17 wrong commits at 6.3% false
+  positives, recalibrated after the re-match: the wrong pool shrank
+  20→17 because four wrong commits became correct swipes) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
   confident commits flash nothing. Segment alpha in
   `ui/keyboard/TrailFade.kt`.
 - Tuning rules learned the hard way (the test suite guards these):
@@ -246,7 +256,10 @@ Data flow (deliberately layered, keep it this way):
     no neighbor-tolerant LCS: SHARK2 tried elasticity and ripped it out
     (it destroys discrimination in a crowded template space), and our own
     history agrees (short junk like "role", "keynote" beat intended words
-    when matching was tolerant).
+    when matching was tolerant). The one measured exception to first-basin
+    rigidity is the last letter's gated lift-off-basin re-match (see term
+    1) — rigid everywhere else, one second chance exactly where no
+    cascade can follow.
   - **No trail-length gates.** The old two-letter gate (≤ 3.5 key widths)
     was deleted: two-letter words compete like any other. Straight-trail
     ties (e.g. "ak" vs "ask" on a straight A→K line — both tunnel
