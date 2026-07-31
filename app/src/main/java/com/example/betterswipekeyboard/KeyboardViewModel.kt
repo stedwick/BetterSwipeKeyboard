@@ -30,6 +30,24 @@ class KeyboardViewModel : ViewModel() {
             val text = if (current.isCaps) action.text.uppercase() else action.text
             consumeOneShot()
             clearSwipeFlag()
+            // Tap streak: TAPPING (not swiping) TAP_TYPING_DISABLE_THRESHOLD
+            // characters suspends auto-proofreading — fast tap-typing means the
+            // user is mid-flow and the 2s AI pass is unwanted. Only an active
+            // auto mode can be suspended: taps while the USER has it off must
+            // not arm proofreadSuspendedByTaps, or the next swipe would
+            // restore proofreading against explicit user intent.
+            _state.update {
+                val streak = it.typedTapStreak + 1
+                if (it.proofreadAuto && streak >= TAP_TYPING_DISABLE_THRESHOLD) {
+                    it.copy(
+                        proofreadAuto = false,
+                        proofreadSuspendedByTaps = true,
+                        typedTapStreak = 0,
+                    )
+                } else {
+                    it.copy(typedTapStreak = streak)
+                }
+            }
             KeyboardEffect.CommitText(text)
         }
 
@@ -51,6 +69,13 @@ class KeyboardViewModel : ViewModel() {
                     // offer tap itself commits through here and lands the
                     // picked word in the center cell.
                     failedSwipe = null,
+                    // A swipe ends the tap streak and restores
+                    // auto-proofreading if (and only if) the streak rule
+                    // suspended it ("swiping remembers the AI was on") —
+                    // user-off stays off because suspended is false then.
+                    typedTapStreak = 0,
+                    proofreadAuto = it.proofreadAuto || it.proofreadSuspendedByTaps,
+                    proofreadSuspendedByTaps = false,
                 )
             }
             KeyboardEffect.CommitWord(
@@ -173,6 +198,13 @@ class KeyboardViewModel : ViewModel() {
                     swipeAlternates = emptyList(),
                     failedSwipe = null,
                     proofreadAuto = !it.proofreadAuto,
+                    // Manual toggle is explicit user intent: it clears the
+                    // tap-streak suspension memory (toggling ON while
+                    // suspended stays on through the next swipe; toggling
+                    // OFF leaves nothing to restore) and starts a fresh
+                    // streak.
+                    proofreadSuspendedByTaps = false,
+                    typedTapStreak = 0,
                 )
             }
             null
@@ -308,5 +340,15 @@ class KeyboardViewModel : ViewModel() {
         ShiftMode.ONE_SHOT -> word.replaceFirstChar { it.uppercase() }
         ShiftMode.LOCKED -> word.uppercase()
         ShiftMode.OFF -> word
+    }
+
+    private companion object {
+        /**
+         * Tapped characters in a row that suspend auto-proofreading (Philip's
+         * rule: three or more tapped characters turn the AI off; the next
+         * swipe restores it if it was on — see
+         * [KeyboardState.proofreadSuspendedByTaps]).
+         */
+        const val TAP_TYPING_DISABLE_THRESHOLD = 3
     }
 }

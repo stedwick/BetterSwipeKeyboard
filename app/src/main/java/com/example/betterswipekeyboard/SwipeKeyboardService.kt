@@ -422,6 +422,24 @@ class SwipeKeyboardService : InputMethodService(),
             }
             null -> Unit
         }
+        // Toggling the AI proofreader ON fires one immediate pass over the
+        // current window ("tap to proofread"), then the normal 2s debounce
+        // resumes. The pended-job cancel must come FIRST: a debounce job from
+        // an earlier tap could still be sleeping and would race the immediate
+        // pass through runProofread's proofreadInFlight guard. runProofread is
+        // called directly, not via scheduleAutoProofread: the gestureActive
+        // deferral exists for mid-gesture text input, and a toggle tap is not
+        // text input. The dirty flag is cleared so the pending state doesn't
+        // schedule a redundant second pass 2s later.
+        if (action is KeyboardAction.ToggleProofread && viewModel.state.value.proofreadAuto) {
+            autoProofreadJob?.cancel()
+            textDirtySinceProofread = false
+            runProofread(ProofreadMode.TYPED)
+        }
+        // Whenever auto-proofread is off — manual toggle-off or the
+        // tap-streak suspension (KeyboardState.proofreadSuspendedByTaps) —
+        // no debounce job pended by an earlier text change may survive.
+        if (!viewModel.state.value.proofreadAuto) autoProofreadJob?.cancel()
         // Emoji-panel suggestions: refresh on opening the panel and after
         // any text change (emoji insert, backspace, ...) while it is open;
         // clear when switching away so stale suggestions never linger.
