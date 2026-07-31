@@ -78,6 +78,7 @@ import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import com.example.betterswipekeyboard.swipe.crossedLetters
+import com.example.betterswipekeyboard.swipe.distinctLetterKeysCrossed
 import com.example.betterswipekeyboard.swipe.failedSwipeOffers
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
 import com.example.betterswipekeyboard.swipe.swipeAlternates
@@ -129,6 +130,18 @@ private val LowConfidenceFlash = Color(0xFFFFD60A)
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
+
+/**
+ * A letters-layout drag is not a swipe until its trail has crossed this many
+ * DISTINCT letter keys (distinctLetterKeysCrossed). A tap whose finger drifts
+ * past the touch slop jitters inside ONE key; gating on two keeps that
+ * drift-tap out of the decoder (a full candidate-set score on the main
+ * thread) and the gesture loop falls back to typing the down key instead —
+ * a drift-tap is a wobbly tap, not a failed swipe. No word is lost in
+ * principle: the dictionary has no one-letter words, so every decodable word
+ * visits at least two letter keys.
+ */
+private const val MIN_SWIPE_LETTERS = 2
 
 /** Swipe-feedback flash fade-out duration (tunable starting point). */
 private const val TRAIL_FLASH_FADE_MS = 400
@@ -422,6 +435,11 @@ fun KeyboardScreen(
                                     // decode alike) starts there — the prefix
                                     // is approach, not word.
                                     var trailStart = -1
+                                    // Distinct letter keys the trail has
+                                    // crossed so far; the swipe gate
+                                    // (MIN_SWIPE_LETTERS) that keeps
+                                    // drift-taps out of the decoder.
+                                    var lettersCrossed = 0
                                     when (outcome) {
                                         GestureOutcome.TAP -> when {
                                             // Utility-row tap, re-dispatched
@@ -495,7 +513,14 @@ fun KeyboardScreen(
                                                 // that never touches a letter
                                                 // is no swipe at all —
                                                 // nothing drawn, nothing
-                                                // decoded. Only the space bar
+                                                // decoded. A drag that
+                                                // touches letters but never
+                                                // crosses MIN_SWIPE_LETTERS
+                                                // distinct letter keys is no
+                                                // swipe either: it is a
+                                                // drift-tap and falls back to
+                                                // typing the down key (below).
+                                                // Only the space bar
                                                 // itself keeps cursor drag.
                                                 // A new trail supersedes a
                                                 // swipe-feedback flash still
@@ -527,8 +552,30 @@ fun KeyboardScreen(
                                                                     letterRects,
                                                                 )
                                                         }
+                                                        // Swipe gate: the
+                                                        // trail only becomes
+                                                        // visible (and later
+                                                        // decodable) once it
+                                                        // has crossed
+                                                        // MIN_SWIPE_LETTERS
+                                                        // distinct letter
+                                                        // keys. Recomputed
+                                                        // per move only while
+                                                        // the gate is
+                                                        // unpassed — same
+                                                        // cost class as the
+                                                        // firstLetterContact-
+                                                        // Index recompute
+                                                        // above.
+                                                        if (lettersCrossed < MIN_SWIPE_LETTERS) {
+                                                            lettersCrossed =
+                                                                distinctLetterKeysCrossed(
+                                                                    trail.map { it.position },
+                                                                    letterRects,
+                                                                )
+                                                        }
                                                         trailPoints =
-                                                            if (trailStart >= 0) {
+                                                            if (lettersCrossed >= MIN_SWIPE_LETTERS) {
                                                                 trail.subList(
                                                                     trailStart, trail.size,
                                                                 ).map { it.position.toOffset() }
@@ -544,9 +591,36 @@ fun KeyboardScreen(
                                                     // `pressed`, not `changedToUp()`.
                                                     if (!change.pressed) break
                                                 }
-                                                // Only a trail that reached a
-                                                // letter key is a swipe attempt.
-                                                swipeCompleted = trailStart >= 0
+                                                // Only a trail that crossed
+                                                // at least MIN_SWIPE_LETTERS
+                                                // distinct letter keys is a
+                                                // swipe attempt; anything
+                                                // shorter is a drift-tap.
+                                                swipeCompleted =
+                                                    trailStart >= 0 &&
+                                                        lettersCrossed >= MIN_SWIPE_LETTERS
+                                                if (!swipeCompleted) {
+                                                    // Drift-tap fallback: the
+                                                    // finger wandered past
+                                                    // the touch slop but the
+                                                    // trail never crossed a
+                                                    // second letter key —
+                                                    // that is a wobbly TAP,
+                                                    // not a swipe, so type
+                                                    // the down key exactly as
+                                                    // the TAP outcome would
+                                                    // (a backspace drift
+                                                    // deletes once, a shift
+                                                    // drift toggles caps; a
+                                                    // dead-space or utility-
+                                                    // row start has no
+                                                    // downKey and types
+                                                    // nothing). No trail was
+                                                    // ever drawn (gated
+                                                    // above) and no decode
+                                                    // runs.
+                                                    downKey?.let { onAction(it.tapAction()) }
+                                                }
                                             } else if (isSpaceBar(downKey)) {
                                                 // Space-bar drag: cursor
                                                 // control, in either layout.

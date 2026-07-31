@@ -34,6 +34,21 @@ data class KeyboardState(
     val proofreaderBackend: ProofreaderBackend = ProofreaderBackend.NONE,
     /** Auto-proofreading toggle: while on, text is proofread after 2s of idle. */
     val proofreadAuto: Boolean = false,
+    /**
+     * Consecutive tapped characters (InsertText actions) since the last swipe
+     * or manual proofread toggle. When the streak reaches the ViewModel's
+     * disable threshold while [proofreadAuto] is on, the reducer turns
+     * [proofreadAuto] off and arms [proofreadSuspendedByTaps].
+     */
+    val typedTapStreak: Int = 0,
+    /**
+     * True when [proofreadAuto] was turned off by the tap-streak rule rather
+     * than by the user: the next swipe (CommitWord) restores it ("swiping
+     * remembers the AI was on"). Taps while the USER has proofreading off
+     * never arm this, so a swipe can't resurrect proofreading against
+     * explicit intent; a manual toggle clears it (user intent wins).
+     */
+    val proofreadSuspendedByTaps: Boolean = false,
     val proofreadInFlight: Boolean = false,
     /** While not OFF, the key rows are replaced by the voice panel. */
     val voice: VoiceState = VoiceState.OFF,

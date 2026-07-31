@@ -67,7 +67,13 @@ Data flow (deliberately layered, keep it this way):
    (`firstLetterContactIndex` in `swipe/TrailTrim.kt`; the off-letter
    prefix is approach, not word, and would poison the decoder's letter
    alignment). A drag that never touches a letter is not a swipe:
-   nothing drawn, nothing decoded. Taps on the gesture-mode
+   nothing drawn, nothing decoded. A drag whose trail never crosses at
+   least two DISTINCT letter keys is not a swipe either
+   (`distinctLetterKeysCrossed` in `swipe/TrailTrim.kt`,
+   `MIN_SWIPE_LETTERS` in `KeyboardScreen.kt`): it is a drift-tap — a
+   wobbly tap — and falls back to typing the down key (`tapAction()`),
+   so the letter is typed (a backspace drift deletes once, a dead-space
+   drag types nothing) and the decoder never runs for it. Taps on the gesture-mode
    utility row are re-dispatched semantically in the loop
    (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
    `onSettingsClick` callback). The symbols and numeric layouts keep no
@@ -473,6 +479,25 @@ Data flow (deliberately layered, keep it this way):
   wasted API calls after no-op gestures). Typed-mode scheduling during
   a gesture is deferred to finger-up (`gestureActive`), so a held
   backspace doesn't cancel + relaunch the job on every repeat step.
+  Two tap/toggle behaviors on top of the debounce (reducer-owned state,
+  service-side timing):
+  - Tapping (not swiping) 3+ characters suspends auto-proofreading:
+    `KeyboardState.typedTapStreak` counts consecutive `InsertText`s; at
+    `TAP_TYPING_DISABLE_THRESHOLD` (3, `KeyboardViewModel`) while
+    `proofreadAuto` is on, the reduction flips it off and arms
+    `proofreadSuspendedByTaps`. The next swipe (`CommitWord`) restores
+    it ("swiping remembers the AI was on"); taps while the USER has it
+    off never arm the flag (a swipe must not resurrect proofreading
+    against explicit intent), and a manual toggle clears it (user
+    intent wins, fresh streak). Backspace/Enter/cursor moves don't
+    break the streak; only `CommitWord` and `ToggleProofread` reset it.
+  - Toggling the AI key ON fires ONE immediate proofread of the current
+    window (`runProofread` directly, bypassing the gestureActive
+    deferral — a toggle tap is not text input), with the pended
+    debounce job cancelled FIRST so it can't race the immediate pass;
+    then the 2 s debounce resumes. Whenever `proofreadAuto` is off
+    (manually or suspended), no pended debounce job survives (both in
+    `SwipeKeyboardService.onKeyboardAction`).
 - `SentenceExtractor.currentWindow` pulls the current fragment *plus the
   previous sentence* from text before the cursor, so a continuation
   fragment ("and bought ...") can be merged back into a sentence an
