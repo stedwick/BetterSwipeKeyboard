@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -107,6 +108,11 @@ fun SwipeAlternatesStrip(
                         color = if (cell.isCenter) CommittedWordGreen else colors.keyText,
                         fontSize = 16.sp,
                         fontWeight = if (cell.isCenter) FontWeight.Bold else FontWeight.Normal,
+                        // Live-gesture-only leader mark: the word a finger-up
+                        // would commit right now is underlined — never green,
+                        // which stays reserved for the committed center cell.
+                        textDecoration =
+                            if (cell.isLiveLeader) TextDecoration.Underline else null,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

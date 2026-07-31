@@ -209,6 +209,30 @@ Data flow (deliberately layered, keep it this way):
   remaining offers, and SwipedWordLog recording with the failed trail's
   path evidence. After the tap the strip looks exactly like a decoder
   commit.
+- LIVE suggestions while swiping: the trail-append loop fires throttled
+  background decodes of the trimmed trail-so-far (pure gate
+  `shouldRunLiveDecode` in `swipe/LiveDecodeThrottle.kt` — ≥10 trail points,
+  ≥120 ms and ≥6 new points since the last decode, tuning starting points;
+  skip while a decode is still running, never preempt). The decode runs on
+  `Dispatchers.Default` from the composable's existing `rememberCoroutineScope`
+  (the fade-job scope), and a generation counter (`liveGen`, bumped by every
+  new decode and by gesture-end teardown, which also cancels the job) drops
+  stale results. Results land in `liveOffers` (`LiveOffers(words,
+  leaderWouldCommit)` in `ui/keyboard/StripCells.kt`) — TRANSIENT Compose
+  state like `trailPoints`, never `KeyboardState`, so 8 Hz updates cause no
+  reducer churn. The words reuse `failedSwipeOffers` (the 3.2 near-miss band,
+  width-adaptive cap); `leaderWouldCommit` is top-1's score <
+  `MAX_COMMIT_SCORE` — the honest rule: underline only what a finger-up would
+  commit right now (`isLiveLeader` on the FIRST cell only, rendered as
+  `TextDecoration.Underline` in `SwipeAlternatesStrip`, never green — green
+  stays reserved for the committed center). `altCells` prefers
+  failedSwipe → liveOffers → the commit strip; `liveOffers` is cleared at
+  every gesture end. CANCELED-swipe persistence: when the final decode's
+  near-miss band is empty but live offers exist, the FAILED branch emits
+  `OfferFailedSwipe(liveOffers.words, letters)` through the existing path, so
+  a canceled swipe's last suggestions stay tappable — WITHOUT the underline
+  (`failedOfferCells` never sets `isLiveLeader`: after finger-up nothing
+  auto-commits, so the mark would lie).
 
 ### Swipe decoding (`swipe/`)
 
