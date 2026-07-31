@@ -624,6 +624,15 @@ fun KeyboardScreen(
                                                         // of preempting it.
                                                         if (
                                                             trailStart >= 0 &&
+                                                            // Integration note
+                                                            // (tapfix + liveswipe):
+                                                            // without this conjunct
+                                                            // a long drift-tap
+                                                            // dwelling on one key
+                                                            // fires background
+                                                            // decodes that are
+                                                            // always discarded.
+                                                            lettersCrossed >= MIN_SWIPE_LETTERS &&
                                                             liveDecodeJob == null &&
                                                             shouldRunLiveDecode(
                                                                 nowMillis = change.uptimeMillis,
