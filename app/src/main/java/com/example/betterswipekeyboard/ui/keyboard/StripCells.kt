@@ -3,9 +3,24 @@ package com.example.betterswipekeyboard.ui.keyboard
 /**
  * Pure, unit-tested cell model for the swipe-alternates strip: the committed
  * word in the center ([isCenter], rendered green, tap = no-op) with the
- * score-ranked runner-ups flanking it.
+ * score-ranked runner-ups flanking it. [isLiveLeader] marks the cell a LIVE
+ * mid-swipe decode would commit if the finger lifted now (rendered underlined,
+ * never green — green is reserved for the committed center); it is set only by
+ * [liveOfferCells] and defaults to false everywhere else.
  */
-data class StripCell(val word: String, val isCenter: Boolean)
+data class StripCell(val word: String, val isCenter: Boolean, val isLiveLeader: Boolean = false)
+
+/**
+ * A LIVE mid-swipe decode's offers: [words] are the decoder's top candidates
+ * ranked top-1 first (the `failedSwipeOffers` band-filtered list, so top-1 is
+ * always `words.first()` whenever the list is non-empty) and
+ * [leaderWouldCommit] is true exactly when top-1's score is below
+ * MAX_COMMIT_SCORE — i.e. lifting the finger NOW would commit `words.first()`.
+ * The flag is live-gesture-only: it never enters KeyboardState (a persisted
+ * failed swipe's offers render without the leader mark, because after
+ * finger-up nothing would auto-commit anymore and the mark would lie).
+ */
+data class LiveOffers(val words: List<String>, val leaderWouldCommit: Boolean)
 
 /**
  * Strip width below which only TWO alternates show (one each side of the
@@ -52,3 +67,15 @@ fun stripCells(
  */
 fun failedOfferCells(offers: List<String>): List<StripCell> =
     offers.map { StripCell(it, isCenter = false) }
+
+/**
+ * Cells for a LIVE mid-swipe decode: plain cells in rank order (no center —
+ * nothing is committed), with the first cell (top-1) marked [StripCell.isLiveLeader]
+ * when it would commit on finger-up ([LiveOffers.leaderWouldCommit]). When the
+ * flag is false the cells are plain near-miss offers — underlining a leader
+ * that would NOT actually commit would lie.
+ */
+fun liveOfferCells(offers: LiveOffers): List<StripCell> =
+    offers.words.mapIndexed { index, word ->
+        StripCell(word, isCenter = false, isLiveLeader = index == 0 && offers.leaderWouldCommit)
+    }

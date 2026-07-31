@@ -72,6 +72,7 @@ import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
+import com.example.betterswipekeyboard.swipe.MAX_COMMIT_SCORE
 import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeConfidence
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
@@ -81,11 +82,14 @@ import com.example.betterswipekeyboard.swipe.crossedLetters
 import com.example.betterswipekeyboard.swipe.distinctLetterKeysCrossed
 import com.example.betterswipekeyboard.swipe.failedSwipeOffers
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
+import com.example.betterswipekeyboard.swipe.shouldRunLiveDecode
 import com.example.betterswipekeyboard.swipe.swipeAlternates
 import com.example.betterswipekeyboard.swipe.swipeConfidence
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 // Not private: EmojiPanel, ClipboardPanel and PunctuationPopup (same package)
@@ -212,6 +216,19 @@ fun KeyboardScreen(
     var trailFlashColor by remember { mutableStateOf<Color?>(null) }
     val trailFade = remember { Animatable(1f) }
     var fadeJob by remember { mutableStateOf<Job?>(null) }
+    // Live swipe suggestions: the latest mid-swipe decode's offers (the leader
+    // marked when top-1 would commit on finger-up) shown in the alternates
+    // strip's middle tier while the gesture runs. Transient UI state like
+    // trailPoints — it never enters KeyboardState; a canceled swipe's offers
+    // persist via OfferFailedSwipe at gesture end (see the decode block).
+    // liveGen invalidates in-flight decode results when a newer decode starts
+    // or the gesture ends; the decode runs on Dispatchers.Default from the
+    // same scope as the fade jobs.
+    var liveOffers by remember { mutableStateOf<LiveOffers?>(null) }
+    var liveDecodeJob by remember { mutableStateOf<Job?>(null) }
+    var liveGen by remember { mutableStateOf(0) }
+    var liveLastDecodeStartMs by remember { mutableStateOf(0L) }
+    var livePointsAtLastDecode by remember { mutableStateOf(0) }
     var popupChoices by remember { mutableStateOf<List<String>?>(null) }
     var popupIndex by remember { mutableStateOf(-1) }
     var popupBounds by remember { mutableStateOf<Rect?>(null) }
@@ -238,8 +255,13 @@ fun KeyboardScreen(
     // OfferFailedSwipe reduction already cleared the pair, so the Elvis is
     // belt-and-braces. maxAlternates is hoisted so the decode branch caps
     // offers from the same width-adaptive count.
+    // Middle tier: a RUNNING swipe's live decode offers (plain cells, the
+    // would-commit leader underlined via isLiveLeader — never green). They
+    // lose to a persisted failed swipe and to a commit's strip, and they
+    // clear at gesture end, so they show only mid-gesture.
     val maxAlternates = alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat())
     val altCells = state.failedSwipe?.let { failedOfferCells(it.offers) }
+        ?: liveOffers?.let(::liveOfferCells)
         ?: stripCells(state.swipedWord, state.swipeAlternates, maxAlternates)
     val currentAltCells by rememberUpdatedState(altCells)
     val currentMaxAlternates by rememberUpdatedState(maxAlternates)
@@ -530,6 +552,13 @@ fun KeyboardScreen(
                                                 fadeJob?.cancel()
                                                 trailFlashColor = null
                                                 trailPoints = emptyList()
+                                                // Live suggestions from any
+                                                // previous gesture are already
+                                                // cleared at gesture end; reset
+                                                // the throttle bookkeeping for
+                                                // the new trail.
+                                                liveLastDecodeStartMs = 0L
+                                                livePointsAtLastDecode = 0
                                                 val letterRects = geometry.letterRects()
                                                 trailStart = firstLetterContactIndex(
                                                     trail.map { it.position },
@@ -582,6 +611,90 @@ fun KeyboardScreen(
                                                             } else {
                                                                 emptyList()
                                                             }
+                                                        // Live suggestions: a
+                                                        // throttled background
+                                                        // decode of the trimmed
+                                                        // trail-so-far (same
+                                                        // points the final
+                                                        // decode uses), landing
+                                                        // in liveOffers for the
+                                                        // strip's middle tier.
+                                                        // Skip while a decode is
+                                                        // still running instead
+                                                        // of preempting it.
+                                                        if (
+                                                            trailStart >= 0 &&
+                                                            liveDecodeJob == null &&
+                                                            shouldRunLiveDecode(
+                                                                nowMillis = change.uptimeMillis,
+                                                                lastDecodeStartMillis =
+                                                                    liveLastDecodeStartMs,
+                                                                trailPoints =
+                                                                    trail.size - trailStart,
+                                                                pointsAtLastDecode =
+                                                                    livePointsAtLastDecode,
+                                                            )
+                                                        ) {
+                                                            val snapshot = trail.subList(
+                                                                trailStart, trail.size,
+                                                            ).toList()
+                                                            val gen = ++liveGen
+                                                            liveLastDecodeStartMs =
+                                                                change.uptimeMillis
+                                                            livePointsAtLastDecode =
+                                                                trail.size - trailStart
+                                                            liveDecodeJob = scope.launch {
+                                                                val liveResults =
+                                                                    withContext(
+                                                                        Dispatchers.Default,
+                                                                    ) {
+                                                                        // Read at decode
+                                                                        // time: the service
+                                                                        // may have rebuilt
+                                                                        // it with new
+                                                                        // custom words.
+                                                                        decoderProvider().decode(
+                                                                            trail = snapshot,
+                                                                            keyCenters =
+                                                                                geometry
+                                                                                    .letterCenters(),
+                                                                            keyWidth =
+                                                                                geometry
+                                                                                    .keyWidth(),
+                                                                            topN = 5,
+                                                                        )
+                                                                    }
+                                                                // Stale-result guard:
+                                                                // a newer decode or the
+                                                                // gesture's end
+                                                                // supersedes this one.
+                                                                if (gen == liveGen) {
+                                                                    liveOffers =
+                                                                        failedSwipeOffers(
+                                                                            liveResults,
+                                                                            currentMaxAlternates,
+                                                                        )?.let {
+                                                                            LiveOffers(
+                                                                                it,
+                                                                                // The leader
+                                                                                // mark's
+                                                                                // honest
+                                                                                // rule:
+                                                                                // underline
+                                                                                // only what a
+                                                                                // finger-up
+                                                                                // would
+                                                                                // commit.
+                                                                                liveResults
+                                                                                    .first()
+                                                                                    .score <
+                                                                                    MAX_COMMIT_SCORE,
+                                                                            )
+                                                                        }
+                                                                    liveDecodeJob = null
+                                                                }
+                                                            }
+                                                        }
                                                         pressedKey =
                                                             geometry.keyAt(change.position)
                                                         change.consume()
@@ -752,6 +865,17 @@ fun KeyboardScreen(
                                     pressedUtility = null
                                     pressedAlt = null
 
+                                    // Live-swipe decode teardown, for EVERY
+                                    // gesture outcome (swipe, tap, long-press,
+                                    // swallowed drag): cancel any in-flight
+                                    // live decode and bump the generation so a
+                                    // decode that finishes anyway cannot land
+                                    // stale offers — below, the synchronous
+                                    // final decode owns the trail.
+                                    liveDecodeJob?.cancel()
+                                    liveDecodeJob = null
+                                    liveGen++
+
                                     if (swipeCompleted) {
                                         // Decode the TRIMMED trail (from the
                                         // first letter-key point — the same
@@ -810,6 +934,26 @@ fun KeyboardScreen(
                                                 ?.let {
                                                     onAction(KeyboardAction.OfferFailedSwipe(it, letters))
                                                 }
+                                                // Canceled-swipe fallback: the
+                                                // final decode's band is empty,
+                                                // but the strip showed LIVE
+                                                // offers mid-swipe — persist
+                                                // those through the same
+                                                // OfferFailedSwipe path so they
+                                                // stay tappable. leaderWould-
+                                                // Commit is live-only and does
+                                                // NOT persist: after finger-up
+                                                // nothing auto-commits, so the
+                                                // cells render without the
+                                                // underline.
+                                                ?: liveOffers?.let {
+                                                    onAction(
+                                                        KeyboardAction.OfferFailedSwipe(
+                                                            it.words,
+                                                            letters,
+                                                        ),
+                                                    )
+                                                }
                                         }
                                         when (confidence) {
                                             SwipeConfidence.CONFIDENT -> {
@@ -854,6 +998,13 @@ fun KeyboardScreen(
                                             }
                                         }
                                     }
+                                    // Live offers are gesture-scoped: whatever
+                                    // persisted (a commit's strip via
+                                    // CommitWord, or a canceled swipe's offers
+                                    // via OfferFailedSwipe) now lives in
+                                    // KeyboardState and wins the altCells
+                                    // tiers.
+                                    liveOffers = null
                                     onAction(KeyboardAction.GestureEnded)
                                 }
                             },

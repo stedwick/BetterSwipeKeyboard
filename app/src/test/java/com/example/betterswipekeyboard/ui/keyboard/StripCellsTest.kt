@@ -97,4 +97,31 @@ class StripCellsTest {
             failedOfferCells(listOf("keyboard")),
         )
     }
+
+    @Test
+    fun `live offers mark only the first cell as leader when it would commit`() {
+        assertEquals(
+            listOf(
+                StripCell("keyboard", isCenter = false, isLiveLeader = true),
+                StripCell("keyword", isCenter = false),
+                StripCell("key West", isCenter = false),
+            ),
+            liveOfferCells(
+                LiveOffers(listOf("keyboard", "keyword", "key West"), leaderWouldCommit = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `live offers mark nothing when top-1 would not commit`() {
+        // Top-1 at/above MAX_COMMIT_SCORE: lifting the finger now commits
+        // nothing, so underlining a leader would lie — plain near-miss cells.
+        assertEquals(
+            listOf(
+                StripCell("keyboard", isCenter = false),
+                StripCell("keyword", isCenter = false),
+            ),
+            liveOfferCells(LiveOffers(listOf("keyboard", "keyword"), leaderWouldCommit = false)),
+        )
+    }
 }
