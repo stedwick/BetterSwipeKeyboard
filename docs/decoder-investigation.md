@@ -1350,3 +1350,152 @@ surcharge exactly zero, margin >1.0, both pre- and post-lever).
 - Yellow-flash false-positive uptick on corrected hello commits (margins
   0.06-0.18 < 0.25) — cosmetic; the calibration table was re-run (above)
   and the constant stayed.
+
+
+# ADDENDUM 8 — go→to: the start-key surcharge (LANDED 2026-08-01)
+
+The mirror image of Addendum 7, on the START key. Branch
+`feature/start-key-evidence`; plan approved as PLAN.md draft 2 (scratch,
+uncommitted).
+
+## Symptom and evidence
+
+Philip swipes 'to go to'. On the G→O swipe (intended 'go') the finger
+never comes within 0.73 key-widths of T, yet the decoder committed 'to'
+in 6 of 10 attempts. Evidence: `swipe_trails7_to_go_to_philip.jsonl` —
+24 trails (keyWidth 169), classified by touch-down: 14 to-intended
+(start 0.02-0.20kw from T) and 10 go-intended (start 0.05-0.31kw from G;
+0-based lines 1,4,7,10,13,16,18,20,21,22). Measured replay baseline:
+**18/24** — 'to' wins go-lines 4,7,18,20,21,22 (all margins ≤0.28), 'go'
+wins 1,10,13,16. Harness landed test-only first (M0, ratchet 18).
+
+## Diagnosis (verified against the code, not re-derived)
+
+Geometry genuinely favors 'go' by ~0.8-1.0 (start-basin distance
++0.2-0.5; alignment + missed-salient +0.57 with salients [g,o]), but 'to'
+collects a CONSTANT +1.063 frequency bonus (rank 2 vs 96,
+`FREQUENCY_WEIGHT` 3.0) and wins. Three structural dilutions keep
+geometry weak:
+
+1. the ~1.0kw start-key miss is halved by the per-letter mean;
+2. no start-side counterpart to `END_KEY_SURCHARGE_WEIGHT` existed — a
+   first letter matched at trail index 0 also escapes the unexplained-head
+   charge (head arc = 0), and the tunnel gives the off-line T→O leg 0.5kw
+   free;
+3. `ALIGNMENT_MIN_DENOMINATOR` 3 caps go's perfect two-key alignment at
+   2/3 (−0.533 instead of −0.8).
+
+Measured baseline per-term breakdown on all 10 go trails: conformance,
+backtrack, tail and head are 0 for BOTH words — the whole contest is
+basin/alignment/missed-salient vs the frequency constant.
+
+## The lever (LANDED): start-key surcharge
+
+`max(0, firstLetterMatchDist - TUNNEL_RADIUS_KEYS) * START_KEY_SURCHARGE_WEIGHT`,
+added UNDILUTED, charged on the stock first-basin distance
+(SwipeDecoder.kt:325-327, constant :786 with the full measured KDoc). No
+start-side re-match exists or is needed: the first letter's scan starts
+at index 0 and fully explores the touch-down basin, so no later closer
+basin can exist that stock matching cannot reach — the end-side
+license/charge tension has no start-side counterpart (measured proof in
+the M5 audit below).
+
+Weight grid (replica parity-exact vs production at w=0 and w=0.7 — all
+seven per-set counts and every trail's top-1 word; the w=0.3-0.6/0.8
+cells are replica-only, w=0.7 row production-confirmed via the accuracy
+harness):
+
+| weight | set1 | set2 | set3 | set4 | set5 | set6 | set7 |
+|---|---|---|---|---|---|---|---|
+| 0 (baseline) | 13 | 32 | 34 | 60 | 62 | 36 | 18 |
+| 0.3 | 13 | 32 | 34 | 60 | 61 | 36 | 19 |
+| 0.4-0.6 | 13 | 32 | 34 | 60 | 61 | 36 | 21 |
+| 0.7-0.8 | 13 | 32 | 34 | 59 | 61 | 36 | 23 |
+
+- **Binding constraints** — the only two intended words in all 284 trails
+  whose >0.5kw start miss is not already outvoted: set5#52 quick (margin
+  0.034 vs a 0.805/w differential, flips at w≈0.04) and set4#54 quick
+  (margin 0.236 vs 0.366/w, flips at w≈0.64). Both are genuine q/w
+  touch-down aim slips: the trail physically starts ON the W key (0.09kw
+  and 0.29kw from its center), so 'wick' is the honest read — their
+  signature is identical to the impostor's and no weight separates them.
+- set7#21 never flips: t basin only 0.73kw off → excess 0.23kw vs a 0.272
+  margin → needs w≈1.2, unreachable.
+- **Kill-criterion stop, honestly reported**: the plan's criterion was
+  "≥4 of the 6 go losses flipped WITHOUT dropping a set 1-6 ratchet".
+  Unreachable — every weight ≥0.3 already drops set5 62→61 (its binding
+  constraint flips at w≈0.04). The stop was reported with the grid;
+  **Philip chose w=0.7 explicitly** ("do the big fix"), signing off both
+  quick→wick flips as accepted costs. Ratchets: set4 60→59 and set5 62→61
+  LOWERED with sign-off comments naming the trails; set7 18→23 (earned).
+
+## Flips at w=0.7 (all seven sets, 284 trails)
+
+- **5 FIX**: set7 go-lines #4/#7/#18/#20/#22 (to→go). Mechanism: 'to'
+  pays (tBasinDist − 0.5kw) × 0.7 ≈ 0.16-0.46 undiluted; 'go' pays 0
+  (touch-down 0.05-0.31kw from G, inside the free radius). #21 residual
+  stays 'to' (above).
+- **2 LOSS**: set4#54 and set5#52 (quick→wick), the signed-off costs.
+- **ZERO wrong→wrong.** Designed coin-flips checked by name and unmoved:
+  past/part ×2, and no straight-trail two-letter tie moved (the signed-
+  off straight-trail rule is untouched — this lever only fires when
+  geometry is diluted below the prior, which is exactly the class the
+  plan scoped).
+
+## Confidence calibration re-run (honest)
+
+Full table in `LOW_CONFIDENCE_MARGIN`'s KDoc and
+`SwipeConfidenceCalibrationTest`. Committed pool 253 (sets 1-6; set7 is
+OUTSIDE the calibration domain — open item below): 237+16 → **235 correct
++ 18 wrong**. Wrong flagged 8/16 → **8/18**: the two new wick commits
+split (set5#52 margin 0.021 flagged; set4#54 0.530 not), and set4#32
+'notice' LOST its flag (0.068→0.473 — its runner-up now pays a
+surcharge). Correct flagged 14/237 (5.9%) → **9/235 (3.8%)**: −4 widened
+past 0.25 (set1#6, set1#12, set3#6, set5#31), −2 quicks left the correct
+pool, +1 set6#39 fun (0.406→0.238). Ratchets: `MIN_WRONG_FLAGGED` stays
+8, `MAX_CORRECT_FLAGGED` 14→9; `LOW_CONFIDENCE_MARGIN` stays 0.25.
+
+## Newly measured dead ends
+
+- **L2 (touch-down re-basin analog of the lift-off re-match)**: M5
+  exposure audit over all 284 trails found 21 geometric later-closer-
+  basin hits — but a start-side re-match trades first-basin distance for
+  HEAD ARC (matching later un-zeros the head), e.g. set6#32: distance
+  gain 0.205 vs head charge 9.73 → net −9.53. The end-side re-match
+  exists because the trail can END before the last letter's scan reaches
+  its basin; the first letter's scan STARTS at index 0, so stock matching
+  already owns the touch-down basin and there is no license to hand out.
+  Dead end — no license counterpart.
+- **L3 (unexplained-head charge firing when the first letter matches at
+  index 0 but touch-down is far)**: grid strictly dominated by L1 — same
+  binding quick losses at 0.7/1.0 with no additional go fixes, plus a
+  wrong→wrong flip at 1.0. Rejected.
+
+## Guards landed
+
+`SwipeStartKeySurchargeTest` (new file, merge-clean rule): (1) go guard —
+synthetic go-shaped trail (waypoints (490,125),(690,92),(840,54) on the
+set7 geometry) verified to commit 'to' PRE-lever at w=0 (to −2.293 vs go
+−2.161 — a guard that never failed pins nothing), commits go post-lever
+(go −2.161 vs to −2.048); (2) genuine-to guard — T→O through both
+centers pays exactly zero surcharge and stays 'to' (−3.379, margin 1.12,
+both pre- and post-lever).
+
+## Not verified (carried into the commit)
+
+- **The 0.5-0.73kw start band is pinned only by synthetic guard 2** — no
+  captured trail starts 0.5-0.73kw off its intended first key; if a real
+  one ever flips, the radius/weight needs a revisit (same shape as
+  Addendum 7's open help-trail item).
+- **set7#21 residual accepted** (stays 'to', margin 0.272 vs max
+  reachable surcharge 0.16) — carried by the alternates strip +
+  crossed-letters proofreader evidence.
+- **4 of the 5 fixed go commits flash yellow** (post-fix margins <0.25) —
+  cosmetic, but set7 is OUTSIDE the confidence-calibration domain (253
+  committed = sets 1-6 only); whether to fold set7 into the calibration
+  is an open decision for Philip.
+- **Grid cells w=0.3-0.6 and 0.8 are replica-only** — the replica was
+  parity-exact vs production at w=0 and w=0.7 (all seven counts, every
+  trail's top-1); the intermediate cells were not re-run in Kotlin.
+- No new on-device verification: unit replay only, per the plan's
+  harness-first discipline.

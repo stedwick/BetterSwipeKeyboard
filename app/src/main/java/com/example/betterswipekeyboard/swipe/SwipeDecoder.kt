@@ -309,6 +309,23 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val unexplainedHead =
             min(max(0f, headArc - HEAD_ARC_FREE_KEYS * keyWidth), HEAD_ARC_CAP_KEYS * keyWidth) / keyWidth
 
+        // Start-key surcharge: the mirror of the end-key surcharge above —
+        // a word whose FIRST letter matches beyond the tunnel radius pays
+        // the excess distance again, undiluted. The head term above cannot
+        // see this miss: when the first letter matches at trail index 0,
+        // head arc is 0. Measured on Philip's 24 captured 'to go to' trails:
+        // on all 10 go-intended swipes 'to' matched its T at index 0 with a
+        // 0.73-1.16kw miss the per-letter mean halves, and its constant
+        // +1.06 frequency edge over 'go' (rank 2 vs 96) overruled go's
+        // better geometry in 6 of 10 attempts. Charged on the stock first-
+        // basin distance; there is no start-side re-match, because the
+        // end-side disease cannot occur here: the first letter's scan starts
+        // at index 0 and fully explores the touch-down basin, so no later
+        // closer basin can exist that stock matching cannot reach.
+        val firstDistKeys =
+            sqrt(sqDist(trail[matchIndices[0]].position, keys[0])) / keyWidth
+        val startKeySurcharge = max(0f, firstDistKeys - TUNNEL_RADIUS_KEYS) * START_KEY_SURCHARGE_WEIGHT
+
         // Terms 2+3: per-leg line conformance and backtrack penalty. A word
         // whose trail ever leaves the key-to-key corridor by more than
         // CONFORMANCE_CULL_KEYS is rejected outright.
@@ -340,7 +357,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             letters.length * LENGTH_BONUS_PER_LETTER +
             unexplainedTail * TAIL_ARC_WEIGHT +
             unexplainedHead * HEAD_ARC_WEIGHT +
-            endKeySurcharge
+            endKeySurcharge +
+            startKeySurcharge
     }
 
     /**
@@ -738,6 +756,34 @@ class SwipeDecoder(private val dictionary: Dictionary) {
          * letter is 0.15, measured tolerable.
          */
         const val END_KEY_SURCHARGE_WEIGHT = 0.5f
+
+        /**
+         * Weight of the start-key surcharge: a word whose FIRST letter
+         * matches beyond [TUNNEL_RADIUS_KEYS] pays the excess distance
+         * again, undiluted (see score()). Mirror of [END_KEY_SURCHARGE_WEIGHT]:
+         * mid-word the tunnel grants position freedom, but a word's claim to
+         * START on the trail should cost when the trail starts off its first
+         * key — otherwise an unvisited NEIGHBOR of the touched start key
+         * ("to"'s t next to "go"'s g, 1.0kw away, never approached closer
+         * than 0.73kw) pays only a per-letter-diluted ~0.2-0.5 and the
+         * frequency prior decides (to rank 2 vs go rank 96 = a constant
+         * +1.06 for "to"). Measured on 24 captured 'to go to' trails plus
+         * the six older fixture sets: at 0.7, five of the six go losses fix
+         * (set7 18 -> 23/24; #21's t basin is only 0.73kw — its 0.23kw
+         * excess cannot overcome a 0.272 margin short of w~1.2, unreachable).
+         * The signed-off cost (Philip, 2026-08): the two q/w touch-down aim
+         * slips flip quick->wick — set5#52 (baseline margin 0.034 vs a
+         * 0.805/w differential, flips at w~0.04) and set4#54 (margin 0.236
+         * vs 0.366/w, flips at w~0.64). Their signature is identical to the
+         * impostor's (touch-down nearer a neighbor than the first key), so
+         * no weight separates them; the exposure audit over all 260 older
+         * trails found every other >0.5kw start miss safe (differential <=0
+         * against the runner-up, or margin >1). No start-side re-match
+         * tension: the first letter always owns the touch-down basin (see
+         * score()), so the license/charge tension the end side documents
+         * has no start-side counterpart.
+         */
+        const val START_KEY_SURCHARGE_WEIGHT = 0.7f
 
         /** Per-point conformance cost saturates here (Gboard: Sivek & Riley). */
         const val CONFORMANCE_CAP_KEYS = 2.0f

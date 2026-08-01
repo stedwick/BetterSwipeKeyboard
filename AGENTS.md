@@ -75,7 +75,11 @@ saturate 2.0 / cull 1.75 key-widths; backtrack penalty), plus salient/LCS
 alignment, path-length, frequency prior, per-letter bonus, dwell ≥
 300 ms doubling, end-key surcharge `END_KEY_SURCHARGE_WEIGHT` 0.5 (the
 re-match/surcharge tension — ≤0.8kw licensed vs >0.5kw charged — is
-deliberate: don't move one without the other). Commit top word when
+deliberate: don't move one without the other), start-key surcharge
+`START_KEY_SURCHARGE_WEIGHT` 0.7 (mirror of the end surcharge, charged on
+the stock first-basin distance; NO start-side re-match exists — the first
+letter's scan owns the touch-down basin, so there is no license/charge
+tension to preserve here). Commit top word when
 `score < MAX_COMMIT_SCORE` (1.8). Feedback flash
 (`swipe/SwipeConfidence.kt`): FAILED → RED, close runner-up (margin <
 `LOW_CONFIDENCE_MARGIN` 0.25) → YELLOW, confident → nothing.
