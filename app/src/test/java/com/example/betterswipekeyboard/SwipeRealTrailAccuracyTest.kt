@@ -35,7 +35,16 @@ import org.junit.Test
  * probable echo swipes of 'it', not paragraph words, marked `-`).
  * The TSV's third column labels the pass for the reader; the pass split
  * is visible in the printed table by record index (pass 1 = #0-18,
- * pass 2 = #19-39).
+ * pass 2 = #19-39), and
+ * `swipe_trails7_to_go_to_philip.*` (seventh capture: 24 swipes of the
+ * phrase 'to go to' — 14 to-intended (touch-down 0.01-0.20kw from T)
+ * and 10 go-intended (#1,4,7,10,13,16,18,20,21,22; touch-down
+ * 0.05-0.31kw from G, the trail never within 0.73kw of T) — the driving
+ * evidence for the start-key surcharge: on the go trails 'to' matched
+ * its T at trail index 0 with a 0.73-1.16kw miss that the per-letter
+ * mean halves and the unexplained-head term cannot see (head arc = 0),
+ * so its frequency prior (rank 2 vs go's 96 = a constant +1.06)
+ * overruled go's genuinely better geometry in 6 of 10 attempts).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -104,6 +113,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET6",
             correct >= MIN_COMMITTED_CORRECT_SET6,
+        )
+    }
+
+    @Test
+    fun `seventh capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails7_to_go_to_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET7",
+            correct >= MIN_COMMITTED_CORRECT_SET7,
         )
     }
 
@@ -292,5 +310,16 @@ class SwipeRealTrailAccuracyTest {
          * fixed (amd -> and, the pass-1 holdout — the deliberate stop
          * overshot D and returned). 35 -> 36, earned. */
         const val MIN_COMMITTED_CORRECT_SET6 = 36
+
+        /** Seventh capture ('to go to' x8, 24 trails) baseline at the
+         * pre-start-surcharge decoder: 18/24 = all 14 to + 4 of 10 go.
+         * The 6 go losses (#4,7,18,20,21,22) all wrong-commit 'to' with
+         * 'go' at #2 — margins 0.13 / 0.07 / 0.19 / 0.21 / 0.27 / 0.13
+         * respectively: 'to' matches its T at trail index 0 (0.73-1.16kw
+         * miss, halved by the per-letter mean, invisible to the head-arc
+         * term) and its constant +1.06 frequency edge over 'go' overrules
+         * go's better geometry. This is the class the start-key surcharge
+         * targets. */
+        const val MIN_COMMITTED_CORRECT_SET7 = 18
     }
 }
