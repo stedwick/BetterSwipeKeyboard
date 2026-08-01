@@ -36,11 +36,17 @@ sealed interface KeyboardAction {
      * runner-up words for the alternates strip (see
      * swipe/SwipeAlternates.kt); the reducer stores them in
      * [KeyboardState.swipeAlternates] and never commits them itself.
+     * [stripOffers] carries the WIDER near-miss-band runner-up list the live
+     * strip showed while swiping (top-1 excluded); the reducer stores it in
+     * [KeyboardState.swipeStripOffers] so the committed strip can keep every
+     * surviving word in the slot it had mid-swipe (band-mismatch dropouts
+     * become invisible placeholders — see stripCells).
      */
     data class CommitWord(
         val word: String,
         val crossedLetters: String? = null,
         val alternates: List<String> = emptyList(),
+        val stripOffers: List<String> = emptyList(),
     ) : KeyboardAction
 
     /**

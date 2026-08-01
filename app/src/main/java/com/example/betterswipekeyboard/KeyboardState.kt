@@ -86,6 +86,16 @@ data class KeyboardState(
      */
     val swipeAlternates: List<String> = emptyList(),
     /**
+     * The WIDER near-miss-band runner-up list the live strip showed while
+     * swiping (top-1 excluded), caps-transformed like [swipeAlternates] and
+     * sharing its lifetime. The committed strip places THESE words so every
+     * survivor keeps the slot it had mid-swipe; offers missing from
+     * [swipeAlternates] (score between MAX_COMMIT_SCORE and the near-miss
+     * band) render as invisible placeholders instead of re-laying-out (see
+     * stripCells in ui/keyboard/StripCells.kt).
+     */
+    val swipeStripOffers: List<String> = emptyList(),
+    /**
      * Last FAILED swipe's near-miss offers (see [FailedSwipe]); non-null
      * takes over the alternates strip. Same lifetime as the
      * [swipedWord]/[swipeAlternates] pair, plus cleared by CommitWord (an
