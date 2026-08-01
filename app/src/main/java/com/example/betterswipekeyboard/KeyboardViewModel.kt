@@ -65,6 +65,11 @@ class KeyboardViewModel : ViewModel() {
                     // already caps-transformed and SelectAlternate needs no
                     // caps logic of its own.
                     swipeAlternates = action.alternates.map { alt -> applyCaps(alt, caps) },
+                    // The wider near-miss-band flank list the live strip
+                    // showed (see KeyboardState.swipeStripOffers); the
+                    // committed strip places these so survivors keep their
+                    // mid-swipe slots.
+                    swipeStripOffers = action.stripOffers.map { alt -> applyCaps(alt, caps) },
                     // A commit supersedes any failed swipe's offers — the
                     // offer tap itself commits through here and lands the
                     // picked word in the center cell.
@@ -100,6 +105,7 @@ class KeyboardViewModel : ViewModel() {
                     it.copy(
                         swipedWord = action.word,
                         swipeAlternates = it.swipeAlternates - action.word,
+                        swipeStripOffers = it.swipeStripOffers - action.word,
                     )
                 }
                 KeyboardEffect.ReplaceSwipedWord(action.word)
@@ -120,6 +126,7 @@ class KeyboardViewModel : ViewModel() {
                     failedSwipe = FailedSwipe(action.offers, action.letters),
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                 )
             }
             null
@@ -154,6 +161,7 @@ class KeyboardViewModel : ViewModel() {
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                     shiftMode = when (it.shiftMode) {
                         ShiftMode.OFF -> ShiftMode.ONE_SHOT
@@ -170,6 +178,7 @@ class KeyboardViewModel : ViewModel() {
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                     shiftMode = ShiftMode.LOCKED,
                 )
@@ -183,6 +192,7 @@ class KeyboardViewModel : ViewModel() {
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                     layout = action.layout,
                 )
@@ -196,6 +206,7 @@ class KeyboardViewModel : ViewModel() {
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                     proofreadAuto = !it.proofreadAuto,
                     // Manual toggle is explicit user intent: it clears the
@@ -236,6 +247,7 @@ class KeyboardViewModel : ViewModel() {
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                     layout = LayoutId.LETTERS,
                 )
@@ -279,9 +291,9 @@ class KeyboardViewModel : ViewModel() {
             // Dictation ends the swipe context (it bypasses the reducer, so
             // no input action ever clears the strip), so the alternates go.
             if (state == VoiceState.LISTENING) {
-                it.copy(voice = state, swipedWord = null, swipeAlternates = emptyList(), failedSwipe = null)
+                it.copy(voice = state, swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
             } else {
-                it.copy(voice = state, voicePartial = "", swipedWord = null, swipeAlternates = emptyList(), failedSwipe = null)
+                it.copy(voice = state, voicePartial = "", swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
             }
         }
     }
@@ -303,8 +315,8 @@ class KeyboardViewModel : ViewModel() {
      */
     fun clearSwipeAlternates() {
         _state.update {
-            if (it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.failedSwipe != null) {
-                it.copy(swipedWord = null, swipeAlternates = emptyList(), failedSwipe = null)
+            if (it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.swipeStripOffers.isNotEmpty() || it.failedSwipe != null) {
+                it.copy(swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
             } else {
                 it
             }
@@ -323,11 +335,12 @@ class KeyboardViewModel : ViewModel() {
 
     private fun clearSwipeFlag() {
         _state.update {
-            if (it.lastCommitWasSwipe || it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.failedSwipe != null) {
+            if (it.lastCommitWasSwipe || it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.swipeStripOffers.isNotEmpty() || it.failedSwipe != null) {
                 it.copy(
                     lastCommitWasSwipe = false,
                     swipedWord = null,
                     swipeAlternates = emptyList(),
+                    swipeStripOffers = emptyList(),
                     failedSwipe = null,
                 )
             } else {

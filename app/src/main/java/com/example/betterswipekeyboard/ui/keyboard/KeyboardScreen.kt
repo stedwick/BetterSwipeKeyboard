@@ -250,19 +250,22 @@ fun KeyboardScreen(
     // width (the IME spans the screen): 2 alts on phones, 4 on wide screens.
     // The gesture loop reads them via rememberUpdatedState for the same
     // pointerInput-capture reason as currentState.
-    // A FAILED swipe's near-miss offers take over the strip (plain cells,
-    // NO center — nothing was committed, a green center would lie); the
-    // OfferFailedSwipe reduction already cleared the pair, so the Elvis is
-    // belt-and-braces. maxAlternates is hoisted so the decode branch caps
+    // A FAILED swipe's near-miss offers take over the strip (top-1 in the
+    // center slot, PLAIN — nothing was committed, green or blue would lie);
+    // the OfferFailedSwipe reduction already cleared the pair, so the Elvis
+    // is belt-and-braces. maxAlternates is hoisted so the decode branch caps
     // offers from the same width-adaptive count.
-    // Middle tier: a RUNNING swipe's live decode offers (plain cells, the
-    // would-commit leader underlined via isLiveLeader — never green). They
-    // lose to a persisted failed swipe and to a commit's strip, and they
-    // clear at gesture end, so they show only mid-gesture.
+    // Middle tier: a RUNNING swipe's live decode offers (top-1 in the center
+    // slot, light blue via isLiveLeader exactly when it would commit on
+    // finger-up — never green). They lose to a persisted failed swipe and to
+    // a commit's strip, and they clear at gesture end, so they show only
+    // mid-gesture. All three tiers share one placement rule (centeredCells
+    // in StripCells.kt), so lifting the finger only recolors the center,
+    // never rearranges the row.
     val maxAlternates = alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat())
-    val altCells = state.failedSwipe?.let { failedOfferCells(it.offers) }
-        ?: liveOffers?.let(::liveOfferCells)
-        ?: stripCells(state.swipedWord, state.swipeAlternates, maxAlternates)
+    val altCells = state.failedSwipe?.let { failedOfferCells(it.offers, maxAlternates) }
+        ?: liveOffers?.let { liveOfferCells(it, maxAlternates) }
+        ?: stripCells(state.swipedWord, state.swipeStripOffers, state.swipeAlternates, maxAlternates)
     val currentAltCells by rememberUpdatedState(altCells)
     val currentMaxAlternates by rememberUpdatedState(maxAlternates)
     val scope = rememberCoroutineScope()
@@ -497,9 +500,26 @@ fun KeyboardScreen(
                                                                 cell.word,
                                                                 failed.letters,
                                                                 failed.offers - cell.word,
+                                                                // All offers are
+                                                                // inside the
+                                                                // near-miss band:
+                                                                // the wide strip
+                                                                // list IS the
+                                                                // remaining
+                                                                // offers, so the
+                                                                // committed strip
+                                                                // keeps the
+                                                                // failed strip's
+                                                                // exact layout.
+                                                                stripOffers =
+                                                                    failed.offers - cell.word,
                                                             ),
                                                         )
-                                                    cell != null && !cell.isCenter ->
+                                                    // Invisible band-mismatch
+                                                    // placeholders reserve
+                                                    // their slot but are
+                                                    // never tappable.
+                                                    cell != null && !cell.isCenter && !cell.isPlaceholder ->
                                                         onAction(KeyboardAction.SelectAlternate(cell.word))
                                                     else -> Unit
                                                 }
@@ -681,7 +701,11 @@ fun KeyboardScreen(
                                                                     liveOffers =
                                                                         failedSwipeOffers(
                                                                             liveResults,
-                                                                            currentMaxAlternates,
+                                                                            // Top-1 (center)
+                                                                            // PLUS the
+                                                                            // maxAlternates
+                                                                            // flanks.
+                                                                            currentMaxAlternates + 1,
                                                                         )?.let {
                                                                             LiveOffers(
                                                                                 it,
@@ -689,8 +713,9 @@ fun KeyboardScreen(
                                                                                 // mark's
                                                                                 // honest
                                                                                 // rule:
-                                                                                // underline
-                                                                                // only what a
+                                                                                // light blue
+                                                                                // only for
+                                                                                // what a
                                                                                 // finger-up
                                                                                 // would
                                                                                 // commit.
@@ -928,6 +953,20 @@ fun KeyboardScreen(
                                                     // KeyboardState and the
                                                     // strip renders from there.
                                                     swipeAlternates(results),
+                                                    // The WIDER near-miss-band
+                                                    // runner-ups (top-1
+                                                    // excluded): the exact
+                                                    // flank list the live
+                                                    // strip showed, so the
+                                                    // committed strip keeps
+                                                    // every surviving word in
+                                                    // its mid-swipe slot
+                                                    // (band-mismatch dropouts
+                                                    // become placeholders).
+                                                    stripOffers = failedSwipeOffers(
+                                                        results,
+                                                        currentMaxAlternates + 1,
+                                                    )?.drop(1) ?: emptyList(),
                                                 ),
                                             )
                                         } else if (confidence == SwipeConfidence.FAILED) {
@@ -939,7 +978,7 @@ fun KeyboardScreen(
                                             // empty band emits nothing — the
                                             // placeholder shows, exactly as
                                             // before.
-                                            failedSwipeOffers(results, currentMaxAlternates)
+                                            failedSwipeOffers(results, currentMaxAlternates + 1)
                                                 ?.let {
                                                     onAction(KeyboardAction.OfferFailedSwipe(it, letters))
                                                 }
@@ -953,8 +992,8 @@ fun KeyboardScreen(
                                                 // Commit is live-only and does
                                                 // NOT persist: after finger-up
                                                 // nothing auto-commits, so the
-                                                // cells render without the
-                                                // underline.
+                                                // center cell renders plain —
+                                                // no blue, no green.
                                                 ?: liveOffers?.let {
                                                     onAction(
                                                         KeyboardAction.OfferFailedSwipe(

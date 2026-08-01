@@ -473,6 +473,23 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `commit word stores the wider strip offers and swaps subtract from both lists`() {
+        val vm = viewModel()
+        vm.onAction(
+            KeyboardAction.CommitWord(
+                "hello",
+                alternates = listOf("hell", "held"),
+                stripOffers = listOf("hell", "help", "held"),
+            ),
+        )
+        assertEquals(listOf("hell", "help", "held"), vm.state.value.swipeStripOffers)
+
+        vm.onAction(KeyboardAction.SelectAlternate("hell"))
+        assertEquals(listOf("held"), vm.state.value.swipeAlternates)
+        assertEquals(listOf("help", "held"), vm.state.value.swipeStripOffers)
+    }
+
+    @Test
     fun `commit word with no surviving alternates still arms the center word`() {
         val vm = viewModel()
         vm.onAction(KeyboardAction.CommitWord("hello"))
@@ -551,9 +568,10 @@ class KeyboardViewModelTest {
         )
         for (action in clearingActions) {
             val vm = viewModel()
-            vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+            vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell"), stripOffers = listOf("hell")))
             vm.onAction(action)
             assertEquals("after $action", emptyList<String>(), vm.state.value.swipeAlternates)
+            assertEquals("after $action", emptyList<String>(), vm.state.value.swipeStripOffers)
             assertNull("after $action", vm.state.value.swipedWord)
         }
     }
