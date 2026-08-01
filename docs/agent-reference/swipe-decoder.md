@@ -71,16 +71,37 @@ set5 dog#8 (re-matched g at 0.76kw — margin 0.072 at 0.5, flips at 0.8),
 and the re-match tension (re-match licenses ≤0.8kw, surcharge charges
 past 0.5kw) is deliberate.
 
+The FIRST letter pays the mirror image: a start-key surcharge
+(`START_KEY_SURCHARGE_WEIGHT` 0.7) — its touch-down match distance beyond
+the tunnel radius, charged AGAIN undiluted. The head term cannot see this
+miss (first letter matched at trail index 0 ⇒ head arc is 0), the
+per-letter mean shrugs an unvisited NEIGHBOR of the touched start key off
+to ~0.2-0.5 ("to"'s t next to "go"'s g, never approached closer than
+0.73kw), and the frequency prior then decides (rank 2 vs 96 = a constant
++1.06 for "to"; 6/10 captured go trails committed "to"). Measured: five
+of the six go losses fixed (set7 18 → 23/24; the residual's t basin is
+only 0.73kw off — its 0.23kw excess can't beat a 0.272 margin short of
+w≈1.2, unreachable). The signed-off cost (Philip, 2026-08): the two q/w
+touch-down aim slips flip quick→wick (set4#54, set5#52 — the trail
+physically starts ON the W key, 0.09/0.29kw from its center, so "wick" is
+the honest read and no weight separates the pair). No start-side re-match
+tension: the first letter's scan starts at index 0 and fully explores the
+touch-down basin, so the license/charge tension the end side documents
+has no start-side counterpart.
+
 Two-tier feedback flash (pure classification in
 `swipe/SwipeConfidence.kt`, jQuery-highlight-style fade over ~400 ms,
 purely cosmetic): a FAILED swipe (no candidate below the cutoff, nothing
 committed) flashes the trail RED (`FailedSwipeFlash`); a commit with a
 close runner-up (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.25,
-calibrated on the six captured trail sets — flags 8/16 wrong commits at
-5.9% false positives; recalibrated after the re-match (wrong pool 20→17)
-and again after the end-key surcharge (17→16: the signed-off lazy→last
-wrong commit set2#35 was pushed past `MAX_COMMIT_SCORE` into silence —
-denominator changes both times, not flag-rate changes)) flashes YELLOW
+calibrated on the six captured trail sets — flags 8/18 wrong commits at
+3.8% false positives; recalibrated after the re-match (wrong pool 20→17),
+again after the end-key surcharge (17→16: the signed-off lazy→last wrong
+commit set2#35 was pushed past `MAX_COMMIT_SCORE` into silence), and again
+after the start-key surcharge (16→18: the two signed-off quick→wick flips
+joined the wrong pool, one of them flagged; correct-commit flags 14→9 —
+four margins widened past 0.25, the two quicks left the correct pool, one
+new flag — denominator changes throughout, not flag-rate changes)) flashes YELLOW
 (`LowConfidenceFlash`) as "maybe re-swipe"; confident commits flash
 nothing. Segment alpha in `ui/keyboard/TrailFade.kt`.
 

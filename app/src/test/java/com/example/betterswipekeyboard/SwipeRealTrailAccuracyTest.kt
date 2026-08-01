@@ -258,8 +258,19 @@ class SwipeRealTrailAccuracyTest {
          * mother-cull mechanism, NOT the predicted frequency tie);
          * past #35 (loses 'part' by 0.06); the #48 (loses 'that' by
          * 0.53); how #56 (loses 'hire' by 1.01 — a CONTROL-sentence
-         * breach at baseline, fix is TDD territory). */
-        const val MIN_COMMITTED_CORRECT_SET4 = 60
+         * breach at baseline, fix is TDD territory).
+         *
+         * Start-key surcharge (START_KEY_SURCHARGE_WEIGHT 0.7, the
+         * go->to fix): quick #54 FLIPPED to wick (by 0.021) — a LOWERED
+         * floor, 60 -> 59, explicitly signed off by Philip ("do the big
+         * fix", 2026-08): the trail's touch-down sits 0.87kw from Q vs
+         * 0.34kw from W (a q/w aim slip) — the identical geometric
+         * signature to 'to' on the go trails, so no surcharge weight
+         * separates them, and the charge differential overrules quick's
+         * frequency edge (rank 1093 vs wick's 18472) exactly as the
+         * to/go coin-flips did. The trade bought five go fixes on set7
+         * (see SET7). */
+        const val MIN_COMMITTED_CORRECT_SET4 = 59
 
         /** Fifth capture (ten-sentence corpus RE-recorded at normal speed,
          * one pass, no retries; 'a' tapped in s8) baseline on main 7d48da9:
@@ -282,8 +293,17 @@ class SwipeRealTrailAccuracyTest {
          * (doping -> dog), his #14 (hours -> his) and fix #40 (fox -> fix)
          * — all three were overshoot-and-return lift-offs whose genuine
          * final visit sat in a basin first-basin matching could not reach.
-         * 59 -> 62, earned. */
-        const val MIN_COMMITTED_CORRECT_SET5 = 62
+         * 59 -> 62, earned.
+         *
+         * Start-key surcharge (START_KEY_SURCHARGE_WEIGHT 0.7): quick #52
+         * FLIPPED BACK to wick (by 0.53) — a LOWERED floor, 62 -> 61,
+         * explicitly signed off by Philip ("do the big fix", 2026-08),
+         * undoing the grading session's win above: the touch-down sits
+         * 1.31kw from Q vs 0.44kw from W (essentially on W — the q/w aim
+         * slip), so the surcharge differential (0.805/w) beats the 0.034
+         * baseline margin at any weight past ~0.04. Same signature as
+         * set4#54; the trade bought five go fixes on set7 (see SET7). */
+        const val MIN_COMMITTED_CORRECT_SET5 = 61
 
         /** Sixth capture (short-word paragraph, two passes) baseline on
          * feature/endpoint-evidence 103d75b: 34/38. Pass 1 (deliberate
@@ -319,7 +339,16 @@ class SwipeRealTrailAccuracyTest {
          * miss, halved by the per-letter mean, invisible to the head-arc
          * term) and its constant +1.06 frequency edge over 'go' overrules
          * go's better geometry. This is the class the start-key surcharge
-         * targets. */
-        const val MIN_COMMITTED_CORRECT_SET7 = 18
+         * targets.
+         *
+         * Start-key surcharge (START_KEY_SURCHARGE_WEIGHT 0.7): five of
+         * the six go losses FIXED (#4,7,18,20,22 — 'to' now pays its
+         * 0.73-1.16kw start miss undiluted) — 18 -> 23, earned. Residual
+         * #21 stays 'to' (by 0.108): its t basin is only 0.73kw, so the
+         * 0.23kw excess cannot overcome a 0.272 margin short of w~1.2 —
+         * carried by the alternates strip + crossed-letters proofreader
+         * (the hello#11 precedent). The cost is the set4/set5 quick
+         * flips (see their comments). */
+        const val MIN_COMMITTED_CORRECT_SET7 = 23
     }
 }

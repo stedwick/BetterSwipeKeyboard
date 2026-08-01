@@ -32,23 +32,29 @@ enum class SwipeConfidence {
  * signed-off lazy->last wrong commit (set2#35, pre-lever score 1.647) past
  * MAX_COMMIT_SCORE into silence, a denominator change, not a flag-rate
  * change; the flagged wrong count drops 9 -> 8 only because that flagged
- * commit (margin 0.13) no longer exists:
+ * commit (margin 0.13) no longer exists. Re-measured after the start-key
+ * surcharge ([START_KEY_SURCHARGE_WEIGHT], the go->to fix): 235 correct +
+ * 18 wrong — the surcharge flipped the two signed-off q/w aim slips
+ * (set4#54, set5#52) from correct to quick->wick wrong commits
+ * (denominator changes), and widened margins on four formerly flagged
+ * correct commits past 0.25 (their runner-ups pay the start surcharge),
+ * improving the false-positive rate 5.9% -> 3.8%:
  *
  *   margin < M    wrong flagged   correct flagged
- *   0.10          5/16            3/237  (1.3%)
- *   0.15          7/16            7/237  (3.0%)
- *   0.20          7/16            11/237 (4.6%)
- *   0.25          8/16            14/237 (5.9%)  <- chosen
- *   0.30          9/16            14/237 (5.9%)
- *   0.35          9/16            19/237 (8.0%)
- *   0.40          10/16           23/237 (9.7%)
- *   0.45          11/16           28/237 (11.8%)
+ *   0.10          6/18            2/235  (0.9%)
+ *   0.15          8/18            5/235  (2.1%)
+ *   0.20          8/18            8/235  (3.4%)
+ *   0.25          8/18            9/235  (3.8%)  <- chosen
+ *   0.30          9/18            9/235  (3.8%)
+ *   0.35          9/18            13/235 (5.5%)
+ *   0.40          9/18            16/235 (6.8%)
+ *   0.45          10/18           19/235 (8.1%)
  *
- * 0.25 stays the knee: 0.30 now buys exactly one wrong flag (a single
+ * 0.25 stays the knee: 0.30 buys exactly one wrong flag (a single
  * 0.27-margin commit) for zero measured false positives — a one-commit
- * margin artifact, not a knee shift, and the false-positive ceiling
- * improved to 5.9% at 0.25; 0.35 still breaks into 8%+. The wrong commits
- * with healthy margins (≥ 0.37, up to 0.79) remain unreachable at any
+ * margin artifact, not a knee shift, and the false-positive rate at 0.25
+ * improved to 3.8%; 0.35 still breaks into 5%+. The wrong commits with
+ * healthy margins (≥ 0.44, up to 1.01) remain unreachable at any
  * defensible rate. Adding an absolute-score band (score > 1.2) was
  * measured on the original table and rejected (one more wrong commit for
  * one more false positive and a second knob); re-measure before

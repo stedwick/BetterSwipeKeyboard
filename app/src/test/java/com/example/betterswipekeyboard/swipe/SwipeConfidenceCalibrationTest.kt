@@ -39,6 +39,25 @@ import org.junit.Test
  * only move down. Flag rates: 50% vs 53% of wrong, 5.9% vs 6.3% of
  * correct. The constant stays 0.25 (see its KDoc: 0.30's one extra
  * flag is a one-commit margin artifact, not a knee shift).
+ *
+ * The start-key surcharge ([START_KEY_SURCHARGE_WEIGHT], the go->to
+ * fix): 253 committed (235 correct, 18 wrong), measured 8/18 wrong and
+ * 9/235 correct (3.8%) flagged at 0.25. The two signed-off q/w aim
+ * slips (set4#54, set5#52) flipped correct -> wrong (quick->wick) —
+ * denominator changes: the correct pool loses two flagged commits
+ * (margins 0.24/0.03 pre-lever), the wrong pool gains two (margins
+ * 0.02 flagged, 0.53 not flagged). The wrong floor stays 8: set4#32's
+ * flagged 'notice' wrong commit had its margin widened 0.068 -> 0.473
+ * (its runner-up pays the surcharge) while set4#54's new 'wick' is
+ * flagged at 0.02. The correct ceiling IMPROVES 14 -> 9: four flagged
+ * correct commits' margins widened past 0.25 (set1#6 us, set1#12
+ * jumps, set3#6 us, set5#31 mice — their runner-ups pay the start
+ * surcharge), the two quick flips removed their two flagged commits,
+ * and one correct commit became flagged (set6#39 fun 0.406 -> 0.238 —
+ * its own 0.74kw start miss narrows its margin against 'gun').
+ * Ceilings only move down. The constant stays 0.25 (0.30 buys one
+ * flag, a single 0.27-margin commit — same one-commit artifact as
+ * the end-surcharge table).
  */
 class SwipeConfidenceCalibrationTest {
 
@@ -145,15 +164,17 @@ class SwipeConfidenceCalibrationTest {
             "swipe_trails6_short_words_philip",
         )
 
-        /** Measured at 0.25 on the six sets: 8/16 wrong commits flagged
-         * (was 9/17 — the end-key surcharge pushed the flagged lazy->last
-         * wrong commit set2#35 past MAX_COMMIT_SCORE into silence; the
-         * floor drops only because that commit no longer exists). */
+        /** Measured at 0.25 on the six sets: 8/18 wrong commits flagged
+         * (was 8/16 — the start-key surcharge's two signed-off quick->wick
+         * flips grew the pool to 18; the flagged count is unchanged:
+         * set4#32's 'notice' margin widened 0.068 -> 0.473 and lost its
+         * flag, set4#54's new 'wick' is flagged at 0.02). */
         const val MIN_WRONG_FLAGGED = 8
 
-        /** Measured at 0.25 on the six sets: 14/237 correct commits (5.9%)
-         * (was 15/237 = 6.3% at the re-match recalibration — the end-key
-         * surcharge improved the ceiling, and ceilings only move down). */
-        const val MAX_CORRECT_FLAGGED = 14
+        /** Measured at 0.25 on the six sets: 9/235 correct commits (3.8%)
+         * (was 14/237 = 5.9% — the start-key surcharge widened four
+         * flagged margins past 0.25 and removed the two flagged quicks;
+         * set6#39 fun became flagged. Ceilings only move down). */
+        const val MAX_CORRECT_FLAGGED = 9
     }
 }
