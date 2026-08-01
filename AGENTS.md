@@ -3,696 +3,163 @@
 Guidance for AI coding agents working in this repository. Assumes no prior
 knowledge of the project.
 
+This file carries the always-loaded rules: architecture invariants,
+security, workflow, and the guardrails that are cheap to state and
+expensive to violate. Detailed mechanics live in per-topic reference docs
+under `docs/agent-reference/` — open the relevant one (routing table
+below) BEFORE working in an area. When you change behavior/conventions,
+update this file AND the relevant reference doc.
+
 ## Project overview
 
-**Better Swipe Keyboard** is an Android soft keyboard (IME) app, written
-entirely in Kotlin with Jetpack Compose. Its two headline features:
+**Better Swipe Keyboard**: Android soft keyboard (IME), Kotlin + Jetpack
+Compose. Features:
 
-- **Swipe (glide) typing**: a custom decoder maps a finger trail over the
+- **Swipe (glide) typing**: custom decoder maps a finger trail over the
   QWERTY keys to the most likely dictionary word.
-- **Voice input**: the microphone key dictates via the built-in
-  `SpeechRecognizer`, with a voice-tuned AI cleanup pass after dictation.
-- **AI proofreading**: an on-device Gemini Nano proofreader (ML Kit GenAI),
-  with an OpenRouter cloud fallback, fixes the current sentence after 2
-  seconds of typing inactivity.
+- **Voice input**: mic key dictates via `SpeechRecognizer`, with a
+  voice-tuned AI cleanup pass.
+- **AI proofreading**: on-device Gemini Nano (ML Kit GenAI), OpenRouter
+  fallback, fixes the current sentence after 2 s typing inactivity.
 
-Single Gradle module `:app`, package `com.example.betterswipekeyboard`.
-minSdk 35, targetSdk/compileSdk 36, Java 11 source/target compatibility,
-Kotlin 2.2.10, AGP 9.3.1, Gradle 9.5.0 (wrapper). The Gradle daemon JVM is
-pinned to a Java 21 toolchain via `gradle/gradle-daemon-jvm.properties`
-(foojay resolver auto-provisions it).
+Single module `:app`, package `com.example.betterswipekeyboard`. minSdk
+35, target/compileSdk 36, Java 11, Kotlin 2.2.10, AGP 9.3.1, Gradle 9.5.0
+(wrapper). Daemon JVM pinned to Java 21 via
+`gradle/gradle-daemon-jvm.properties` (foojay auto-provisions).
 
-## Runtime architecture
+## Architecture invariants
 
-The app has two entry points declared in `app/src/main/AndroidManifest.xml`:
+Deliberately layered — keep it this way. Entry points:
+`SwipeKeyboardService` (the IME, owns decoder/proofreaders/all
+`InputConnection` interaction) and `MainActivity` (setup screen; only an
+Activity can request the `RECORD_AUDIO` runtime permission).
 
-- `SwipeKeyboardService` — the `InputMethodService` hosting the keyboard.
-  Since an IME service is not an Activity, it acts as its own
-  `LifecycleOwner` / `ViewModelStoreOwner` / `SavedStateRegistryOwner` and
-  attaches these to the keyboard window's decor view so Compose works. It
-  owns the `SwipeDecoder`, the proofreaders, and all `InputConnection`
-  interaction.
-- `MainActivity` — a setup screen: buttons to enable/pick the IME, an
-  OpenRouter API key field, a test text field, and the `RECORD_AUDIO`
-  runtime-permission request for voice input (an IME service cannot show
-  the system permission dialog — only an Activity can).
+1. Layouts are pure data (`layout/`); panels (emoji, clipboard, voice)
+   are layout MODES rendered by `KeyboardScreen`, and must live OUTSIDE
+   the letter-gesture `pointerInput` container or their scrolls/taps are
+   swallowed.
+2. All gestures produce semantic `KeyboardAction`s at container level in
+   `ui/keyboard/KeyboardScreen.kt`; keys are purely visual. A swipe
+   trail begins at the first letter-key point; a drag crossing fewer
+   than two DISTINCT letter keys is a drift-tap (`tapAction()`
+   fallback), never decoded.
+3. `KeyboardViewModel` reduces actions → `KeyboardState` + optional
+   `KeyboardEffect`. Pure logic, unit-tested.
+4. **Only `InputConnectionEditor` talks to the text field.** Backspace is
+   grapheme-aware (`java.text.BreakIterator`) — never delete one UTF-16
+   unit. First backspace after a swipe deletes the whole word
+   (`KeyboardState.lastCommitWasSwipe` → `DeleteWordBackward`).
+5. Space-bar horizontal drag = cursor control via D-pad key events
+   (`InputConnectionEditor.moveCursor`).
 
-Data flow (deliberately layered, keep it this way):
+## Reference docs (routing table)
 
-1. **Layouts are pure data** (`layout/`): `KeyboardLayout` = rows of `Key`s,
-   each with a `KeyOutput` (Text, Backspace, Enter, Shift, SwitchLayout,
-   Microphone). `QwertyLayout`, `SymbolsLayout` and `NumericLayout` (the 3x4
-   dial pad — see "Numeric keypad" below). Character keys render at
-   one fixed global width computed in `KeyboardScreen` (`unitKeyWidthPx` in
-   `ui/keyboard/KeyWidth.kt`); rows with fewer keys are centered instead of
-   stretched, and modifier keys take the remaining space via weights. The
-   numpad is the one exception: it keeps its own weights (uniform 1/3-width
-   dial keys), bypassing the unit width in `KeyboardScreen`.
-2. **Panels are layout modes, not layouts**: `LayoutId.EMOJI` has no
-   `KeyboardLayout` — `KeyboardScreen` renders `EmojiPanel` instead of the
-   letter rows. Any panel (scrollable/tappable content) must live **outside**
-   the letter-gesture `pointerInput` container; otherwise panel scrolls/taps
-   are swallowed as gestures. On the key layouts (letters/symbols/numeric)
-   the container
-   wraps the utility row too (so a swipe can start anywhere in the keyboard
-   rectangle); panels and the voice screen keep the utility row outside as
-   plain clickable keys (two render modes of one `UtilityRow` composable).
-3. **All gestures produce semantic actions** (`KeyboardAction`): taps,
-   long-presses and swipes are handled at the container level in
-   `ui/keyboard/KeyboardScreen.kt` (keys themselves are purely visual), and
-   every user intent becomes a `KeyboardAction`. On the letters layout a
-   DRAG from anywhere except the space bar may start a swipe (letter
-   keys, dead space, modifier keys, utility row), but the trail — visual
-   and decode alike — only begins at the first point on a letter key
-   (`firstLetterContactIndex` in `swipe/TrailTrim.kt`; the off-letter
-   prefix is approach, not word, and would poison the decoder's letter
-   alignment). A drag that never touches a letter is not a swipe:
-   nothing drawn, nothing decoded. A drag whose trail never crosses at
-   least two DISTINCT letter keys is not a swipe either
-   (`distinctLetterKeysCrossed` in `swipe/TrailTrim.kt`,
-   `MIN_SWIPE_LETTERS` in `KeyboardScreen.kt`): it is a drift-tap — a
-   wobbly tap — and falls back to typing the down key (`tapAction()`),
-   so the letter is typed (a backspace drift deletes once, a dead-space
-   drag types nothing) and the decoder never runs for it. Taps on the gesture-mode
-   utility row are re-dispatched semantically in the loop
-   (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
-   `onSettingsClick` callback). The symbols and numeric layouts keep no
-   decoding: a non-spacebar drag there is swallowed.
-4. **`KeyboardViewModel` reduces actions** into a new `KeyboardState` plus an
-   optional `KeyboardEffect` (CommitText / CommitWord / DeleteBackward /
-   PerformEnter). Pure logic, no Android types beyond `ViewModel`.
-5. **Only `InputConnectionEditor` talks to the text field** — the service
-   applies effects through it. InputConnection handling exists in exactly
-   one place. Backspace is grapheme-cluster-aware
-   (`precedingGraphemeLength`, `java.text.BreakIterator`): never delete a
-   single UTF-16 unit — emoji are surrogate pairs and deleting one unit
-   leaves a U+FFFD replacement char. Every InputConnection call is a
-   synchronous Binder round-trip into the target app, so the held-backspace
-   repeat keeps them minimal: a "delete streak" (reset by any other edit)
-   skips the per-step `getSelectedText` check after the first step, and the
-   repeat clock in `KeyboardScreen` fires at fixed 50 ms boundaries instead
-   of 50 ms after each step's IPC returned. The first backspace after a
-   swipe deletes the whole just-swiped word, Gboard-style:
-   `KeyboardState.lastCommitWasSwipe` (set by the CommitWord reduction,
-   cleared by any other input action — but NOT by GestureStarted/Ended,
-   which wrap every gesture) makes the ViewModel emit
-   `KeyboardEffect.DeleteWordBackward`, and `precedingWordLength` measures
-   the word plus its auto-inserted leading space (never a newline) via the
-   word `BreakIterator`. Voice dictation bypasses the reducer, so it never
-   arms the word-delete.
-6. **Space-bar drag = cursor control** (`SpacebarCursor.kt` +
-   `ui/keyboard/SpacebarCursorDrag.kt`): a horizontal drag on the space bar
-   emits `MoveCursor` step deltas (net displacement), which
-   `InputConnectionEditor.moveCursor` applies as D-pad key events so the
-   target app handles grapheme clusters, selection collapse and clamping.
-   Scrubbing is velocity-sensitive: the travel per step shrinks with the
-   EMA-smoothed finger velocity (`spacebarStepSize` zones — 14.dp/char
-   below 200 dp/s, 8.dp mid, 4.dp above 800 dp/s, tuning starting points),
-   and the accumulator is re-anchored on every zone change
-   (`rebaseCursorAnchor`) so already-emitted steps never re-divide
-   retroactively. Cursor moves consume no one-shot shift and schedule no
-   auto-proofread.
-   The space bar's touch-acceptance area is inset from the top
-   (`SpacebarTopHitInset` in `KeyboardScreen.kt`, hit-testing only — the
-   visual key and the stored geometry rects are unchanged), and the slack
-   strip counts as "no key": drags starting there (or in any dead space of
-   the letters layout) collect a swipe trail, so an overshoot word-swipe
-   starting just above the space bar decodes instead of being eaten by the
-   cursor drag. Junk gap trails are filtered by `MAX_COMMIT_SCORE`.
+| Before touching… | Read |
+|---|---|
+| `swipe/`, decoder tuning, dictionary generator | `docs/agent-reference/swipe-decoder.md` |
+| alternates strip, `StripCells.kt`, swipe commit path | `docs/agent-reference/alternates-strip.md` |
+| `proofread/`, prompts, `tools/eval/`, proofread scheduling | `docs/agent-reference/proofreading.md` |
+| `ui/keyboard/`, `layout/`, `ime/`, gestures, numpad, popups | `docs/agent-reference/keyboard-ui.md` |
+| `clipboard/`, `emoji/`, voice input | `docs/agent-reference/features.md` |
+| emulator/adb workflow, API-36 platform issues, trail capture | `docs/agent-reference/environment.md` |
+| decoder tuning history, rejected levers, miss autopsies | `docs/decoder-investigation.md` |
 
-### Numeric keypad
+## Swipe decoding — guardrails
 
-- `LayoutId.NUMERIC` + `NumericLayout` (`layout/NumericLayout.kt`): a strict
-  3x4 dial pad (ITU-T telephone arrangement, uniform weight-1f keys — no wide
-  keys, no ABC key, no space bar, no visible punctuation; Philip's spec, don't
-  "fix"). Like the symbols layout it has no swipe decoding: a non-spacebar
-  drag is swallowed by the gesture loop.
-- The utility row's fifth key toggles it both ways with a contextual label
-  ("123" on letters/symbols, "ABC" on the numpad); gesture-mode taps go
-  through `utilityTapAction(id, proofreaderAvailable, layout)`.
-- Auto-popup: `SwipeKeyboardService.onStartInputView` applies
-  `fieldStartLayout` (`ime/NumericField.kt`, pure, unit-tested) on a fresh
-  field start (`!restarting`) — numpad for `TYPE_CLASS_NUMBER`/`PHONE`/
-  `DATETIME` (variation/flag bits ignored), back to letters when the next
-  field is not numeric and the numpad is showing. Within a field session the
-  manual toggle is never overridden; other layouts keep their existing
-  cross-field persistence. Routed through `onKeyboardAction` so the wrapper's
-  emoji-suggestion clearing applies.
-- Punctuation lives behind the `0` long-press popup (dial-pad convention),
-  via the generalized `keyPopup(layout, key)` in
-  `ui/keyboard/LongPressPopup.kt`: `NUMERIC_POPUP` = `# * ( ) / : . ,` +
-  space (the numpad's only space source; renders as "␣", commits " "), 3x3,
-  money keys on the bottom row. `popupIndexAt` takes the choices list — never
-  re-couple it to `PUNCTUATION_POPUP.size`.
+`SwipeDecoder` (pure Kotlin): SHARK-style scoring — every plausible
+dictionary word scored against the trail (no letter reconstruction).
+Three ORDERED geometric terms (first-basin letter alignment
+`LETTER_DEPART_KEYS` 0.5 with a gated last-letter lift-off re-match
+`REBASIN_RADIUS_KEYS` 0.8; SHARK2 tunnel line conformance, free 0.5 /
+saturate 2.0 / cull 1.75 key-widths; backtrack penalty), plus salient/LCS
+alignment, path-length, frequency prior, per-letter bonus, dwell ≥
+300 ms doubling, end-key surcharge `END_KEY_SURCHARGE_WEIGHT` 0.5 (the
+re-match/surcharge tension — ≤0.8kw licensed vs >0.5kw charged — is
+deliberate: don't move one without the other). Commit top word when
+`score < MAX_COMMIT_SCORE` (1.8). Feedback flash
+(`swipe/SwipeConfidence.kt`): FAILED → RED, close runner-up (margin <
+`LOW_CONFIDENCE_MARGIN` 0.25) → YELLOW, confident → nothing.
 
-### Swipe alternates strip
+Tuning rules learned the hard way (the test suite guards these):
 
-- An always-visible row between the utility row and the content below it,
-  on EVERY surface (key layouts and panels/voice alike — blank there), so
-  the total surface height is static:
-  `UtilityRowHeight + 6 + AlternatesStripHeight (40.dp) + 6 +
-  KeyboardContentHeight` = 322.dp (`ui/keyboard/SwipeAlternatesStrip.kt`;
-  the gesture-surface Box height in `KeyboardScreen` matches). Empty strip
-  shows the gray italic placeholder "Alternatives will appear here".
-- The strip shows the COMMITTED word as a green bold CENTER cell
-  (`KeyboardState.swipedWord`, tap = no-op) with the score-ranked runners-up
-  flanking it, so it is obvious which word was actually written. ONE shared
-  pure placement rule serves all three strip states — live mid-swipe,
-  persisted failed-swipe offers, committed — so lifting the finger only
-  recolors the center, never rearranges the row (Philip's rule):
-  `centeredCells` in `ui/keyboard/StripCells.kt`, behind `stripCells` /
-  `failedOfferCells` / `liveOfferCells` — center in the middle, best
-  runner-up nearest the center, alternating sides by rank:
-  `[a3, a1, CENTER, a2, a4]`), and the
-  number of alts tracks width (`alternateCountForWidth`: 2 below 600.dp, 4
-  at/above — every portrait phone gets the skinny 3-cell strip, foldables/
-  tablets/landscape get 5 cells). `KeyboardScreen` computes the cell list
-  once and shares it between rendering and gesture hit-testing.
-- Data flow mirrors crossedLetters: the commit site passes
-  `swipeAlternates(results)` (pure, `swipe/SwipeAlternates.kt` — drops
-  top-1, rejects runners-up ≥ `MAX_COMMIT_SCORE`, caps at 4, the decoder's
-  topN=5 minus the commit) on
-  `KeyboardAction.CommitWord.alternates`; the reducer stores them in
-  `KeyboardState.swipeAlternates` and the committed word in
-  `KeyboardState.swipedWord`, both CAPS-TRANSFORMED at commit time (one-shot
-  shift is already consumed by tap time, so caps cannot be re-derived
-  then), with exactly the `lastCommitWasSwipe` lifetime (every action that
-  clears the flag clears the strip; voice transitions and fresh field
-  starts clear it too). The action also carries `stripOffers` — the WIDER
-  near-miss-band runner-up list (top-1 excluded) the live strip showed —
-  stored caps-transformed in `KeyboardState.swipeStripOffers` with the same
-  lifetime. `stripCells` places THE WIDE list so every survivor keeps its
-  mid-swipe slot; offers missing from the narrow `swipeAlternates` (score
-  between `MAX_COMMIT_SCORE` and the near-miss band — they show mid-swipe
-  but are commit-gate junk post-commit) render as invisible, untappable
-  `isPlaceholder` cells reserving their slots, never as a re-lay-out.
-- The strip lives INSIDE the gesture surface like the utility row: cells
-  are purely visual, register rects, and taps are re-dispatched in the
-  gesture loop as `KeyboardAction.SelectAlternate` (a clickable child
-  would be swallowed by the container `pointerInput`). The reduction is
-  guarded by `lastCommitWasSwipe` (a stale strip never deletes text) and
-  RE-ARMS the flag, so chained swaps and word-delete on the replacement
-  work; the tapped word moves into `swipedWord` (the strip's center) and
-  leaves the alternates — the replaced-away old word disappears (no
-  swap-back, Philip's call). The service applies
-  `KeyboardEffect.ReplaceSwipedWord` as
-  `deleteWordBackward()` + `commitWord()`, so leading-space rules reapply
-  and the text ends up exactly as if the alternate had been swiped. The
-  replacement has no trail: nothing new enters `SwipedWordLog`, and the
-  replaced word's entry invalidates itself at proofread reconciliation.
-- A FAILED swipe (nothing committed) can still take over the strip: when
-  top-1 sits in the near-miss band (`< NEAR_MISS_OFFER_MAX_SCORE` 3.2 —
-  measured on the six fixture sets plus the 14 captured keyboard trails:
-  2/2 rescue, 3/274 impostors, KDoc table in `swipe/SwipeAlternates.kt`),
-  the decode branch emits `KeyboardAction.OfferFailedSwipe(offers, letters)`
-  with `failedSwipeOffers(results, maxOffers)` (top-1 INCLUDED, capped at
-  the same width-adaptive cell count; empty band → no action → placeholder,
-  exactly as before) and the trail's crossed letters. The reduction stores
-  them in `KeyboardState.failedSwipe`, clears the swipedWord/swipeAlternates
-  pair AS A PAIR (a stale green center among the offers would lie), keeps
-  `lastCommitWasSwipe` untouched (the gesture committed nothing — the last
-  COMMIT still owns the word-delete) and consumes no one-shot shift.
-  `failedSwipe` is cleared everywhere the pair is cleared, plus by
-  CommitWord. The strip's single computation site prefers
-  `failedOfferCells(offers, maxAlternates)` (top-1 in the CENTER slot,
-  PLAIN — no green, no blue: nothing was committed and nothing would
-  auto-commit — flanked by the rest in the same shared layout, so
-  finger-up never rearranges the row) over `stripCells(...)`, so rendering and
-  hit-testing still share one list; unlike a committed strip's green
-  center (tap = no-op), the failed strip's center slot IS tappable. The
-  red failed-swipe flash still
-  fires (the yellow low-confidence flash is disjoint: commit-only), and
-  offer cells render lowercase even under armed shift — caps applies at
-  commit time.
-- An offer tap is re-dispatched failed-first in the gesture loop as
-  `KeyboardAction.CommitWord(picked, letters, offers - picked, stripOffers =
-  offers - picked)`: the normal
-  commit path supplies leading-space rules, caps (consuming the still-armed
-  one-shot shift), word-delete arming, the green-center strip with the
-  remaining offers IN THE SAME SLOTS (all offers are in-band, so the wide
-  list IS the remaining offers), and SwipedWordLog recording with the failed trail's
-  path evidence. After the tap the strip looks exactly like a decoder
-  commit. In a COMMITTED strip, the green center and the invisible
-  band-mismatch placeholders are the only untappable cells.
-- LIVE suggestions while swiping: the trail-append loop fires throttled
-  background decodes of the trimmed trail-so-far (pure gate
-  `shouldRunLiveDecode` in `swipe/LiveDecodeThrottle.kt` — ≥10 trail points,
-  ≥120 ms and ≥6 new points since the last decode, tuning starting points;
-  skip while a decode is still running, never preempt). The decode runs on
-  `Dispatchers.Default` from the composable's existing `rememberCoroutineScope`
-  (the fade-job scope), and a generation counter (`liveGen`, bumped by every
-  new decode and by gesture-end teardown, which also cancels the job) drops
-  stale results. Results land in `liveOffers` (`LiveOffers(words,
-  leaderWouldCommit)` in `ui/keyboard/StripCells.kt`) — TRANSIENT Compose
-  state like `trailPoints`, never `KeyboardState`, so 8 Hz updates cause no
-  reducer churn. The words reuse `failedSwipeOffers` (the 3.2 near-miss band,
-  capped at maxAlternates + 1: top-1 center plus the flanks);
-  `leaderWouldCommit` is top-1's score <
-  `MAX_COMMIT_SCORE` — the honest rule: light blue only for what a finger-up
-  would commit right now (`isLiveLeader` on the CENTER cell, rendered
-  `LiveLeaderBlue` 0xFF0A84FF bold in `SwipeAlternatesStrip`, never green —
-  green stays reserved for the committed center; a top-1 that would not
-  commit renders plain, same slot). The live strip uses the same shared
-  centered layout as the committed and failed strips, so lifting the finger
-  only recolors the center (blue to green), never rearranges the row.
-  `altCells` prefers
-  failedSwipe → liveOffers → the commit strip; `liveOffers` is cleared at
-  every gesture end. CANCELED-swipe persistence: when the final decode's
-  near-miss band is empty but live offers exist, the FAILED branch emits
-  `OfferFailedSwipe(liveOffers.words, letters)` through the existing path, so
-  a canceled swipe's last suggestions stay tappable — WITHOUT the blue
-  (`failedOfferCells` never sets `isLiveLeader`: after finger-up nothing
-  auto-commits, so the mark would lie).
+- Measure curvature/speed over **arc-length windows** (0.35 key widths),
+  never fixed point counts (they see jitter as turns). Salient regions
+  use hysteresis (enter 0.45, exit 0.30), collapse to peak point.
+- Keep matching **ordered and rigid** — no elastic/DTW warping, no
+  neighbor-tolerant LCS (SHARK2 ripped elasticity out; short junk beat
+  intended words when matching was tolerant). The one measured exception
+  is the last letter's gated lift-off re-match.
+- **No trail-length gates.** Straight-trail ties ("ak" vs "ask") are
+  decided by frequency + per-letter length bonus. The LCS denominator
+  floors at 3 (`ALIGNMENT_MIN_DENOMINATOR`).
+- Geometric costs are per-letter/per-point MEANS (FUTO's γ-exponent
+  normalization does not apply), plus `LENGTH_BONUS_PER_LETTER` 0.02.
+- Constants marked "tuning starting point" come from SHARK2, FUTO, Sivek
+  & Riley — validate against real trails (`SwipeTrailCapture`) before
+  treating as settled.
+- Check dictionary coverage before assuming a missing word is a decoder
+  bug. Read `docs/decoder-investigation.md` before proposing decoder
+  tuning — most naive levers are measured dead ends.
 
-### Swipe decoding (`swipe/`)
+The dictionary (`words_en.txt`) is GENERATED by
+`tools/generate_words_en.py` (wordfreq v3 + SCOWL junk-class filter,
+CC BY-SA 4.0 — attribution in asset header, `NOTICE`, setup screen; keep
+all three). Never hand-edit `words_en.txt`; edit the generator and
+regenerate. Apostrophe words match LETTERS ONLY via `swipeLetters(word)`
+and commit the apostrophe verbatim. Custom user words merge at rank 1
+(`Dictionary.withCustomWords`) and affect swipe decoding only.
 
-- `SwipeDecoder` (pure Kotlin, no Android deps): SHARK-style scoring — every
-  plausible dictionary word is scored against the trail instead of
-  reconstructing letters from the trail. Three ORDERED geometric terms make
-  the word's ideal key-to-key path explain the trail in sequence (this is
-  what separates same-start/end words like "my" vs "mummy"):
-  1. Ordered letter alignment: each letter matches at the minimum of the
-     FIRST approach basin after the previous letter's match
-     (`LETTER_DEPART_KEYS` 0.5 ends a basin). Never a global argmin —
-     jitter decides which of two visits to the same key wins, and a stolen
-     match cascades every following letter off the trail ("follow"
-     regressed to "flow" until first-basin matching). Crossed letters
-     ("swipe"'s i) match cheaply on the passing trail. The LAST letter
-     alone may re-match at a later basin — the one still open at lift-off,
-     within `REBASIN_RADIUS_KEYS` 0.8 — because no letter follows it to
-     cascade: this fixes the overshoot-and-return signature (the finger
-     passes the final key, comes back to it, and first-basin matching
-     could never see the return visit; 7 of 14 captured "keyboard" swipes,
-     12/14 now commit). Gates measured on the captured sets: a basin must
-     have closed (depart-and-return), the re-match must beat the stock
-     match, and the radius holds — ungated re-matching let impostors claim
-     foreign end-keys.
-  2. Line conformance (SHARK2's tunnel): trail points between two matched
-     letters must follow the key-to-key segment; free inside 0.5
-     key-widths, linear to a 2.0 saturation cap, hard cull at 1.75
-     key-widths (FUTO's legacy decoder). A correctly traced word scores
-     ~zero at ANY trail length — that is why no trail-length gate exists.
-  3. Backtrack penalty: trail steps opposing the current leg's direction
-     cost their length — a zigzag word's reversal leg (M→U→M) on a
-     straight trail.
-  Plus: salient points (high curvature or low speed) mark deliberate
-  motion; an LCS alignment between salient keys and the word, a trail-vs-
-  ideal path-length term (Swype's per-word "expected path length"), a
-  unigram frequency prior, and a small per-letter length bonus (FUTO's
-  β·L). A dwell ≥ 300 ms on a key doubles its letter. Salient evidence is
-  graded before it can charge: a mid-trail region dominated by SLOWNESS
-  (not curvature) counts as a deliberate key visit only if the finger
-  lingered ≥ 60 ms (a slight slowdown over a crossed key is aim noise —
-  "dog" hesitating over F must not become "fog"); endpoint regions are
-  anchored to the actual first/last trail point (their hardcoded 0.5
-  salience is evidence-free, so the distance term skips the salience
-  multiplier there), and an ISOLATED lift-off region — no measured
-  salience reaches the last point, i.e. the finger lifted mid-flight
-  without decelerating — emits no key at all, so a drift endpoint's
-  nearest key ("dough"'s h, "we're"'s r) can't charge the intended word
-  a missed salient it never earned (touch-down keeps its anchor
-  unconditionally: the finger starts at rest on an aimed key); and words
-  whose first letter matches mid-trail pay
-  an unexplained-head charge mirroring the tail term (0.5kw free — touch-
-  down aim is much better than lift-off aim). The LAST letter also pays
-  an end-key surcharge (`END_KEY_SURCHARGE_WEIGHT` 0.5): its match
-  distance beyond the tunnel radius, charged AGAIN undiluted, after the
-  lift-off re-match — the per-letter mean shrugs an unvisited neighbor of
-  the visited end key off to ~0.2 ("help"'s p next to "hello"'s o), and
-  the frequency prior then decides the word (rank 163 vs 1905 = a
-  constant +0.68 for help; 6/13 captured hello trails committed "help").
-  Measured: 10/13 hello, fixture floors held 13/32/34/60/62/36 at
-  w=0.4-0.7; the binding constraint is set5 dog#8 (re-matched g at
-  0.76kw — margin 0.072 at 0.5, flips at 0.8), and the re-match tension
-  (re-match licenses ≤0.8kw, surcharge charges past 0.5kw) is deliberate.
-  Lower score =
-  better; `KeyboardScreen` commits the top word when
-  `score < MAX_COMMIT_SCORE` (1.8, calibrated on captured real-hand
-  trails — correct swipes at normal speed land up to ~1.8). Two-tier
-  feedback flash (pure classification in `swipe/SwipeConfidence.kt`,
-  jQuery-highlight-style fade over ~400 ms, purely cosmetic): a FAILED
-  swipe (no candidate below the cutoff, nothing committed) flashes the
-  trail RED (`FailedSwipeFlash`); a commit with a close runner-up
-  (top2−top1 margin < `LOW_CONFIDENCE_MARGIN` 0.25, calibrated on the
-  six captured trail sets — flags 8/16 wrong commits at 5.9% false
-  positives; recalibrated after the re-match (wrong pool 20→17) and
-  again after the end-key surcharge (17→16: the signed-off lazy→last
-  wrong commit set2#35 was pushed past `MAX_COMMIT_SCORE` into silence —
-  denominator changes both times, not flag-rate changes)) flashes YELLOW (`LowConfidenceFlash`) as "maybe re-swipe";
-  confident commits flash nothing. Segment alpha in
-  `ui/keyboard/TrailFade.kt`.
-- Tuning rules learned the hard way (the test suite guards these):
-  - Measure curvature/speed over **arc-length windows** (0.35 key widths),
-    never fixed point counts — real finger trails are dense and jittery, and
-    point-count windows see jitter as turns. Salient regions use hysteresis
-    (enter 0.45, exit 0.30) and collapse to their peak point.
-  - Keep matching **ordered and rigid** — no elastic/DTW-style warping and
-    no neighbor-tolerant LCS: SHARK2 tried elasticity and ripped it out
-    (it destroys discrimination in a crowded template space), and our own
-    history agrees (short junk like "role", "keynote" beat intended words
-    when matching was tolerant). The one measured exception to first-basin
-    rigidity is the last letter's gated lift-off-basin re-match (see term
-    1) — rigid everywhere else, one second chance exactly where no
-    cascade can follow.
-  - **No trail-length gates.** The old two-letter gate (≤ 3.5 key widths)
-    was deleted: two-letter words compete like any other. Straight-trail
-    ties (e.g. "ak" vs "ask" on a straight A→K line — both tunnel
-    perfectly) are decided by word frequency plus the small per-letter
-    length bonus, per the signed-off rule: on a genuinely straight trail
-    the obvious frequent short word wins. The LCS alignment denominator
-    floors at 3 (`ALIGNMENT_MIN_DENOMINATOR`) so two-letter words no
-    longer get a free perfect alignment — that structural bias is why
-    "ak" once beat "ask".
-  - Geometric costs are per-letter / per-point MEANS (length-normalized by
-    construction; FUTO's γ-exponent normalization is for summed CTC costs
-    and does not apply), plus the per-letter bonus
-    `LENGTH_BONUS_PER_LETTER` (0.02) against residual short-word bias.
-  - Constants marked "tuning starting point" in `SwipeDecoder` come from
-    SHARK2 (tunnel radius), FUTO's legacy decoder (cull) and Sivek & Riley
-    (saturation) — validate them against real trails recorded with
-    `SwipeTrailCapture` before treating them as settled.
-  - The old google-10000 list (2006 web n-grams) was replaced by wordfreq
-    data (see below); check dictionary coverage before assuming a missing
-    word is a decoder bug.
-  - `docs/decoder-investigation.md` is the decoder's engineering log: every
-    captured-trail miss autopsy with term breakdowns, and the REJECTED
-    levers with the measurements that killed them (tail-cap, cull deletion,
-    drag stage-0, endpoint exemption). Read it before proposing decoder
-    tuning — most naive levers are already measured dead ends.
-- `Dictionary`: frequency-ordered word list from
-  `app/src/main/assets/words_en.txt` (`word<TAB>rank` lines, ~55k words,
-  lower rank = more frequent), indexed by first letter. The asset is
-  generated by `tools/generate_words_en.py` from **wordfreq v3**
-  (multi-corpus ~2021 snapshot: Wikipedia, OpenSubtitles, SUBTLEX, Google
-  Books, OSCAR, Twitter, Reddit; top 60k filtered to plain words
-  `^[a-z]{2,}$` plus one-apostrophe tokens `^[a-z]+'[a-z]+$`, minus
-  vowel-less 3+ letter abbreviation junk like "pwr"/"thx" — 'y' counts as a
-  vowel so "sky"/"gym" stay). Data license **CC BY-SA 4.0** — attribution
-  lives in the asset's comment header (comment lines are skipped by
-  `Dictionary.load`), the repo-root `NOTICE` file, and a credit line on the
-  setup screen; keep all three. A manual supplement (keyboard vocabulary
-  like "swipe") is merged by the generator's `SUPPLEMENT` list at each
-  word's wordfreq rank (unknown words append at the tail) — edit the
-  generator and regenerate, never hand-edit `words_en.txt`.
-- Apostrophe words (possessives/contractions) are swipeable: the generator
-  admits tokens with exactly ONE apostrophe between letters ("mother's",
-  "don't", ~1.75k of them) so first()/last() is always a letter and the
-  endpoint gates are unaffected. The decoder matches them LETTERS ONLY —
-  `swipeLetters(word)` (swipe/WordLetters.kt) strips the apostrophe, which
-  has no key and contributes zero geometry (no distance, conformance,
-  salience or length cost; letter count feeds every per-letter term so
-  the means stay undiluted) — and commits the apostrophe VERBATIM
-  ("Mother's" under one-shot shift already works). Frequency is the only
-  tie-breaker between same-letter candidates: swiping m-o-t-h-e-r-s gives
-  "mother's" (4.37 > mothers 4.32), i-t-s gives "it's" over "its", and
-  plurals win where they genuinely outrank ("dogs" > "dog's"). Philip
-  signed off these arbitrations.
-- Junk-class filter (the generator's second source is **SCOWL**
-  english/american-words + proper-names levels, fetched from the
-  rdeits/SCOWL-mirror or a local dir): two word-CLASS rules, never a rank
-  cutoff (rank-adjacent keepers like "pizzas" 18158 vs "wick" 18235 prove
-  no threshold separates them):
-  - **Rare proper names**: in SCOWL names ∧ NOT in SCOWL words ∧ zipf <
-    2.8 — drops "brien"/"vey"/"iver"-class surname junk (~2.5k words)
-    while keeping names people type ("siri", "alexa", "jose", "maria").
-    Apostrophe tokens are EXEMPT (Philip's call after a decoder
-    competition audit: a possessive's letters must match the trail in
-    order, so frequent words crush them on frequency whenever geometry
-    coincides — the bare-name steal mechanism doesn't transfer).
-  - **Nonce respellings**: len ≥ 4, not a SCOWL word, zipf < 3.1, and a
-    same-length ONE-SUBSTITUTION neighbor exists in SCOWL words with zipf
-    ≥ word + 2.0 ("krazy"→"crazy"). Substitution-only is deliberate —
-    insertion/deletion neighbors would kill real words ("json"→"son").
-    A small documented `KEEP_EXCEPTIONS` list saves mandated modern words
-    the rule would eat ("cron", "vimeo", "binance", "yeet", "thanos", ...).
-  - Known survivors (real SCOWL words no principled rule drops): "doh",
-    "dix", "folic" — they still steal an occasional swipe; decoder-side
-    territory, not dictionary. wordfreq's API case-folds, so
-    capitalization is NOT an available name signal (measured, dead end).
-- Custom user words (names, jargon) merge in via
-  `Dictionary.withCustomWords` at rank 1 (top frequency, geometry still
-  dominates scoring); parsed from free-form input by `parseCustomWords`
-  (split on any non-letter run — but an apostrophe BETWEEN letters stays
-  intra-word, so custom possessives like "spielberg's" work; hyphens
-  break),
-  stored newline-joined in SharedPreferences by `CustomWordStore`. The
-  service rebuilds the decoder in `onStartInputView` when the stored string
-  changed; `KeyboardScreen` receives a `decoderProvider` so it reads the
-  current decoder at gesture time. Custom words affect swipe decoding only.
-- `KeyboardGeometry`: collects key bounds from the Compose UI
-  (`onGloballyPositioned`) and answers hit-testing / key-center questions.
-- `crossedLetters` (`swipe/CrossedLetters.kt`, pure): the ordered letter
-  keys a trail crossed — nearest key center per trail point (Voronoi, no
-  radius gate — gates were measured to lose exactly the endpoint letters
-  that matter, 46-69% vs 75% letter recovery on the fixture sets), order
-  preserved, consecutive repeats collapsed. Proofreader context, NOT
-  decoder input; deliberately independent of `SwipeDecoder`'s private
-  alignment. Ratchet-tested in `CrossedLettersRealTrailTest` (committed-
-  correct trails recover the intent letters as an in-order subsequence;
-  floors 7/13, 28/32, 30/34, 48/60).
+## Swipe alternates strip — invariants
 
-### Clipboard history (`clipboard/`)
+- Always-visible row on EVERY surface; static total height 322.dp
+  (`ui/keyboard/SwipeAlternatesStrip.kt`). ONE shared pure placement rule
+  (`centeredCells`, `ui/keyboard/StripCells.kt`) for all three states
+  (live/failed/committed): finger-up only recolors the center, NEVER
+  rearranges the row.
+- Strip state has exactly the `lastCommitWasSwipe` lifetime. Green =
+  committed center only; blue (`LiveLeaderBlue`) = live leader that
+  finger-up would commit; failed-swipe offers render PLAIN.
+- The strip lives INSIDE the gesture surface: cells are visual-only
+  rects, taps re-dispatched in the gesture loop (never clickable
+  children); the `SelectAlternate` reduction is guarded by
+  `lastCommitWasSwipe` and RE-ARMS it.
+- Full mechanics: `docs/agent-reference/alternates-strip.md`.
 
-- `ClipboardHistory` (pure Kotlin, injectable clock): in-memory ring buffer,
-  50 entries max, 1-hour lazy expiry, case-sensitive exact-match dedup
-  (re-copying moves a clip to the top). Blank and >10k-char clips rejected.
-  Deliberately not persisted — process death clears it, and nothing lands
-  on disk or in backups.
-- `SwipeKeyboardService` observes `ClipboardManager` with an
-  `OnPrimaryClipChangedListener` (the platform grants the default IME
-  clipboard access even when the keyboard is hidden) and feeds accepted
-  clips to `KeyboardViewModel.addClip`; the ViewModel mirrors them into
-  `KeyboardState.clipboard`. Clips marked
-  `ClipDescription.EXTRA_IS_SENSITIVE` are never stored; only item text is
-  read (never `coerceToText`).
-- The 📋 utility key toggles `LayoutId.CLIPBOARD`; `ClipboardPanel.kt`
-  renders outside the letter-gesture `pointerInput` scope (same pattern as
-  panels elsewhere). Tap emits `PasteClip` (returns to letters); long-press
-  deletes. Paste reduces to `KeyboardEffect.PasteText`, which commits
-  verbatim — never uppercased by caps, no leading-space rules, and no
-  auto-proofread scheduling (a paste must stay exactly as copied).
+## AI proofreading — invariants
 
-### Emoji suggestions (`emoji/`)
+- `selectBackend`: on-device (ML Kit Gemini Nano) wins when available;
+  OpenRouter (`amazon/nova-micro-v1`, temperature 0, ZDR providers only)
+  when an API key is configured; otherwise none.
+- Auto-proofread debounced 2 s after last user activity; results applied
+  only if the user hasn't typed since (never clobber newer text).
+  Failures are logged and swallowed — never depend on the AI. Tapping 3+
+  chars suspends auto-proofread (`typedTapStreak`); the next swipe
+  restores it.
+- Prompt few-shot examples are GENERIC and invented, never derived from
+  captured trails/incidents (enforced by `ProofreadPromptTest`'s corpus
+  guard). The eval harness (`tools/eval/`) is the quality gate for any
+  prompt/model change: ship rule = beat baseline arm A on intent-recovery
+  on BOTH sub-corpora, no untouched regression, p95 well under the 15 s
+  timeout, ZDR pre-flight first.
+- Timing, prompt internals, swipe-path annotation wire format, debugging
+  workflow: `docs/agent-reference/proofreading.md`.
 
-- `EmojiSuggester` (pure Kotlin, no Android deps): matches the last few
-  words before the cursor against a static keyword → emoji table and
-  returns up to 8 emoji for the suggestion row atop the emoji panel.
-  Offline and instant — plain HashMap lookups, no AI/network.
-- The table is `app/src/main/assets/emoji_keywords_en.txt`
-  (`keyword<TAB>emoji,emoji,...`, best first), generated by
-  `tools/generate_emoji_keywords.py` from Unicode CLDR annotations
-  (English). Regenerate to update; hand-tuned aliases ("taking off",
-  "lol") live in the script's `ALIASES` dict. CLDR keys drop the VS16
-  variation selector where the panel keeps it ("✈" vs "✈️") — the
-  generator canonicalizes to the panel form, preserve that.
-- Matching rules (unit-tested in `EmojiSuggesterTest`): last 3 letter
-  tokens, last-two-word bigram first, exact then naive singular
-  ("planes" → "plane"), most-recent-word-first ranking, dedup, cap 8.
-- The service owns the suggester and mirrors results into
-  `KeyboardState.emojiSuggestions` (same pattern as the clipboard):
-  refreshed when the emoji panel opens and after any text change while
-  it is open, cleared on switching away. `EmojiPanel`'s suggestion row
-  hides when empty; the panel height is fixed, so the row never resizes
-  the IME window. Suggestion taps commit via the same
-  `KeyboardAction.InsertText` path as grid taps.
-- `EmojiPanel` is ONE scroll surface: a single `LazyVerticalGrid` holds
-  the suggestion block (label + row, only while suggestions exist), the
-  "Categories" label, the category bar, and all sections as items; only
-  the ABC/backspace bottom bar is pinned. Category jumps therefore
-  depend on whether suggestions are visible — use
-  `categoryJumpIndex(categories, hasSuggestions, index)` (pure, tested
-  in `EmojiDataTest`), never `categoryStartIndex` plus a hardcoded
-  offset; the two must stay in sync with the grid's item order.
+## Clipboard, emoji, voice — invariants
 
-### AI proofreading (`proofread/`)
-
-- `Proofreader` interface; `MlKitProofreader` (on-device Gemini Nano via
-  `com.google.mlkit:genai-proofreading`, keyboard-tuned input type, kicks off
-  model download itself) and `OpenRouterProofreader` (OkHttp + org.json,
-  model `amazon/nova-micro-v1` — picked on feature/proofread-rewrite after
-  the tools/eval speed sweeps (tags r2-r5, t1/t2): the only ZDR-compliant
-  candidate reliably under Philip's 1s bar (p50 ~0.6s, 88-97% sub-1s);
-  its accuracy gap vs the flash-lite incumbent on hard real-trail cases is
-  being closed by prompt iteration, eval tags n0+ — few-shot prompt in
-  `ProofreadPrompt`, temperature 0, requests restricted to
-  zero-data-retention providers).
-- `selectBackend`: on-device wins when available; cloud when an API key is
-  configured; otherwise none.
-- Auto-proofread is debounced 2 s after the last *user activity*, not just
-  the last text change (`SwipeKeyboardService.scheduleAutoProofread`):
-  `KeyboardScreen` emits `KeyboardAction.GestureStarted`/`GestureEnded`
-  around every gesture (a swipe produces no actions until finger-up), a
-  touch cancels the timer, and finger-up reschedules it only when the
-  dirty flag says text changed since the last proofread attempt (no
-  wasted API calls after no-op gestures). Typed-mode scheduling during
-  a gesture is deferred to finger-up (`gestureActive`), so a held
-  backspace doesn't cancel + relaunch the job on every repeat step.
-  Two tap/toggle behaviors on top of the debounce (reducer-owned state,
-  service-side timing):
-  - Tapping (not swiping) 3+ characters suspends auto-proofreading:
-    `KeyboardState.typedTapStreak` counts consecutive `InsertText`s; at
-    `TAP_TYPING_DISABLE_THRESHOLD` (3, `KeyboardViewModel`) while
-    `proofreadAuto` is on, the reduction flips it off and arms
-    `proofreadSuspendedByTaps`. The next swipe (`CommitWord`) restores
-    it ("swiping remembers the AI was on"); taps while the USER has it
-    off never arm the flag (a swipe must not resurrect proofreading
-    against explicit intent), and a manual toggle clears it (user
-    intent wins, fresh streak). Backspace/Enter/cursor moves don't
-    break the streak; only `CommitWord` and `ToggleProofread` reset it.
-  - Toggling the AI key ON fires ONE immediate proofread of the current
-    window (`runProofread` directly, bypassing the gestureActive
-    deferral — a toggle tap is not text input), with the pended
-    debounce job cancelled FIRST so it can't race the immediate pass;
-    then the 2 s debounce resumes. Whenever `proofreadAuto` is off
-    (manually or suspended), no pended debounce job survives (both in
-    `SwipeKeyboardService.onKeyboardAction`).
-- `SentenceExtractor.currentWindow` pulls the current fragment *plus the
-  previous sentence* from text before the cursor, so a continuation
-  fragment ("and bought ...") can be merged back into a sentence an
-  earlier pass terminated during a mid-thought pause. The window never
-  crosses the last newline before the cursor: a newline is a deliberate
-  user boundary (paragraphs, lists), so text before it is neither
-  analyzed nor editable, the newline itself can never be removed by a
-  replacement, and continuation merging is possible only WITHIN a
-  paragraph. The whole window is the proofread input and the replacement
-  span; the result is only applied if the user hasn't typed since (never
-  clobber newer text).
-  Proofread failures are logged and swallowed — the keyboard must never
-  depend on the AI.
-- The merge behavior is taught only on the OpenRouter path (a generic
-  few-shot example in `ProofreadPrompt.EXAMPLES`). The ML Kit API takes
-  plain text only — no system prompt, no few-shot — so on-device merging is
-  best-effort model behavior and parity between backends is not guaranteed.
-- The typed prompt (rewritten on feature/proofread-rewrite, replacing the
-  old five-step SYSTEM + 33 Philip-derived examples): a short job statement
-  plus ~8 GENERIC invented few-shot pairs, one per mechanism (a word
-  contradicting its crossed path, picking the intended word from the
-  decoder's guesses instead of inventing a fluent unsupported one, path
-  approximation, fragment merge, plain-typo repair, restraint identities).
-  The examples are deliberately NOT derived from captured trails, test
-  sentences or project incidents — the keyboard must work for anyone, not
-  be tuned to one person's writing. A strengthened corpus guard in
-  `ProofreadPromptTest` enforces this mechanically: no example may contain
-  any captured sentence (all six sets, via
-  `eval/CapturedSentences.kt` — single source shared with the eval corpus
-  generator), any distinctive corpus/incident word (mummy, folic, wars,
-  mice...), any incident word PAIR (star+east, nine+mice, his+hours...),
-  or overlap the invented eval cases. SYSTEM states only what the model
-  cannot infer: what swipe typing is, the annotation format, the
-  window/merge mechanics, the reply protocol (applied VERBATIM into the
-  text field — corrected text only; correct-or-unsure text returned
-  unchanged — the echo guard and fail-soft bias depend on both), restraint
-  (fix errors, never restyle), and EVIDENCE_RULE — the reasonable-
-  mis-swipe constraint, held as a separate constant so the eval's arm E
-  can remove exactly that sentence and test whether a stronger model
-  still needs it. The prompt teaches mechanisms, not error-class
-  instances; whether the model generalizes is measured (below), not hoped.
-  Two SYSTEM restraint clauses (telegraphic/casual phrasing is not an
-  error; the writer's punctuation is preserved verbatim) are the survivors
-  of the p-loop sweep (eval tags p0-p10) on the shipping model — the only
-  two of ten measured changes that improved accuracy without regressions.
-  Nova-micro quirks measured in the sweeps, relevant to any future prompt
-  work on this model: it echoes freshly-added few-shot outputs into
-  unrelated replies (twice observed), occasionally emits refusals
-  (production is covered by `ReplySanity`), and its grammar priors
-  (committee-have, that-vs-the, path-primacy on fluent words) are
-  prompt-immovable — model limits, not prompt gaps.
-- Prompt eval harness (`tools/eval/`, the quality gate for any prompt or
-  model change — no merge without its table): `./gradlew
-  :app:generateEvalCorpus` rebuilds `corpus.jsonl` — sub-corpus R (the six
-  fixture sets replayed through the current decoder, reconstructed into
-  the sentences actually swiped: real wrong commits, real crossed-letter
-  annotations built by the shipped `withSwipePaths`; fully-correct
-  sentences become capitalized untouched-rate cases) and sub-corpus I
-  (~20 hand-authored invented cases, mechanism-labeled, disjoint from the
-  prompt examples). `eval_proofread.py` (key from gitignored
-  `tools/eval/.env`, template provided) runs the arms — A: frozen shipping
-  prompt (`baseline_prompt.json`, main @ d1bdd26) + flash-lite; B: new
-  prompt + flash-lite (isolates the prompt variable); C/D: new prompt +
-  flash/pro; E: new prompt minus EVIDENCE_RULE + pro — after a ZDR
-  pre-flight (a model with no zero-retention endpoint fails loud and its
-  arms are skipped; the privacy contract outranks the benchmark). Scoring
-  splits R and I columns (the overfit check: winning only one column is
-  overfit either way), plus untouched-rate, per-class table, p50/p95
-  latency vs the 15 s app timeout, and real cost from usage accounting.
-  Ship rule: beat A on intent-recovery on BOTH sub-corpora, no untouched
-  regression, p95 well under timeout.
-- Swipe-path annotation (crossed letters + decoder alternates as
-  proofreader evidence): at swipe-commit time `KeyboardScreen` attaches
-  `crossedLetters` to `KeyboardAction.CommitWord` (the ViewModel passes it
-  through; caps applies to the word, never the letters), and the service
-  records it in `SwipedWordLog` (pure, in-memory, cap 100) — together with
-  the action's `alternates` (the decoder's RAW runner-up words, uncapped;
-  the caps-transformed copies in `KeyboardState.swipeAlternates` are for
-  the strip). The keyboard never observes
-  external edits, so alignment is TEXT-ANCHORED: at proofread time the
-  log is reconciled against `textBeforeCursor` (whole-word, case-
-  sensitive, commit order) and every invalidation — edited, deleted,
-  retried or externally changed word — resolves to a safe drop. Matching
-  words inside the window annotate the request as
-  `(Swipe paths, approximate: word=path>alt1,alt2)` — `path` is the BARE
-  concatenated crossed keys (`fog=dog`; the old prompt's few-shots showed
-  a dotted `d·o·g` notation that production never sent — the rewrite's
-  examples and SYSTEM use the real wire format; max 20 most
-  recent; the `>alts` suffix is omitted when the decoder offered no
-  score-gated runner-ups, and the committed word can never appear among
-  its own guesses — `swipeAlternates` drops top-1), ONLY
-  for the OpenRouter typed prompt — ML Kit and voice requests get plain
-  text. The prompt teaches (generic examples + EVIDENCE_RULE) that a word
-  disagreeing with its path is a likely error even if it fits its
-  sentence, and that a replacement for a swiped word must be a plausible
-  result of that same swipe: consistent with the path within
-  normal mis-swipe tolerance (aim slip, a nearby key, an extra or missing
-  letter at an end) OR one of the decoder's listed guesses (the decoder's
-  own reasonable mis-swipe readings of the trail) — never a fluent word
-  no reasonable swipe of that trail could produce (the historical
-  'Star East'→'Star Trek' failure class:
-  'wars' was in the decoder's guesses, 'trek' was invented). A reply
-  echoing the marker is discarded by the echo guard, never applied.
-- The OpenRouter API key is stored in plain SharedPreferences by
-  `ApiKeyStore` (acceptable for a personal app; noted in code as
-  not production-grade).
-- Standard debugging workflow for AI-run complaints ("the proofreader
-  broke/missed X"): replay the session's captured trails
-  (`swipe_trails*.jsonl`) through the decoder to get its commits, then
-  diff those commits against the post-proofread transcript. Every
-  discrepancy lands in one fault class — decoder-miss (decoder committed
-  the wrong word), proofreader-miss (decoder right, proofreader didn't
-  fix it), proofreader-damage (decoder right, proofreader broke it), or
-  window/merge-rule (the word never entered `currentWindow`, or the
-  replacement span was wrong). Never tune the prompt or the decoder from
-  the transcript alone — attribution first, or you fix the wrong layer.
-
-### Voice input
-
-- The microphone key emits `KeyboardAction.ToggleVoice`; the **service**
-  decides start/stop (permission + `SpeechRecognizer.isRecognitionAvailable`
-  checks are Android concerns) and drives `VoiceState` (OFF / LISTENING /
-  PERMISSION_REQUIRED / UNAVAILABLE) in `KeyboardState` via ViewModel
-  setters. While not OFF, the key rows are replaced by a minimal
-  `VoicePanel`, and `KeyboardScreen`'s container gesture loop swallows all
-  touches — the `KeyboardGeometry` rects are stale while the panel is up and
-  must not produce phantom text.
-- `SpeechRecognizer` is created lazily and destroyed on the main thread;
-  `onFinishInputView`/`onWindowHidden` cancel any active session so the mic
-  is never held after the keyboard hides. Only final results are committed
-  (via `editor.commitWord`, so leading-space and voice-proofread scheduling
-  come free); partials only update the panel.
-- Dictated text is proofread with `ProofreadMode.VOICE` 2 s after the
-  transcript commit, through the same debounce and never-clobber guard as
-  typed text. ML Kit's `ProofreadingRequest` has **no custom-prompt hook** —
-  the only tuning is `ProofreaderOptions.InputType` per client, so
-  `MlKitProofreader` holds a second client configured with
-  `InputType.VOICE` (tuned for homophone/same-sound errors). The
-  OpenRouter path instead uses the voice few-shot prompt
-  (`ProofreadPrompt.VOICE_SYSTEM`/`VOICE_EXAMPLES`). `selectBackend` is
-  unchanged: voice proofreading uses whichever backend is active, and none
-  when there is no backend.
+- Clipboard: in-memory only, never persisted, never leaves the device;
+  `EXTRA_IS_SENSITIVE` clips dropped at the source. Paste commits
+  verbatim (no caps, no leading-space rules, no auto-proofread).
+- Emoji: offline keyword table generated from CLDR by
+  `tools/generate_emoji_keywords.py` — regenerate, don't hand-edit.
+- Voice: only final results committed; dictated text proofread with
+  `ProofreadMode.VOICE` 2 s after commit; `SpeechRecognizer` sessions
+  cancelled when the keyboard hides.
+- Mechanics: `docs/agent-reference/features.md`.
 
 ## Build and test commands
 
-Requires `local.properties` with `sdk.dir` pointing at an Android SDK (SDK
-36 with minor API level 1 must be installed). All commands via the wrapper:
+Requires `local.properties` with `sdk.dir` (SDK 36 minor API level 1
+installed). Via the wrapper:
 
 ```bash
 ./gradlew assembleDebug          # build the APK
@@ -702,149 +169,78 @@ Requires `local.properties` with `sdk.dir` pointing at an Android SDK (SDK
 ./gradlew lint                   # Android lint
 ```
 
-After installing, the keyboard must be enabled in system settings and
-selected as the active IME (the app's setup screen has buttons for both).
+After installing, enable the keyboard in system settings and select it as
+the active IME (the setup screen has buttons for both). The emulator's
+IME keeps falling back to GBoard — re-run `adb shell ime set
+com.example.betterswipekeyboard/.SwipeKeyboardService` (more:
+`docs/agent-reference/environment.md`).
 
 ## Testing instructions
 
-- Local unit tests in `app/src/test/` use **JUnit 4** (plus `org.json` for
-  the OpenRouter JSON-building tests). No mocking framework — tests rely on
-  pure logic and hand-written fakes.
+- Unit tests in `app/src/test/`: **JUnit 4** (+ `org.json`), no mocking
+  framework — pure logic and hand-written fakes.
 - `app/build.gradle.kts` adds `src/main/assets` to the test source set's
-  resources, so tests load the real dictionary via
-  `javaClass.getResourceAsStream("/words_en.txt")` (see `SwipeDecoderTest`).
-  Keep this wiring intact.
-- By design, the interesting logic lives in pure, testable units:
-  `KeyboardViewModel` (action → state/effect reduction), `SwipeDecoder`
-  (trail → words), `SentenceExtractor`, `ProofreadPrompt`,
-  `selectBackend`, and the `InputConnectionEditor` companion helpers
-  (`withLeadingSpace`, `needsSpaceAfterSwipe`). When adding behavior, put
-  the logic in such a pure unit and test it there rather than in the
-  service or Compose UI.
-- `app/src/androidTest/` contains only the template instrumented test.
+  resources; tests load the real dictionary via
+  `javaClass.getResourceAsStream("/words_en.txt")` (see
+  `SwipeDecoderTest`). Keep this wiring intact.
+- Interesting logic lives in pure, testable units: `KeyboardViewModel`,
+  `SwipeDecoder`, `SentenceExtractor`, `ProofreadPrompt`,
+  `selectBackend`, `InputConnectionEditor` companions (`withLeadingSpace`,
+  `needsSpaceAfterSwipe`). Put new behavior in such a unit and test it
+  there, not in the service or Compose UI.
+- `app/src/androidTest/` has only the template instrumented test.
 
 ## Code style guidelines
 
-- Kotlin `official` code style (`kotlin.code.style=official` in
-  `gradle.properties`); standard 4-space indentation, Gradle configuration
-  cache enabled.
-- Language of code, comments and docs: **English**.
-- Comments explain the *why*, including why a non-obvious approach was
-  chosen or a naive one abandoned (see the extensive KDoc on
-  `SwipeDecoder`). Follow that example for algorithmic or gesture code.
-- Compose UI is stateless where possible: `KeyboardScreen` receives a
-  `KeyboardState` and emits `KeyboardAction`s; `KeyboardState` is the single
-  source of truth for the keyboard UI.
-- Keep features as separate as possible so parallel branches merge cleanly:
-  prefer new files over growing shared ones (e.g. `PunctuationPopup.kt`,
-  `ClipboardPanel.kt`, `BottomInsets.kt`), and when a shared file must
-  change, make the edit small and additive. Favor (mostly) functional style
-  — pure functions and small immutable data types over stateful objects
-  (e.g. `parseCustomWords`, `bottomClearancePx`, `popupTopLeft`): pure code
-  is trivially unit-testable and its merge conflicts stay textual, not
-  behavioral.
-- Merge gotcha learned the hard way: when a branch based on the old
-  monolithic `KeyboardScreen` merges into the panel architecture, deleting
-  the old shape can silently drop assignments the new shape still needs
-  (two `popupAnchor` assignments were almost lost this way — the popup
-  would never have shown). After such a merge, diff the result against
-  the expected panel shape and check every `popupAnchor` site.
-- Versions live in the version catalog `gradle/libs.versions.toml` —
-  add dependencies there, not with hard-coded strings in build files.
-- No linter/formatter beyond stock lint is configured; match the style of
-  the surrounding file.
+- Kotlin `official` style; 4-space indent; Gradle configuration cache on.
+- Language of code, comments, docs: **English**.
+- Comments explain the *why*, including why a naive approach was
+  abandoned (see `SwipeDecoder`'s KDoc).
+- Compose UI stateless where possible: `KeyboardScreen` receives
+  `KeyboardState`, emits `KeyboardAction`s; `KeyboardState` is the single
+  source of truth.
+- Keep features separate so parallel branches merge cleanly: prefer new
+  files over growing shared ones; edits to shared files small and
+  additive. Favor pure functions and small immutable data types
+  (`parseCustomWords`, `bottomClearancePx`, `popupTopLeft`).
+- Merge gotcha: when a branch based on the old monolithic
+  `KeyboardScreen` merges into the panel architecture, deleting the old
+  shape can silently drop assignments the new shape needs (two
+  `popupAnchor` assignments were almost lost — the popup would never have
+  shown). After such a merge, diff against the expected panel shape and
+  check every `popupAnchor` site.
+- Versions in the catalog `gradle/libs.versions.toml` — never hard-coded
+  dependency strings.
+- No linter/formatter beyond stock lint; match the surrounding file.
 
 ## Security considerations
 
-- The keyboard sees everything the user types. Default to the **on-device**
-  proofreader; text only leaves the device via the OpenRouter fallback,
-  and then restricted to zero-data-retention endpoints
-  (`provider.zdr = true`, `data_collection = "deny"`). Preserve these
-  request fields.
-- The OpenRouter API key is user-entered and stored unencrypted
-  (SharedPreferences). Never log it or send it anywhere besides
-  `openrouter.ai`.
-- The app requests the `INTERNET` and `RECORD_AUDIO` permissions; the IME
-  service is protected by `BIND_INPUT_METHOD`. `RECORD_AUDIO` is requested
-  at runtime from `MainActivity` only; dictation audio goes to the system
-  speech recognizer, never to our own code or network layer.
-- Clipboard history is recorded from `ClipboardManager` but never leaves
-  the device (no network, in-memory only, never persisted). Clips flagged
-  `ClipDescription.EXTRA_IS_SENSITIVE` (password managers, password
-  fields) are dropped at the source and never stored or logged. Preserve
-  both guarantees.
-
-## Android API 36 + gesture-handling gotchas
-
-- `InputMethodService.onShowSoftInput` no longer exists on API 36 — the show
-  path is `onShowInputRequested`. Don't copy older IME tutorials blindly.
-- `onEvaluateInputViewShown()` must return `true`: its default hides the
-  soft keyboard when a hardware keyboard is attached (which emulators
-  emulate), and the IME then *silently never appears*.
-- After move events are consumed, the finger-up can arrive consumed too:
-  exit gesture loops on `!change.pressed`, not `changedToUp()`.
-- The restricted `AwaitPointerEventScope` forbids `coroutineScope`/`launch`;
-  use `withTimeoutOrNull` loops for timers (see backspace repeat).
-- The IME window's SoftInputWindow does not reliably pad for the system
-  nav/IME strip (hide-keyboard chevron, IME switcher) — `navigationBars`
-  alone left the strip overlapping the bottom row on a Galaxy Z Fold 5. The
-  service calls `WindowCompat.setDecorFitsSystemWindows(window, false)` and
-  measures the real bottom inset via a `ViewCompat` listener
-  (`max(navigationBars, tappableElement, mandatorySystemGestures)` →
-  `ime/BottomInsets.kt` `bottomClearancePx`), passed to `KeyboardScreen` as
-  `bottomClearance`; a small fixed 4dp (`KeyboardBottomClearance`) is added
-  on top purely as an aesthetic gap (12dp left too much dead space above
-  the strip). The listener MUST be registered on the
-  window's **decor view** (plus `ViewCompat.requestApplyInsets`): the IME
-  window does not dispatch WindowInsets down to the input view, so a
-  listener on the ComposeView never fires.
-- Compose modifier order decides what `imePadding()` pads: AFTER
-  `verticalScroll` it becomes part of the scrollable content (just extends
-  the scroll range); BEFORE it, it shrinks the viewport — which is what a
-  setup screen wants. And neither auto-scrolls a focused text field above
-  the IME: relocation on focus fires before the animated inset lands, so
-  trigger `bringIntoView` only once the `ime()` inset has settled (see
-  `MainActivity`).
-
-## Environment quirks (adb/emulator workflow)
-
-- The emulator's IME keeps falling back to GBoard after reinstalls, uimode
-  changes, and force-stops. Re-run
-  `adb shell ime set com.example.betterswipekeyboard/.SwipeKeyboardService`.
-- After an emulator boot, dismiss the "System UI isn't responding" dialog
-  (tap Wait) before driving the UI.
-- `~/Library/Android/sdk` has `cmdline-tools` installed (for avdmanager/
-  sdkmanager). AVDs: `Medium_Phone_API_36.0` (daily driver),
-  `Pixel_9_Pro_API_36` (created to confirm AICore is absent on emulators).
-- `adb shell input swipe` only draws straight lines and cannot do
-  hold-then-drag, so the punctuation popup's drag-select needs a real
-  finger to verify. GBoard's stylus toolbar appears instead of our keyboard
-  whenever the IME fell back — that's the tell.
-- Voice input needs a speech recognizer (Play services image) and the AVD's
-  "host microphone" enabled; `SpeechRecognizer.isRecognitionAvailable` is
-  false on bare images, which surfaces as the keyboard's UNAVAILABLE panel.
-  Real dictation (and the ML Kit `InputType.VOICE` proofread, since AICore
-  is absent on emulators) can only be verified on a real device.
-- Debug builds can record real swipe trails for decoder tuning: toggle
-  "Record swipe trails" in the app's setup screen (debug-only, off by
-  default, local only — see `swipe/SwipeTrailCapture.kt`), then pull
-  `adb pull /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl`
-  (external app-specific storage — platform-tools 37 removed `adb run-as`,
-  so internal storage is unreachable on production devices). Each line is
-  one swipe: key geometry, timed trail points, decoder top-5.
+- The keyboard sees everything typed. Default to the **on-device**
+  proofreader; text leaves the device only via OpenRouter, restricted to
+  zero-data-retention endpoints (`provider.zdr = true`, `data_collection
+  = "deny"`). Preserve these request fields.
+- OpenRouter API key stored unencrypted. Never log it or send it anywhere
+  besides `openrouter.ai`.
+- Permissions: `INTERNET`, `RECORD_AUDIO`; IME protected by
+  `BIND_INPUT_METHOD`. `RECORD_AUDIO` requested at runtime from
+  `MainActivity` only; dictation audio goes to the system speech
+  recognizer, never our code or network.
+- Clipboard history never leaves the device (in-memory only, never
+  persisted). `EXTRA_IS_SENSITIVE` clips dropped at the source, never
+  stored or logged. Preserve both guarantees.
 
 ## How the user likes to work
 
 - Vanilla first, fancy later; architecture must extend cleanly.
-- Bigger features: plan-mode plan → approval → implement → verify → commit.
+- Bigger features: plan-mode plan → approval → implement → verify →
+  commit.
 - **Commit after each feature** (standing instruction); the user tests
   after; fixes get their own follow-up commits.
 - Verify empirically (emulator screenshots, adb, real device) and state
-  plainly when something could not be verified.
-- Privacy matters: prefer on-device, ZDR, honest cloud disclosure in the UI.
+  plainly what could not be verified.
+- Privacy matters: prefer on-device, ZDR, honest cloud disclosure in the
+  UI.
 - UI taste: iOS-like keyboard aesthetics, thumb reach, iterating on small
-  details (labels, colors, popup styling, long-press hints).
+  details.
 - When asking him to record or test the swipe test sentences, ALWAYS
-  re-print the full sentence list in the reply — he doesn't want to scroll
-  back up to find them.
-
+  re-print the full sentence list in the reply.
