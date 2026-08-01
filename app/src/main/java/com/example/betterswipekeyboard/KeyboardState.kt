@@ -34,6 +34,21 @@ data class KeyboardState(
     val proofreaderBackend: ProofreaderBackend = ProofreaderBackend.NONE,
     /** Auto-proofreading toggle: while on, text is proofread after 2s of idle. */
     val proofreadAuto: Boolean = false,
+    /**
+     * Consecutive tapped characters (InsertText actions) since the last swipe
+     * or manual proofread toggle. When the streak reaches the ViewModel's
+     * disable threshold while [proofreadAuto] is on, the reducer turns
+     * [proofreadAuto] off and arms [proofreadSuspendedByTaps].
+     */
+    val typedTapStreak: Int = 0,
+    /**
+     * True when [proofreadAuto] was turned off by the tap-streak rule rather
+     * than by the user: the next swipe (CommitWord) restores it ("swiping
+     * remembers the AI was on"). Taps while the USER has proofreading off
+     * never arm this, so a swipe can't resurrect proofreading against
+     * explicit intent; a manual toggle clears it (user intent wins).
+     */
+    val proofreadSuspendedByTaps: Boolean = false,
     val proofreadInFlight: Boolean = false,
     /** While not OFF, the key rows are replaced by the voice panel. */
     val voice: VoiceState = VoiceState.OFF,
@@ -70,6 +85,16 @@ data class KeyboardState(
      * reduction, cleared by any other input action.
      */
     val swipeAlternates: List<String> = emptyList(),
+    /**
+     * The WIDER near-miss-band runner-up list the live strip showed while
+     * swiping (top-1 excluded), caps-transformed like [swipeAlternates] and
+     * sharing its lifetime. The committed strip places THESE words so every
+     * survivor keeps the slot it had mid-swipe; offers missing from
+     * [swipeAlternates] (score between MAX_COMMIT_SCORE and the near-miss
+     * band) render as invisible placeholders instead of re-laying-out (see
+     * stripCells in ui/keyboard/StripCells.kt).
+     */
+    val swipeStripOffers: List<String> = emptyList(),
     /**
      * Last FAILED swipe's near-miss offers (see [FailedSwipe]); non-null
      * takes over the alternates strip. Same lifetime as the

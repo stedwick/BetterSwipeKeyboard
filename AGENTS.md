@@ -67,7 +67,13 @@ Data flow (deliberately layered, keep it this way):
    (`firstLetterContactIndex` in `swipe/TrailTrim.kt`; the off-letter
    prefix is approach, not word, and would poison the decoder's letter
    alignment). A drag that never touches a letter is not a swipe:
-   nothing drawn, nothing decoded. Taps on the gesture-mode
+   nothing drawn, nothing decoded. A drag whose trail never crosses at
+   least two DISTINCT letter keys is not a swipe either
+   (`distinctLetterKeysCrossed` in `swipe/TrailTrim.kt`,
+   `MIN_SWIPE_LETTERS` in `KeyboardScreen.kt`): it is a drift-tap — a
+   wobbly tap — and falls back to typing the down key (`tapAction()`),
+   so the letter is typed (a backspace drift deletes once, a dead-space
+   drag types nothing) and the decoder never runs for it. Taps on the gesture-mode
    utility row are re-dispatched semantically in the loop
    (`utilityTapAction` in `ui/keyboard/UtilityGesture.kt`, settings via the
    `onSettingsClick` callback). The symbols and numeric layouts keep no
@@ -150,9 +156,14 @@ Data flow (deliberately layered, keep it this way):
   shows the gray italic placeholder "Alternatives will appear here".
 - The strip shows the COMMITTED word as a green bold CENTER cell
   (`KeyboardState.swipedWord`, tap = no-op) with the score-ranked runners-up
-  flanking it, so it is obvious which word was actually written. Cell layout
-  is pure (`ui/keyboard/StripCells.kt` `stripCells` — best runner-up nearest
-  the center, alternating sides by rank: `[a3, a1, CENTER, a2, a4]`), and the
+  flanking it, so it is obvious which word was actually written. ONE shared
+  pure placement rule serves all three strip states — live mid-swipe,
+  persisted failed-swipe offers, committed — so lifting the finger only
+  recolors the center, never rearranges the row (Philip's rule):
+  `centeredCells` in `ui/keyboard/StripCells.kt`, behind `stripCells` /
+  `failedOfferCells` / `liveOfferCells` — center in the middle, best
+  runner-up nearest the center, alternating sides by rank:
+  `[a3, a1, CENTER, a2, a4]`), and the
   number of alts tracks width (`alternateCountForWidth`: 2 below 600.dp, 4
   at/above — every portrait phone gets the skinny 3-cell strip, foldables/
   tablets/landscape get 5 cells). `KeyboardScreen` computes the cell list
@@ -167,7 +178,14 @@ Data flow (deliberately layered, keep it this way):
   shift is already consumed by tap time, so caps cannot be re-derived
   then), with exactly the `lastCommitWasSwipe` lifetime (every action that
   clears the flag clears the strip; voice transitions and fresh field
-  starts clear it too).
+  starts clear it too). The action also carries `stripOffers` — the WIDER
+  near-miss-band runner-up list (top-1 excluded) the live strip showed —
+  stored caps-transformed in `KeyboardState.swipeStripOffers` with the same
+  lifetime. `stripCells` places THE WIDE list so every survivor keeps its
+  mid-swipe slot; offers missing from the narrow `swipeAlternates` (score
+  between `MAX_COMMIT_SCORE` and the near-miss band — they show mid-swipe
+  but are commit-gate junk post-commit) render as invisible, untappable
+  `isPlaceholder` cells reserving their slots, never as a re-lay-out.
 - The strip lives INSIDE the gesture surface like the utility row: cells
   are purely visual, register rects, and taps are re-dispatched in the
   gesture loop as `KeyboardAction.SelectAlternate` (a clickable child
@@ -196,19 +214,55 @@ Data flow (deliberately layered, keep it this way):
   COMMIT still owns the word-delete) and consumes no one-shot shift.
   `failedSwipe` is cleared everywhere the pair is cleared, plus by
   CommitWord. The strip's single computation site prefers
-  `failedOfferCells(offers)` (plain cells in rank order, NO center — a
-  green center would lie) over `stripCells(...)`, so rendering and
-  hit-testing still share one list; the red failed-swipe flash still
+  `failedOfferCells(offers, maxAlternates)` (top-1 in the CENTER slot,
+  PLAIN — no green, no blue: nothing was committed and nothing would
+  auto-commit — flanked by the rest in the same shared layout, so
+  finger-up never rearranges the row) over `stripCells(...)`, so rendering and
+  hit-testing still share one list; unlike a committed strip's green
+  center (tap = no-op), the failed strip's center slot IS tappable. The
+  red failed-swipe flash still
   fires (the yellow low-confidence flash is disjoint: commit-only), and
   offer cells render lowercase even under armed shift — caps applies at
   commit time.
 - An offer tap is re-dispatched failed-first in the gesture loop as
-  `KeyboardAction.CommitWord(picked, letters, offers - picked)`: the normal
+  `KeyboardAction.CommitWord(picked, letters, offers - picked, stripOffers =
+  offers - picked)`: the normal
   commit path supplies leading-space rules, caps (consuming the still-armed
   one-shot shift), word-delete arming, the green-center strip with the
-  remaining offers, and SwipedWordLog recording with the failed trail's
+  remaining offers IN THE SAME SLOTS (all offers are in-band, so the wide
+  list IS the remaining offers), and SwipedWordLog recording with the failed trail's
   path evidence. After the tap the strip looks exactly like a decoder
-  commit.
+  commit. In a COMMITTED strip, the green center and the invisible
+  band-mismatch placeholders are the only untappable cells.
+- LIVE suggestions while swiping: the trail-append loop fires throttled
+  background decodes of the trimmed trail-so-far (pure gate
+  `shouldRunLiveDecode` in `swipe/LiveDecodeThrottle.kt` — ≥10 trail points,
+  ≥120 ms and ≥6 new points since the last decode, tuning starting points;
+  skip while a decode is still running, never preempt). The decode runs on
+  `Dispatchers.Default` from the composable's existing `rememberCoroutineScope`
+  (the fade-job scope), and a generation counter (`liveGen`, bumped by every
+  new decode and by gesture-end teardown, which also cancels the job) drops
+  stale results. Results land in `liveOffers` (`LiveOffers(words,
+  leaderWouldCommit)` in `ui/keyboard/StripCells.kt`) — TRANSIENT Compose
+  state like `trailPoints`, never `KeyboardState`, so 8 Hz updates cause no
+  reducer churn. The words reuse `failedSwipeOffers` (the 3.2 near-miss band,
+  capped at maxAlternates + 1: top-1 center plus the flanks);
+  `leaderWouldCommit` is top-1's score <
+  `MAX_COMMIT_SCORE` — the honest rule: light blue only for what a finger-up
+  would commit right now (`isLiveLeader` on the CENTER cell, rendered
+  `LiveLeaderBlue` 0xFF0A84FF bold in `SwipeAlternatesStrip`, never green —
+  green stays reserved for the committed center; a top-1 that would not
+  commit renders plain, same slot). The live strip uses the same shared
+  centered layout as the committed and failed strips, so lifting the finger
+  only recolors the center (blue to green), never rearranges the row.
+  `altCells` prefers
+  failedSwipe → liveOffers → the commit strip; `liveOffers` is cleared at
+  every gesture end. CANCELED-swipe persistence: when the final decode's
+  near-miss band is empty but live offers exist, the FAILED branch emits
+  `OfferFailedSwipe(liveOffers.words, letters)` through the existing path, so
+  a canceled swipe's last suggestions stay tappable — WITHOUT the blue
+  (`failedOfferCells` never sets `isLiveLeader`: after finger-up nothing
+  auto-commits, so the mark would lie).
 
 ### Swipe decoding (`swipe/`)
 
@@ -473,6 +527,25 @@ Data flow (deliberately layered, keep it this way):
   wasted API calls after no-op gestures). Typed-mode scheduling during
   a gesture is deferred to finger-up (`gestureActive`), so a held
   backspace doesn't cancel + relaunch the job on every repeat step.
+  Two tap/toggle behaviors on top of the debounce (reducer-owned state,
+  service-side timing):
+  - Tapping (not swiping) 3+ characters suspends auto-proofreading:
+    `KeyboardState.typedTapStreak` counts consecutive `InsertText`s; at
+    `TAP_TYPING_DISABLE_THRESHOLD` (3, `KeyboardViewModel`) while
+    `proofreadAuto` is on, the reduction flips it off and arms
+    `proofreadSuspendedByTaps`. The next swipe (`CommitWord`) restores
+    it ("swiping remembers the AI was on"); taps while the USER has it
+    off never arm the flag (a swipe must not resurrect proofreading
+    against explicit intent), and a manual toggle clears it (user
+    intent wins, fresh streak). Backspace/Enter/cursor moves don't
+    break the streak; only `CommitWord` and `ToggleProofread` reset it.
+  - Toggling the AI key ON fires ONE immediate proofread of the current
+    window (`runProofread` directly, bypassing the gestureActive
+    deferral — a toggle tap is not text input), with the pended
+    debounce job cancelled FIRST so it can't race the immediate pass;
+    then the 2 s debounce resumes. Whenever `proofreadAuto` is off
+    (manually or suspended), no pended debounce job survives (both in
+    `SwipeKeyboardService.onKeyboardAction`).
 - `SentenceExtractor.currentWindow` pulls the current fragment *plus the
   previous sentence* from text before the cursor, so a continuation
   fragment ("and bought ...") can be merged back into a sentence an

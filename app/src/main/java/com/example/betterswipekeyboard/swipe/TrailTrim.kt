@@ -19,3 +19,20 @@ import androidx.compose.ui.geometry.Rect
  */
 fun firstLetterContactIndex(points: List<Vec2>, letterRects: List<Rect>): Int =
     points.indexOfFirst { p -> letterRects.any { it.contains(Offset(p.x, p.y)) } }
+
+/**
+ * Pure, unit-tested: how many DISTINCT letter-key rects a trail crossed
+ * (order and revisits irrelevant — an e→w→e trail crosses 2).
+ *
+ * This is the tap-vs-swipe gate: a gesture is not a swipe until its trail has
+ * crossed at least two distinct letter keys. A tap whose finger drifts past
+ * the touch slop jitters inside ONE key, and gating on two keeps that
+ * drift-tap out of the decoder (which scores the whole candidate set on the
+ * main thread) — the gesture loop falls back to typing the down key instead.
+ * No dictionary word is lost in principle: the dictionary has no one-letter
+ * words, so every decodable word needs at least two letter keys visited.
+ * Counting the full collected trail vs the trimmed trail is identical: points
+ * before [firstLetterContactIndex] contain no letter rect by construction.
+ */
+fun distinctLetterKeysCrossed(points: List<Vec2>, letterRects: List<Rect>): Int =
+    letterRects.count { rect -> points.any { p -> rect.contains(Offset(p.x, p.y)) } }

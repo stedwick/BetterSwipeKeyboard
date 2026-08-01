@@ -72,19 +72,24 @@ import com.example.betterswipekeyboard.layout.QwertyLayout
 import com.example.betterswipekeyboard.layout.SymbolsLayout
 import com.example.betterswipekeyboard.proofread.ProofreaderStatus
 import com.example.betterswipekeyboard.swipe.KeyboardGeometry
+import com.example.betterswipekeyboard.swipe.MAX_COMMIT_SCORE
 import com.example.betterswipekeyboard.swipe.ScoredWord
 import com.example.betterswipekeyboard.swipe.SwipeConfidence
 import com.example.betterswipekeyboard.swipe.SwipeDecoder
 import com.example.betterswipekeyboard.swipe.TimedPoint
 import com.example.betterswipekeyboard.swipe.Vec2
 import com.example.betterswipekeyboard.swipe.crossedLetters
+import com.example.betterswipekeyboard.swipe.distinctLetterKeysCrossed
 import com.example.betterswipekeyboard.swipe.failedSwipeOffers
 import com.example.betterswipekeyboard.swipe.firstLetterContactIndex
+import com.example.betterswipekeyboard.swipe.shouldRunLiveDecode
 import com.example.betterswipekeyboard.swipe.swipeAlternates
 import com.example.betterswipekeyboard.swipe.swipeConfidence
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 // Not private: EmojiPanel, ClipboardPanel and PunctuationPopup (same package)
@@ -129,6 +134,18 @@ private val LowConfidenceFlash = Color(0xFFFFD60A)
 private const val LONG_PRESS_TIMEOUT_MS = 400L
 private const val BACKSPACE_REPEAT_MS = 50L
 private const val TRAIL_LINGER_MS = 200L
+
+/**
+ * A letters-layout drag is not a swipe until its trail has crossed this many
+ * DISTINCT letter keys (distinctLetterKeysCrossed). A tap whose finger drifts
+ * past the touch slop jitters inside ONE key; gating on two keeps that
+ * drift-tap out of the decoder (a full candidate-set score on the main
+ * thread) and the gesture loop falls back to typing the down key instead —
+ * a drift-tap is a wobbly tap, not a failed swipe. No word is lost in
+ * principle: the dictionary has no one-letter words, so every decodable word
+ * visits at least two letter keys.
+ */
+private const val MIN_SWIPE_LETTERS = 2
 
 /** Swipe-feedback flash fade-out duration (tunable starting point). */
 private const val TRAIL_FLASH_FADE_MS = 400
@@ -199,6 +216,19 @@ fun KeyboardScreen(
     var trailFlashColor by remember { mutableStateOf<Color?>(null) }
     val trailFade = remember { Animatable(1f) }
     var fadeJob by remember { mutableStateOf<Job?>(null) }
+    // Live swipe suggestions: the latest mid-swipe decode's offers (the leader
+    // marked when top-1 would commit on finger-up) shown in the alternates
+    // strip's middle tier while the gesture runs. Transient UI state like
+    // trailPoints — it never enters KeyboardState; a canceled swipe's offers
+    // persist via OfferFailedSwipe at gesture end (see the decode block).
+    // liveGen invalidates in-flight decode results when a newer decode starts
+    // or the gesture ends; the decode runs on Dispatchers.Default from the
+    // same scope as the fade jobs.
+    var liveOffers by remember { mutableStateOf<LiveOffers?>(null) }
+    var liveDecodeJob by remember { mutableStateOf<Job?>(null) }
+    var liveGen by remember { mutableStateOf(0) }
+    var liveLastDecodeStartMs by remember { mutableStateOf(0L) }
+    var livePointsAtLastDecode by remember { mutableStateOf(0) }
     var popupChoices by remember { mutableStateOf<List<String>?>(null) }
     var popupIndex by remember { mutableStateOf(-1) }
     var popupBounds by remember { mutableStateOf<Rect?>(null) }
@@ -220,14 +250,22 @@ fun KeyboardScreen(
     // width (the IME spans the screen): 2 alts on phones, 4 on wide screens.
     // The gesture loop reads them via rememberUpdatedState for the same
     // pointerInput-capture reason as currentState.
-    // A FAILED swipe's near-miss offers take over the strip (plain cells,
-    // NO center — nothing was committed, a green center would lie); the
-    // OfferFailedSwipe reduction already cleared the pair, so the Elvis is
-    // belt-and-braces. maxAlternates is hoisted so the decode branch caps
+    // A FAILED swipe's near-miss offers take over the strip (top-1 in the
+    // center slot, PLAIN — nothing was committed, green or blue would lie);
+    // the OfferFailedSwipe reduction already cleared the pair, so the Elvis
+    // is belt-and-braces. maxAlternates is hoisted so the decode branch caps
     // offers from the same width-adaptive count.
+    // Middle tier: a RUNNING swipe's live decode offers (top-1 in the center
+    // slot, light blue via isLiveLeader exactly when it would commit on
+    // finger-up — never green). They lose to a persisted failed swipe and to
+    // a commit's strip, and they clear at gesture end, so they show only
+    // mid-gesture. All three tiers share one placement rule (centeredCells
+    // in StripCells.kt), so lifting the finger only recolors the center,
+    // never rearranges the row.
     val maxAlternates = alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat())
-    val altCells = state.failedSwipe?.let { failedOfferCells(it.offers) }
-        ?: stripCells(state.swipedWord, state.swipeAlternates, maxAlternates)
+    val altCells = state.failedSwipe?.let { failedOfferCells(it.offers, maxAlternates) }
+        ?: liveOffers?.let { liveOfferCells(it, maxAlternates) }
+        ?: stripCells(state.swipedWord, state.swipeStripOffers, state.swipeAlternates, maxAlternates)
     val currentAltCells by rememberUpdatedState(altCells)
     val currentMaxAlternates by rememberUpdatedState(maxAlternates)
     val scope = rememberCoroutineScope()
@@ -422,6 +460,11 @@ fun KeyboardScreen(
                                     // decode alike) starts there — the prefix
                                     // is approach, not word.
                                     var trailStart = -1
+                                    // Distinct letter keys the trail has
+                                    // crossed so far; the swipe gate
+                                    // (MIN_SWIPE_LETTERS) that keeps
+                                    // drift-taps out of the decoder.
+                                    var lettersCrossed = 0
                                     when (outcome) {
                                         GestureOutcome.TAP -> when {
                                             // Utility-row tap, re-dispatched
@@ -457,9 +500,26 @@ fun KeyboardScreen(
                                                                 cell.word,
                                                                 failed.letters,
                                                                 failed.offers - cell.word,
+                                                                // All offers are
+                                                                // inside the
+                                                                // near-miss band:
+                                                                // the wide strip
+                                                                // list IS the
+                                                                // remaining
+                                                                // offers, so the
+                                                                // committed strip
+                                                                // keeps the
+                                                                // failed strip's
+                                                                // exact layout.
+                                                                stripOffers =
+                                                                    failed.offers - cell.word,
                                                             ),
                                                         )
-                                                    cell != null && !cell.isCenter ->
+                                                    // Invisible band-mismatch
+                                                    // placeholders reserve
+                                                    // their slot but are
+                                                    // never tappable.
+                                                    cell != null && !cell.isCenter && !cell.isPlaceholder ->
                                                         onAction(KeyboardAction.SelectAlternate(cell.word))
                                                     else -> Unit
                                                 }
@@ -495,7 +555,14 @@ fun KeyboardScreen(
                                                 // that never touches a letter
                                                 // is no swipe at all —
                                                 // nothing drawn, nothing
-                                                // decoded. Only the space bar
+                                                // decoded. A drag that
+                                                // touches letters but never
+                                                // crosses MIN_SWIPE_LETTERS
+                                                // distinct letter keys is no
+                                                // swipe either: it is a
+                                                // drift-tap and falls back to
+                                                // typing the down key (below).
+                                                // Only the space bar
                                                 // itself keeps cursor drag.
                                                 // A new trail supersedes a
                                                 // swipe-feedback flash still
@@ -505,6 +572,13 @@ fun KeyboardScreen(
                                                 fadeJob?.cancel()
                                                 trailFlashColor = null
                                                 trailPoints = emptyList()
+                                                // Live suggestions from any
+                                                // previous gesture are already
+                                                // cleared at gesture end; reset
+                                                // the throttle bookkeeping for
+                                                // the new trail.
+                                                liveLastDecodeStartMs = 0L
+                                                livePointsAtLastDecode = 0
                                                 val letterRects = geometry.letterRects()
                                                 trailStart = firstLetterContactIndex(
                                                     trail.map { it.position },
@@ -527,14 +601,134 @@ fun KeyboardScreen(
                                                                     letterRects,
                                                                 )
                                                         }
+                                                        // Swipe gate: the
+                                                        // trail only becomes
+                                                        // visible (and later
+                                                        // decodable) once it
+                                                        // has crossed
+                                                        // MIN_SWIPE_LETTERS
+                                                        // distinct letter
+                                                        // keys. Recomputed
+                                                        // per move only while
+                                                        // the gate is
+                                                        // unpassed — same
+                                                        // cost class as the
+                                                        // firstLetterContact-
+                                                        // Index recompute
+                                                        // above.
+                                                        if (lettersCrossed < MIN_SWIPE_LETTERS) {
+                                                            lettersCrossed =
+                                                                distinctLetterKeysCrossed(
+                                                                    trail.map { it.position },
+                                                                    letterRects,
+                                                                )
+                                                        }
                                                         trailPoints =
-                                                            if (trailStart >= 0) {
+                                                            if (lettersCrossed >= MIN_SWIPE_LETTERS) {
                                                                 trail.subList(
                                                                     trailStart, trail.size,
                                                                 ).map { it.position.toOffset() }
                                                             } else {
                                                                 emptyList()
                                                             }
+                                                        // Live suggestions: a
+                                                        // throttled background
+                                                        // decode of the trimmed
+                                                        // trail-so-far (same
+                                                        // points the final
+                                                        // decode uses), landing
+                                                        // in liveOffers for the
+                                                        // strip's middle tier.
+                                                        // Skip while a decode is
+                                                        // still running instead
+                                                        // of preempting it.
+                                                        if (
+                                                            trailStart >= 0 &&
+                                                            // Integration note
+                                                            // (tapfix + liveswipe):
+                                                            // without this conjunct
+                                                            // a long drift-tap
+                                                            // dwelling on one key
+                                                            // fires background
+                                                            // decodes that are
+                                                            // always discarded.
+                                                            lettersCrossed >= MIN_SWIPE_LETTERS &&
+                                                            liveDecodeJob == null &&
+                                                            shouldRunLiveDecode(
+                                                                nowMillis = change.uptimeMillis,
+                                                                lastDecodeStartMillis =
+                                                                    liveLastDecodeStartMs,
+                                                                trailPoints =
+                                                                    trail.size - trailStart,
+                                                                pointsAtLastDecode =
+                                                                    livePointsAtLastDecode,
+                                                            )
+                                                        ) {
+                                                            val snapshot = trail.subList(
+                                                                trailStart, trail.size,
+                                                            ).toList()
+                                                            val gen = ++liveGen
+                                                            liveLastDecodeStartMs =
+                                                                change.uptimeMillis
+                                                            livePointsAtLastDecode =
+                                                                trail.size - trailStart
+                                                            liveDecodeJob = scope.launch {
+                                                                val liveResults =
+                                                                    withContext(
+                                                                        Dispatchers.Default,
+                                                                    ) {
+                                                                        // Read at decode
+                                                                        // time: the service
+                                                                        // may have rebuilt
+                                                                        // it with new
+                                                                        // custom words.
+                                                                        decoderProvider().decode(
+                                                                            trail = snapshot,
+                                                                            keyCenters =
+                                                                                geometry
+                                                                                    .letterCenters(),
+                                                                            keyWidth =
+                                                                                geometry
+                                                                                    .keyWidth(),
+                                                                            topN = 5,
+                                                                        )
+                                                                    }
+                                                                // Stale-result guard:
+                                                                // a newer decode or the
+                                                                // gesture's end
+                                                                // supersedes this one.
+                                                                if (gen == liveGen) {
+                                                                    liveOffers =
+                                                                        failedSwipeOffers(
+                                                                            liveResults,
+                                                                            // Top-1 (center)
+                                                                            // PLUS the
+                                                                            // maxAlternates
+                                                                            // flanks.
+                                                                            currentMaxAlternates + 1,
+                                                                        )?.let {
+                                                                            LiveOffers(
+                                                                                it,
+                                                                                // The leader
+                                                                                // mark's
+                                                                                // honest
+                                                                                // rule:
+                                                                                // light blue
+                                                                                // only for
+                                                                                // what a
+                                                                                // finger-up
+                                                                                // would
+                                                                                // commit.
+                                                                                liveResults
+                                                                                    .first()
+                                                                                    .score <
+                                                                                    MAX_COMMIT_SCORE,
+                                                                            )
+                                                                        }
+                                                                    liveDecodeJob = null
+                                                                }
+                                                            }
+                                                        }
                                                         pressedKey =
                                                             geometry.keyAt(change.position)
                                                         change.consume()
@@ -544,9 +738,36 @@ fun KeyboardScreen(
                                                     // `pressed`, not `changedToUp()`.
                                                     if (!change.pressed) break
                                                 }
-                                                // Only a trail that reached a
-                                                // letter key is a swipe attempt.
-                                                swipeCompleted = trailStart >= 0
+                                                // Only a trail that crossed
+                                                // at least MIN_SWIPE_LETTERS
+                                                // distinct letter keys is a
+                                                // swipe attempt; anything
+                                                // shorter is a drift-tap.
+                                                swipeCompleted =
+                                                    trailStart >= 0 &&
+                                                        lettersCrossed >= MIN_SWIPE_LETTERS
+                                                if (!swipeCompleted) {
+                                                    // Drift-tap fallback: the
+                                                    // finger wandered past
+                                                    // the touch slop but the
+                                                    // trail never crossed a
+                                                    // second letter key —
+                                                    // that is a wobbly TAP,
+                                                    // not a swipe, so type
+                                                    // the down key exactly as
+                                                    // the TAP outcome would
+                                                    // (a backspace drift
+                                                    // deletes once, a shift
+                                                    // drift toggles caps; a
+                                                    // dead-space or utility-
+                                                    // row start has no
+                                                    // downKey and types
+                                                    // nothing). No trail was
+                                                    // ever drawn (gated
+                                                    // above) and no decode
+                                                    // runs.
+                                                    downKey?.let { onAction(it.tapAction()) }
+                                                }
                                             } else if (isSpaceBar(downKey)) {
                                                 // Space-bar drag: cursor
                                                 // control, in either layout.
@@ -678,6 +899,17 @@ fun KeyboardScreen(
                                     pressedUtility = null
                                     pressedAlt = null
 
+                                    // Live-swipe decode teardown, for EVERY
+                                    // gesture outcome (swipe, tap, long-press,
+                                    // swallowed drag): cancel any in-flight
+                                    // live decode and bump the generation so a
+                                    // decode that finishes anyway cannot land
+                                    // stale offers — below, the synchronous
+                                    // final decode owns the trail.
+                                    liveDecodeJob?.cancel()
+                                    liveDecodeJob = null
+                                    liveGen++
+
                                     if (swipeCompleted) {
                                         // Decode the TRIMMED trail (from the
                                         // first letter-key point — the same
@@ -721,6 +953,20 @@ fun KeyboardScreen(
                                                     // KeyboardState and the
                                                     // strip renders from there.
                                                     swipeAlternates(results),
+                                                    // The WIDER near-miss-band
+                                                    // runner-ups (top-1
+                                                    // excluded): the exact
+                                                    // flank list the live
+                                                    // strip showed, so the
+                                                    // committed strip keeps
+                                                    // every surviving word in
+                                                    // its mid-swipe slot
+                                                    // (band-mismatch dropouts
+                                                    // become placeholders).
+                                                    stripOffers = failedSwipeOffers(
+                                                        results,
+                                                        currentMaxAlternates + 1,
+                                                    )?.drop(1) ?: emptyList(),
                                                 ),
                                             )
                                         } else if (confidence == SwipeConfidence.FAILED) {
@@ -732,9 +978,29 @@ fun KeyboardScreen(
                                             // empty band emits nothing — the
                                             // placeholder shows, exactly as
                                             // before.
-                                            failedSwipeOffers(results, currentMaxAlternates)
+                                            failedSwipeOffers(results, currentMaxAlternates + 1)
                                                 ?.let {
                                                     onAction(KeyboardAction.OfferFailedSwipe(it, letters))
+                                                }
+                                                // Canceled-swipe fallback: the
+                                                // final decode's band is empty,
+                                                // but the strip showed LIVE
+                                                // offers mid-swipe — persist
+                                                // those through the same
+                                                // OfferFailedSwipe path so they
+                                                // stay tappable. leaderWould-
+                                                // Commit is live-only and does
+                                                // NOT persist: after finger-up
+                                                // nothing auto-commits, so the
+                                                // center cell renders plain —
+                                                // no blue, no green.
+                                                ?: liveOffers?.let {
+                                                    onAction(
+                                                        KeyboardAction.OfferFailedSwipe(
+                                                            it.words,
+                                                            letters,
+                                                        ),
+                                                    )
                                                 }
                                         }
                                         when (confidence) {
@@ -780,6 +1046,13 @@ fun KeyboardScreen(
                                             }
                                         }
                                     }
+                                    // Live offers are gesture-scoped: whatever
+                                    // persisted (a commit's strip via
+                                    // CommitWord, or a canceled swipe's offers
+                                    // via OfferFailedSwipe) now lives in
+                                    // KeyboardState and wins the altCells
+                                    // tiers.
+                                    liveOffers = null
                                     onAction(KeyboardAction.GestureEnded)
                                 }
                             },

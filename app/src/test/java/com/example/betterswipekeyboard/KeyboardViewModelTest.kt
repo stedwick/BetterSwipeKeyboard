@@ -143,6 +143,143 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `three tapped characters suspend auto proofreading`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        assertEquals(KeyboardEffect.CommitText("a"), vm.onAction(KeyboardAction.InsertText("a")))
+        assertEquals(KeyboardEffect.CommitText("b"), vm.onAction(KeyboardAction.InsertText("b")))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(KeyboardEffect.CommitText("c"), vm.onAction(KeyboardAction.InsertText("c")))
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(true, vm.state.value.proofreadSuspendedByTaps)
+        assertEquals(0, vm.state.value.typedTapStreak)
+    }
+
+    @Test
+    fun `two taps leave auto proofreading on`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.InsertText("a"))
+        vm.onAction(KeyboardAction.InsertText("b"))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(false, vm.state.value.proofreadSuspendedByTaps)
+        assertEquals(2, vm.state.value.typedTapStreak)
+    }
+
+    @Test
+    fun `a swipe restores auto proofreading suspended by taps`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        repeat(3) { vm.onAction(KeyboardAction.InsertText("a")) }
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(KeyboardEffect.CommitWord("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(false, vm.state.value.proofreadSuspendedByTaps)
+        assertEquals(0, vm.state.value.typedTapStreak)
+    }
+
+    @Test
+    fun `a swipe does not restore proofreading the user turned off`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.ToggleProofread)
+        assertEquals(KeyboardEffect.CommitWord("hello"), vm.onAction(KeyboardAction.CommitWord("hello")))
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(false, vm.state.value.proofreadSuspendedByTaps)
+    }
+
+    @Test
+    fun `taps while the user has proofreading off do not arm a restore`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.ToggleProofread)
+        repeat(3) { vm.onAction(KeyboardAction.InsertText("a")) }
+        // The streak counts but must NOT arm the suspension flag: otherwise
+        // the next swipe would resurrect proofreading against explicit
+        // user intent.
+        assertEquals(false, vm.state.value.proofreadSuspendedByTaps)
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        assertEquals(false, vm.state.value.proofreadAuto)
+    }
+
+    @Test
+    fun `manual toggle on while suspended stays on through the next swipe`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        repeat(3) { vm.onAction(KeyboardAction.InsertText("a")) }
+        assertEquals(true, vm.state.value.proofreadSuspendedByTaps)
+        vm.onAction(KeyboardAction.ToggleProofread)
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(false, vm.state.value.proofreadSuspendedByTaps)
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        assertEquals(true, vm.state.value.proofreadAuto)
+    }
+
+    @Test
+    fun `a restore re-arms the tap streak rule`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        repeat(3) { vm.onAction(KeyboardAction.InsertText("a")) }
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        repeat(3) { vm.onAction(KeyboardAction.InsertText("a")) }
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(true, vm.state.value.proofreadSuspendedByTaps)
+    }
+
+    @Test
+    fun `a swipe resets the tap streak`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.InsertText("a"))
+        vm.onAction(KeyboardAction.InsertText("b"))
+        vm.onAction(KeyboardAction.CommitWord("hello"))
+        vm.onAction(KeyboardAction.InsertText("c"))
+        vm.onAction(KeyboardAction.InsertText("d"))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(2, vm.state.value.typedTapStreak)
+    }
+
+    @Test
+    fun `a manual toggle resets the tap streak`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.InsertText("a"))
+        vm.onAction(KeyboardAction.InsertText("b"))
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.InsertText("c"))
+        vm.onAction(KeyboardAction.InsertText("d"))
+        assertEquals(true, vm.state.value.proofreadAuto)
+        assertEquals(2, vm.state.value.typedTapStreak)
+    }
+
+    @Test
+    fun `backspace does not reset the tap streak`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        vm.onAction(KeyboardAction.InsertText("a"))
+        vm.onAction(KeyboardAction.InsertText("b"))
+        vm.onAction(KeyboardAction.Backspace)
+        vm.onAction(KeyboardAction.InsertText("c"))
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(true, vm.state.value.proofreadSuspendedByTaps)
+    }
+
+    @Test
+    fun `gesture markers interleaved with taps do not break the streak`() {
+        val vm = viewModel()
+        vm.onAction(KeyboardAction.ToggleProofread)
+        repeat(3) {
+            vm.onAction(KeyboardAction.GestureStarted)
+            vm.onAction(KeyboardAction.InsertText("a"))
+            vm.onAction(KeyboardAction.GestureEnded)
+        }
+        assertEquals(false, vm.state.value.proofreadAuto)
+        assertEquals(true, vm.state.value.proofreadSuspendedByTaps)
+    }
+
+    @Test
     fun `gesture start and end produce no effect and no state change`() {
         val vm = viewModel()
         val before = vm.state.value
@@ -336,6 +473,23 @@ class KeyboardViewModelTest {
     }
 
     @Test
+    fun `commit word stores the wider strip offers and swaps subtract from both lists`() {
+        val vm = viewModel()
+        vm.onAction(
+            KeyboardAction.CommitWord(
+                "hello",
+                alternates = listOf("hell", "held"),
+                stripOffers = listOf("hell", "help", "held"),
+            ),
+        )
+        assertEquals(listOf("hell", "help", "held"), vm.state.value.swipeStripOffers)
+
+        vm.onAction(KeyboardAction.SelectAlternate("hell"))
+        assertEquals(listOf("held"), vm.state.value.swipeAlternates)
+        assertEquals(listOf("help", "held"), vm.state.value.swipeStripOffers)
+    }
+
+    @Test
     fun `commit word with no surviving alternates still arms the center word`() {
         val vm = viewModel()
         vm.onAction(KeyboardAction.CommitWord("hello"))
@@ -414,9 +568,10 @@ class KeyboardViewModelTest {
         )
         for (action in clearingActions) {
             val vm = viewModel()
-            vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+            vm.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell"), stripOffers = listOf("hell")))
             vm.onAction(action)
             assertEquals("after $action", emptyList<String>(), vm.state.value.swipeAlternates)
+            assertEquals("after $action", emptyList<String>(), vm.state.value.swipeStripOffers)
             assertNull("after $action", vm.state.value.swipedWord)
         }
     }
