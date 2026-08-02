@@ -12,6 +12,9 @@ package com.example.betterswipekeyboard.swipe
  * the only tie-breaker between same-letter candidates (mothers/mother's).
  *
  * The apostrophe is the only non-key character the generator admits, so a
- * plain filter suffices.
+ * plain filter suffices. Words without one (98% of the dictionary) are
+ * returned AS-IS: the identity return is content-identical by construction
+ * and skips a per-candidate String copy in the decoder's scoring hot loop.
  */
-fun swipeLetters(word: String): String = word.filter { it != '\'' }
+fun swipeLetters(word: String): String =
+    if (word.indexOf('\'') < 0) word else word.filter { it != '\'' }
