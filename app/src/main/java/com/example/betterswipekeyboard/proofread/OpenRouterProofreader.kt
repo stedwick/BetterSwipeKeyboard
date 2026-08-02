@@ -319,16 +319,17 @@ class OpenRouterProofreader(
         const val ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
         /**
-         * Very fast, very cheap (~$0.06/M input tokens) and — decisive for a
-         * keyboard — sub-second: the tools/eval speed sweeps (tags r2-r5,
-         * t1/t2) measured it at p50 ~0.6s with an 88-97% sub-1s rate while
-         * the gemini-2.5-flash-lite incumbent failed the 1s bar half the time
-         * under provider congestion. Accuracy trails flash-lite on the
-         * hardest real-trail cases; closing that gap by iterating the PROMPT
-         * (not the model) is the branch's mission. The zero-data-retention
-         * pre-flight passed (the request's provider filter fails loud
-         * otherwise).
+         * google/gemini-2.5-flash-lite — restored as the shipping model
+         * (2026-08) after amazon/nova-micro-v1 proved unreliable in
+         * production (few-shot echoing, occasional refusals). flash-lite
+         * posted the eval table's best intent-recovery (74% R / 95% I
+         * with the frozen prompt, tools/eval/report.md); its measured
+         * weakness is latency tails under provider congestion (failed
+         * the 1s bar half the time in the r4/r5 speed sweeps — p50 is
+         * still ~0.7s), accepted per Philip's call. The
+         * zero-data-retention pre-flight passed for both models (the
+         * request's provider filter fails loud otherwise).
          */
-        const val MODEL = "amazon/nova-micro-v1"
+        const val MODEL = "google/gemini-2.5-flash-lite"
     }
 }

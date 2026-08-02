@@ -11,10 +11,12 @@ mechanics.
 - `Proofreader` interface; `MlKitProofreader` (on-device Gemini Nano via
   `com.google.mlkit:genai-proofreading`, keyboard-tuned input type, kicks
   off model download itself) and `OpenRouterProofreader` (OkHttp +
-  org.json, model `amazon/nova-micro-v1` — the only ZDR-compliant
-  candidate reliably under the 1s bar in the tools/eval speed sweeps;
-  few-shot prompt in `ProofreadPrompt`, temperature 0, zero-data-
-  retention providers only).
+  org.json, model `google/gemini-2.5-flash-lite` — restored 2026-08
+  after `amazon/nova-micro-v1` proved unreliable in production;
+  flash-lite posted the eval table's best intent-recovery, its known
+  weakness is latency tails under provider congestion (tools/eval
+  sweeps; few-shot prompt in `ProofreadPrompt`, temperature 0,
+  zero-data-retention providers only).
 - `selectBackend`: on-device wins when available; cloud when an API key
   is configured; otherwise none.
 - OpenRouter API key stored in plain SharedPreferences by `ApiKeyStore`

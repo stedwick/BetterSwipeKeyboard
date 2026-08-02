@@ -132,7 +132,7 @@ and commit the apostrophe verbatim. Custom user words merge at rank 1
 ## AI proofreading — invariants
 
 - `selectBackend`: on-device (ML Kit Gemini Nano) wins when available;
-  OpenRouter (`amazon/nova-micro-v1`, temperature 0, ZDR providers only)
+  OpenRouter (`google/gemini-2.5-flash-lite`, temperature 0, ZDR providers only)
   when an API key is configured; otherwise none.
 - Auto-proofread debounced 2 s after last user activity; results applied
   only if the user hasn't typed since (never clobber newer text).
