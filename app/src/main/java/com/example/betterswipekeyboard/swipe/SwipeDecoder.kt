@@ -285,7 +285,15 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // was not: real lift-offs land 0.5-1.5 key-widths from the last
         // key, so endpoint residue punished intended words exactly like
         // impostors (tried on real trails, reverted — twice). The free
-        // slack absorbs genuine overshoot past the last key.
+        // slack covers lift-off jitter/drift ONLY: genuine
+        // overshoot-AND-RETURN is owned by the last-letter re-match
+        // above (it re-basins the last letter to the lift-off point,
+        // leaving ~0 tail arc), and overshoot WITHOUT return now pays —
+        // that free hop is how joke/joe/movie used to win joker/movies
+        // trails, parking their last letter one key early while the
+        // e→r (~1.07kw) / e→s (~1.05kw) arc rode free inside the old
+        // 1.5kw slack (set-8 flip audit: +41 flips, 0 losses over 426
+        // captured trails; decoder-investigation Addendum 9).
         var tailArc = 0f
         for (p in matchIndices[matchIndices.size - 1] until trail.size - 1) {
             tailArc += trail[p].position.distanceTo(trail[p + 1].position)
@@ -298,9 +306,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // mid-trail ("it" inside an "out" swipe, matched on the crossing i)
         // ignores the opening stretch; the intended word's first letter
         // matches at/near the touch-down and pays nothing. The free slack
-        // is smaller than the tail's: touch-down aim is far better than
-        // lift-off aim (the finger starts on the key deliberately; the
-        // TAIL comment's 0.5-1.5 key-width residue is a lift-off
+        // equals the tail's — both cover jitter only (the tail came DOWN
+        // to the head's value on the set-8 evidence; the head was never
+        // the generous one): touch-down aim is far better than lift-off
+        // aim (the finger starts on the key deliberately; the TAIL
+        // comment's 0.5-1.5 key-width residue is a lift-off
         // phenomenon), so only the usual touch-down jitter is free.
         var headArc = 0f
         for (p in 0 until matchIndices[0]) {
@@ -800,11 +810,21 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         /**
          * Trail arc past the last letter's match that is free of charge —
-         * absorbs genuine overshoot past the last key (see score() for why
-         * this is arc length and not endpoint distance). Tuning starting
-         * point.
+         * covers lift-off jitter/drift only (see score() for why this is
+         * arc length and not endpoint distance). Genuine overshoot past
+         * the last key is NOT absorbed here: overshoot-AND-return is
+         * owned by the last-letter re-match (it re-basins the last letter
+         * to the lift-off point, leaving ~0 tail arc), and overshoot
+         * without return pays up to ~1.0 on arc that used to ride free
+         * (the 0.5-1.5kw band) — that free hop is how joke/joe/movie
+         * parked their last letter one key early and still won
+         * joker/movies trails. Lowered 1.5 -> 0.5 on the set-8 evidence
+         * (+41 flips, 0 losses over 426 captured trails; the 1.0/0.75/0.5
+         * grid is monotone with a wide plateau, so this is no knife-edge;
+         * 0.75 is the measured fallback if the set-9 overshoot-band
+         * captures show reliance — decoder-investigation Addendum 9).
          */
-        const val TAIL_ARC_FREE_KEYS = 1.5f
+        const val TAIL_ARC_FREE_KEYS = 0.5f
 
         /**
          * The unexplained-tail charge saturates here (same saturation
@@ -821,9 +841,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         /**
          * Trail arc before the first letter's match that is free of charge —
          * absorbs normal touch-down jitter (see score() for why this is arc
-         * length, and why the slack is smaller than [TAIL_ARC_FREE_KEYS]:
-         * touch-down aim is much better than lift-off aim). Tuning starting
-         * point.
+         * length). Now EQUAL to [TAIL_ARC_FREE_KEYS] — both slacks cover
+         * jitter only; touch-down aim is much better than lift-off aim, so
+         * the head never needed the tail's old 1.5kw overshoot allowance
+         * (the set-8 change brought the tail DOWN to this value, not the
+         * head up). Tuning starting point.
          */
         const val HEAD_ARC_FREE_KEYS = 0.5f
 

@@ -234,9 +234,16 @@ class SwipeRealTrailAccuracyTest {
          * sits past the touch-down). Set-1 floor raised 12 -> 13, earned.
          * Set 2 unchanged at 32 — the endpoint classes this package
          * targets were already held by the frequency prior there.
+         *
+         * Tail slack 0.5 (TAIL_ARC_FREE_KEYS 1.5 -> 0.5, the set-8 fix):
+         * set 2 #31 jumped -> jumps FIXED — the same free-tail-hop class
+         * as the joker/movies fixes: 'jumped' parked its D one key early
+         * and the hop to the trail's end rode free inside the 1.5kw
+         * slack; at 0.5 it pays. Set-2 floor raised 32 -> 33, earned.
+         * Set 1 unchanged at 13.
          */
         const val MIN_COMMITTED_CORRECT_SET1 = 13
-        const val MIN_COMMITTED_CORRECT_SET2 = 32
+        const val MIN_COMMITTED_CORRECT_SET2 = 33
 
         /** Third capture's baseline at the B3 decoder: 34/37. The three
          * misses are mother x2 (#3 silence, #21 wrong-commits 'not') —
@@ -317,8 +324,17 @@ class SwipeRealTrailAccuracyTest {
          * 1.31kw from Q vs 0.44kw from W (essentially on W — the q/w aim
          * slip), so the surcharge differential (0.805/w) beats the 0.034
          * baseline margin at any weight past ~0.04. Same signature as
-         * set4#54; the trade bought five go fixes on set7 (see SET7). */
-        const val MIN_COMMITTED_CORRECT_SET5 = 61
+         * set4#54; the trade bought five go fixes on set7 (see SET7).
+         *
+         * Tail slack 0.5 (TAIL_ARC_FREE_KEYS 1.5 -> 0.5, the set-8 fix):
+         * had #60 FLIPPED BACK to had — 'has' parked its S one key early
+         * and the hop to the trail's end rode free inside the 1.5kw
+         * slack; at 0.5 it pays. This reverts the lift-off grading's
+         * documented symmetric cost above (the dropped end anchor had
+         * been luck helping a thin margin, not evidence — the tail term
+         * now charges the geometry instead). Set-5 floor raised 61 -> 62,
+         * earned (decoder-investigation Addendum 9). */
+        const val MIN_COMMITTED_CORRECT_SET5 = 62
 
         /** Sixth capture (short-word paragraph, two passes) baseline on
          * feature/endpoint-evidence 103d75b: 34/38. Pass 1 (deliberate
@@ -385,7 +401,16 @@ class SwipeRealTrailAccuracyTest {
          * mis-swipes, thin-frequency joe/joke wins, and one pruned
          * lastGate; the lots losses are frequency-shaped ('less' ends on
          * the trail's end key — tail arc 0, no tail lever can touch it,
-         * Addendum 9's documented dead end). */
-        const val MIN_COMMITTED_CORRECT_SET8 = 30
+         * Addendum 9's documented dead end).
+         *
+         * Tail slack 0.5 (TAIL_ARC_FREE_KEYS 1.5 -> 0.5 — this capture is
+         * its driving evidence): joker 3 -> 32/36, movies 5 -> 15/16,
+         * lots unchanged 2/24, others 20/20 — floor raised 30 -> 69,
+         * earned. The four residual joker misses (#65/67/69/70) are
+         * thin-frequency joe/joke wins (joker #3 — the strip offers it);
+         * movies #94 loses to 'movie' by 0.010. Flip audit over all 426
+         * captured records: +41 flips, 0 losses (29 joker + 10 movies +
+         * set2 #31 jumped->jumps + set5 #60 has->had). */
+        const val MIN_COMMITTED_CORRECT_SET8 = 69
     }
 }

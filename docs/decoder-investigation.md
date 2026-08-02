@@ -1499,3 +1499,173 @@ both pre- and post-lever).
   trail's top-1); the intermediate cells were not re-run in Kotlin.
 - No new on-device verification: unit replay only, per the plan's
   harness-first discipline.
+
+---
+
+# ADDENDUM 9 — joker/lots/movies: the tail-slack fix (TAIL_ARC_FREE_KEYS 1.5→0.5, LANDED 2026-08-02)
+
+Branch `fix/tail-slack-0.5`. Eighth capture landed harness-first at the
+pre-fix baseline (commit ac16a76, set-8 fixture + intents + ratchet 30),
+then the one-constant decoder change bumped the ratchets. Every number
+below is the REAL decoder (the investigation probe was parity-exact —
+parity delta 0.0 over 1420 scores — and is deleted; the ratchets are the
+audit against production code).
+
+## Symptom and evidence
+
+`swipe_trails8_joker_lots_movies_philip` (142 records, 96 scored): the
+joker/lots/movies paragraph — 36 joker + 24 lots + 16 movies scored
+swipes — plus five passes of "i'm joker and watch lots of movies".
+#0-40 are a→s / a→d / s→e warm-up calibration drags (intent unknown,
+`-`); #57-59, #109, #141 are mis-swipes whose honest geometric read IS
+a different word, `-` per the set2/set6 precedent (joe/jobs/movie: the
+trail never comes within 1.03kw of K on #57-59, #109 is pruned by the
+first/last-letter gate, #141 ends ON e). Baseline at the 1.5 slack:
+**30/96** — joker 3/36, lots 2/24, movies 5/16, others 20/20.
+
+## Diagnosis (verified term-by-term on the flips)
+
+joke/joe/movie park their last letter one key early on joker/movies
+trails: the differing key (r vs e, s vs e — adjacent home/top-row keys)
+is an unvisited NEIGHBOR of the visited end key, the same shape family
+as hello→help (Addendum 7). But the end-key surcharge cannot fire here:
+the parked e IS the visited key, matched well inside the tunnel radius,
+so the match distance beyond the tunnel is zero. The convicting evidence
+is the trail arc from the parked e to the lift-off (~1.07kw e→r,
+~1.05kw e→s) — and that hop rode FREE inside the 1.5kw tail slack. The
+tail term, built for prefix-impostors and long drags (mit/mother,
+the#48), was blind to the one-key hop that separates a word from its
+prefix+neighbor impostor; the frequency prior then decided (joe rank
+1689 and joke 2077 vs joker 10462 = constant +0.50/+0.44; movie 691 vs
+movies 1661 = +0.24). Measured on all 41 flipped trails: the intended
+word's score moves by EXACTLY 0.000 (its own last letter matches at the
+trail end — tail arc ~0), the impostor worsens +0.24…+1.00 (median
+~+0.6) — the newly-charged band, undiluted.
+
+## The lever (LANDED): tail slack 1.5 → 0.5
+
+One constant. At 0.5 the slack covers lift-off jitter/drift ONLY:
+genuine overshoot-AND-return is owned by the last-letter re-match
+(REBASIN_RADIUS_KEYS 0.8 — it re-basins the last letter to the lift-off
+point, leaving ~0 tail arc), and overshoot WITHOUT return now pays up to
+~1.0 on arc that used to ride free. Grid (probe replay, real-code
+verified at 0.5; joker/movies fix counts are mis-swipe-insensitive — the
+excluded trails never commit joker/movie(s) at any grid point, so the
+probe's /40≡fixture's /36 and /17≡/16):
+
+| slack | joker | movies | lots | sets 1-7 flips |
+|---|---|---|---|---|
+| 1.5 (base) | 3 | 5 | 2 | — |
+| 1.0 | 19 | 7 | 2 | set2#31 fixed |
+| 0.75 | 24 | 11 | 2 | set2#31 fixed, zero losses |
+| **0.5** | **32** | **15** | 2 | set2#31 + set5#60 fixed, zero losses |
+
+Monotone with a wide plateau — 0.5 is no knife-edge, and 0.75 is the
+measured fallback if the overshoot-band captures (below) show reliance.
+Why Addendum 4's tail rejection does not apply: the post-script rejected
+moving the CAP (2.0→1.0/1.5 cheapened EVERY prefix-impostor tail — 'not'
+on mother#3 drops 2.45→1.45, silence becomes a wrong commit). The cap is
+load-bearing and UNTOUCHED; this change moves the SLACK, the free band
+before the cap engages. The levers guard different classes: the slack
+licenses short lift-off hops, the cap bounds long drags — prefix-impostor
+tails run 2kw+ (capped both before and after), so the mit/not guard is
+unaffected (verified: zero flips on sets 1-7 beyond the two intended).
+Complement, not conflict, with Addendum 7: help's O pass on hello trails
+sat in the old slack (measured post-match arc 0.8-1.2kw) and now pays
+0.3-0.7 more — the surcharge's hold on the hello class deepens
+(set6#36 stays help, margin 0.273→0.466; no hello fixture moved).
+
+## Flip audit (real decoder, all 429 captured records / 426 scored)
+
+**+41 gains, 0 losses.** 29 joker (#41-47, #50-55, #60-64, #66, #68,
+#71-73, #102, #110, #117, #124, #131, #132), 10 movies (#93, #96-99,
+#107, #115, #122, #129, #138), set2#31 jumped→jumps (jumped's d→s hop
+charged; jumped still holds a +0.17 frequency edge — geometry won it),
+set5#60 has→had (has's s→d hop charged +0.30 — reverts the lift-off
+grading's documented symmetric cost: the dropped end anchor had been
+luck helping a thin margin, and the tail term now charges the geometry
+instead). Unscored/wrong→wrong flips, all benign: 8 warm-up drags
+(as→add ×6, as→and, as→are) and set8#113 lots life→less (wrong→wrong).
+Set totals 13/**33**/34/59/**62**/36/23 + set-8 **69**/96; ratchets
+raised for the three moved floors, all others held.
+
+## Residue at 0.5 (documented, accepted)
+
+- joker #65/67/69/70: joe/joke commit, joker rank #3 behind both —
+  thin-frequency wins (+0.50/+0.44) outrun joker's geometric edge; the
+  strip offers joker. Frequency-limited, not geometry-limited.
+- movies #94: movie by **0.010** (movie paid +0.31 of tail, closing
+  0.32 of the 0.33 gap — not the last 0.01).
+- The five excluded mis-swipes (#57-59, #109, #141): honest geometric
+  reads (joe/jobs/movie), user-shape errors, `-` by the settled rule.
+- lots 2/24 UNCHANGED — see the dead end below; 'less' ends on the
+  trail's end key (tail arc 0), so no tail lever can touch it.
+
+## The lots/less dead end (all levers measured, none survive)
+
+Frequency-shaped, not geometry-shaped: less rank 295 vs lots 1363 = a
+constant +0.42, and the trails genuinely pass nearer E than O/T (lots
+intent rank #3-19, 'los'/'loss' also ahead). Measured and rejected:
+- **Dedouble levers** (drop the doubled end salient): swing exactly ~0.5
+  where they fire (#75: less−lots gap 0.583→0.083; #82: 0.765→0.265) —
+  but the firing trails' gaps (0.58-0.77) still absorb the swing, and
+  the CLOSE trails (#113/#120/#127, gaps 0.13-0.19) have no doubled
+  salient to remove. Zero net flips.
+- **Alignment-denominator variant** (`max(wordLen, salientCount, 3)`):
+  real (joker +8 over the tail-0.5 state, zero fixture cost) but fully
+  subsumed by the slack fix — pocketed for a future miss that needs it
+  (out of scope for this branch).
+- **Dwell-doubling alone**: not worth it.
+The handles are custom words + the alternates strip + the proofreader.
+
+## Confidence calibration re-run (honest)
+
+Full table in `LOW_CONFIDENCE_MARGIN`'s KDoc (updated). Sets 1-6,
+253 committed: 235+18 → **237 correct + 16 wrong**. Wrong flagged 8/18 →
+**5/16**: the two fixed swipes (set2#31, set5#60 — both flagged wrong
+commits) left the pool, and set2#13 'juniors' (still wrong) had its
+margin widened 0.070→0.258 past the cutoff when its close runner-up
+'jumped' started paying its own d→s hop — genuinely less close, not a
+masked miss. Correct flagged 9/235 (3.8%) → **11/237 (4.6%)** — the
+ceiling RISES under the re-match precedent (fixed swipes and genuinely
+narrowed races, not false positives): 'had' joins flagged (0.198);
+**set2#26 'pizzas' (+0.793) and set5#32 'ran' (+0.736) are the corpus's
+measured 0.5-1.5kw-band exposure** — correct commits that now pay their
+own overshoot-and-drift tails, margins narrowed to 0.066/0.013, both
+STILL committed correctly, both correctly yellow-flagged; set6#0 'am'
+lost its cry-wolf flag (0.125→0.800). Ratchets re-derived:
+`MIN_WRONG_FLAGGED` 8→5, `MAX_CORRECT_FLAGGED` 9→11; the constant stays
+0.25 (0.30 buys one wrong flag — the 0.258 'juniors' — for zero false
+positives, the same one-commit artifact as the last two tables). set8 is
+OUTSIDE the calibration domain (sets 1-6) — same open decision as set7.
+
+## Guards landed
+
+- `SwipeRealTrailAccuracyTest` set 8: fixture + intents + ratchet —
+  harness-first at the pre-fix 30/96 (commit ac16a76), raised to 69/96
+  with the fix; why-comment carries the per-word split and residue.
+- Existing floors: set2 32→33, set5 61→62 (with why-comments).
+- `SwipeConfidenceCalibrationTest` bounds re-derived (above), full
+  per-commit autopsy in the test + KDoc history.
+- `SwipeRebasinTest`'s three synthetic overshoot guards (`:110`
+  overshoot-and-return commits keyboard with its >1.0 margin pin,
+  `:146` lift-off drift near a foreign key, `:159` wild excursion culls):
+  RUN, all green, the margin pin UNMOVED — the re-match owns
+  overshoot-and-return, so these trails are tail-0 and slack-insensitive
+  (measured, not assumed). Full suite 378 green.
+
+## Not verified (carried into the commit)
+
+- **The 0.5-1.5kw overshoot-without-return band has no captured coverage
+  by design** — no trail in the 429-record corpus flips on it, but that
+  is absence of evidence. The two band-exposure commits (pizzas, ran)
+  moved score-only and stayed correct. Gates the landing: a dedicated
+  overshoot-heavy capture set (help/hello/loop/poll/look + short fast
+  words, ~30-40 trails) replayed at 0.5 as `swipe_trails9_*` BEFORE
+  merge; if genuine overshoot-and-drift flips to prefix-impostors, fall
+  back to 0.75 (measured profile above) or drop the change.
+- **lots stays 2/24 by design** (frequency-shaped; handles are custom
+  words + strip + proofreader).
+- **Grid cells 1.0/0.75 are probe-only**; 0.5 is real-code verified.
+- No new on-device verification: unit replay only, per the plan's
+  harness-first discipline (QA build + emulator pass precede merge).

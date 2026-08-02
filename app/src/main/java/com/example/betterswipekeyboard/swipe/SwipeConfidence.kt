@@ -38,27 +38,33 @@ enum class SwipeConfidence {
  * (set4#54, set5#52) from correct to quick->wick wrong commits
  * (denominator changes), and widened margins on four formerly flagged
  * correct commits past 0.25 (their runner-ups pay the start surcharge),
- * improving the false-positive rate 5.9% -> 3.8%:
+ * improving the false-positive rate 5.9% -> 3.8%. Re-measured after the
+ * tail slack 0.5 ([TAIL_ARC_FREE_KEYS], the joker/movies fix): 237
+ * correct + 16 wrong — the two fixed swipes (set2#31 jumps, set5#60 had)
+ * left the wrong pool, flagged commits and all; the correct-flagged
+ * count rises 9 -> 11 on genuinely closer races ('had' 0.198; the
+ * overshoot-and-drift commits set2#26 'pizzas' and set5#32 'ran' now pay
+ * their own ~1.2-1.3kw tails, margins 0.066/0.013), one cry-wolf flag
+ * (set6#0 'am') removed:
  *
  *   margin < M    wrong flagged   correct flagged
- *   0.10          6/18            2/235  (0.9%)
- *   0.15          8/18            5/235  (2.1%)
- *   0.20          8/18            8/235  (3.4%)
- *   0.25          8/18            9/235  (3.8%)  <- chosen
- *   0.30          9/18            9/235  (3.8%)
- *   0.35          9/18            13/235 (5.5%)
- *   0.40          9/18            16/235 (6.8%)
- *   0.45          10/18           19/235 (8.1%)
+ *   0.10          4/16            3/237  (1.3%)
+ *   0.15          5/16            5/237  (2.1%)
+ *   0.20          5/16            10/237 (4.2%)
+ *   0.25          5/16            11/237 (4.6%)  <- chosen
+ *   0.30          6/16            11/237 (4.6%)
+ *   0.35          6/16            16/237 (6.8%)
+ *   0.40          7/16            20/237 (8.4%)
+ *   0.45          7/16            22/237 (9.3%)
  *
- * 0.25 stays the knee: 0.30 buys exactly one wrong flag (a single
- * 0.27-margin commit) for zero measured false positives — a one-commit
- * margin artifact, not a knee shift, and the false-positive rate at 0.25
- * improved to 3.8%; 0.35 still breaks into 5%+. The wrong commits with
- * healthy margins (≥ 0.44, up to 1.01) remain unreachable at any
- * defensible rate. Adding an absolute-score band (score > 1.2) was
- * measured on the original table and rejected (one more wrong commit for
- * one more false positive and a second knob); re-measure before
- * reconsidering it.
+ * 0.25 stays the knee: 0.30 buys exactly one wrong flag (the 0.258-margin
+ * set2#13 'juniors') for zero measured false positives — the same
+ * one-commit margin artifact as the previous two tables, not a knee
+ * shift; 0.35 still breaks into 5%+. The wrong commits with healthy
+ * margins (≥ 0.38, up to 1.01) remain unreachable at any defensible
+ * rate. Adding an absolute-score band (score > 1.2) was measured on the
+ * original table and rejected (one more wrong commit for one more false
+ * positive and a second knob); re-measure before reconsidering it.
  */
 const val LOW_CONFIDENCE_MARGIN = 0.25f
 
