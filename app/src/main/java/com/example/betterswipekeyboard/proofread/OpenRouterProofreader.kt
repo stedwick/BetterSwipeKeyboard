@@ -254,11 +254,17 @@ object ProofreadPrompt {
             // Privacy: route only to zero-data-retention endpoints that do
             // not train on user data. Narrows the provider pool; if none is
             // available the request fails and the caller fails soft.
+            // sort=latency: within the ZDR pool, take the currently fastest
+            // endpoint instead of the default price-weighted choice — the
+            // keyboard cares about sub-second replies more than fractions
+            // of a cent (gemini-flash-lite's measured weakness is latency
+            // tails under provider congestion, tools/eval r4/r5 sweeps).
             .put(
                 "provider",
                 JSONObject()
                     .put("zdr", true)
-                    .put("data_collection", "deny"),
+                    .put("data_collection", "deny")
+                    .put("sort", "latency"),
             )
             .toString()
     }

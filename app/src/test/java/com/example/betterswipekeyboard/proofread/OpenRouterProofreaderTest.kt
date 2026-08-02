@@ -71,6 +71,7 @@ class ProofreadPromptTest {
         val provider = json.getJSONObject("provider")
         assertEquals(true, provider.getBoolean("zdr"))
         assertEquals("deny", provider.getString("data_collection"))
+        assertEquals("latency", provider.getString("sort"))
 
         assertEquals(0.0, json.getDouble("temperature"), 0.0)
 
@@ -110,6 +111,7 @@ class ProofreadPromptTest {
         val provider = json.getJSONObject("provider")
         assertEquals(true, provider.getBoolean("zdr"))
         assertEquals("deny", provider.getString("data_collection"))
+        assertEquals("latency", provider.getString("sort"))
         assertEquals(0.0, json.getDouble("temperature"), 0.0)
     }
 

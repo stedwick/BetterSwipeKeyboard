@@ -16,7 +16,8 @@ mechanics.
   flash-lite posted the eval table's best intent-recovery, its known
   weakness is latency tails under provider congestion (tools/eval
   sweeps; few-shot prompt in `ProofreadPrompt`, temperature 0,
-  zero-data-retention providers only).
+  zero-data-retention providers only, `provider.sort = "latency"` — the
+  fastest ZDR endpoint wins over the default price-weighted choice).
 - `selectBackend`: on-device wins when available; cloud when an API key
   is configured; otherwise none.
 - OpenRouter API key stored in plain SharedPreferences by `ApiKeyStore`
