@@ -50,7 +50,12 @@ import org.junit.Test
  * swipes — plus the sentence 'i'm joker and watch lots of movies' five
  * times; #0-40 are a→s / a→d / s→e warm-up calibration drags with no
  * known intent, marked `-`; #57-59/#109/#141 are mis-swipes whose
- * honest geometric read IS a different word, marked `-` — see SET8).
+ * honest geometric read IS a different word, marked `-` — see SET8),
+ * and `swipe_trails9_the_three_philip.*` (ninth capture: 15 the/three
+ * swipes — 8 three-intended with a deliberate mid-word stop on R, 7
+ * the-intended passing wide of R; intents inferred from the
+ * dwell/geometry split, confirmed by Philip — the driving evidence for
+ * the mid-word dwell skip charge, decoder-investigation Addendum 10).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -137,6 +142,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET8",
             correct >= MIN_COMMITTED_CORRECT_SET8,
+        )
+    }
+
+    @Test
+    fun `ninth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails9_the_three_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET9",
+            correct >= MIN_COMMITTED_CORRECT_SET9,
         )
     }
 
@@ -410,7 +424,41 @@ class SwipeRealTrailAccuracyTest {
          * thin-frequency joe/joke wins (joker #3 — the strip offers it);
          * movies #94 loses to 'movie' by 0.010. Flip audit over all 426
          * captured records: +41 flips, 0 losses (29 joker + 10 movies +
-         * set2 #31 jumped->jumps + set5 #60 has->had). */
-        const val MIN_COMMITTED_CORRECT_SET8 = 69
+         * set2 #31 jumped->jumps + set5 #60 has->had).
+         *
+         * Mid-word dwell skip charge (MIDWORD_DWELL_MS 150,
+         * MIDWORD_SKIP_WEIGHT 1.2 — decoder-investigation Addendum 10):
+         * the lots/less class, Addendum 9's documented frequency dead
+         * end, resolves on dwell evidence — intended-lots trails stop
+         * on O and T mid-word, and 'less' skips BOTH dwelled keys and
+         * pays 2.4 undiluted. lots 2 -> 12/24 (9x less->lots +
+         * 1x loss->lots: #75,76,77,79,80,82,83,84,90,135), floor raised
+         * 69 -> 79, earned. The Addendum-9 signed-off coin-flips are
+         * preserved (past/part stays 'part' at T=150, quick->wick
+         * unchanged, set2#31/set5#60 tail-slack wins unchanged); one
+         * unscored '-' trail flips swipe->super (#40), benign. */
+        const val MIN_COMMITTED_CORRECT_SET8 = 79
+
+        /** Ninth capture (the/three discrimination, 15 trails: 8
+         * three-intended with a deliberate 200-417ms mid-word stop on R,
+         * 7 the-intended passing 0.6-1.0kw from R without stopping)
+         * baseline at the pre-dwell-charge decoder: **7/15** — every
+         * three-trail wrong-commits 'the' (rank 1 vs 157 = a constant
+         * +1.39 frequency edge that caps out every mid-word evidence
+         * channel). Intents were INFERRED from the dwell/geometry split
+         * (interior R dwell 200-417ms vs 0ms; nearest-R approach
+         * 0.08-0.21kw vs 0.59-0.98kw) and confirmed by Philip (2026-08).
+         *
+         * Mid-word dwell skip charge (MIDWORD_DWELL_MS 150,
+         * MIDWORD_SKIP_WEIGHT 1.2 — the three-vs-the fix,
+         * decoder-investigation Addendum 10): the seven strongest
+         * three-trails flip (#0,1,5,6,7,8,13) — 'the' now pays 1.2 for
+         * skipping the deliberately dwelled R — ratchet starts at the
+         * post-fix 14/15. Residue #14: flips the->there (wrong->wrong) —
+         * 'there' contains R so it escapes the charge and outranks three
+         * on frequency (0.08); three is #2, carried by the alternates
+         * strip. Its R stop is 159ms, 9ms over the threshold — the
+         * thin-margin trail. */
+        const val MIN_COMMITTED_CORRECT_SET9 = 14
     }
 }

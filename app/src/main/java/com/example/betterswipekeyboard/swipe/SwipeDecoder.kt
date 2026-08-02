@@ -102,6 +102,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         val (salience, slowDominates) = computeSalience(trail, keyWidth)
         val salientKeys = salientKeySequence(trail, salience, slowDominates, keyCenters, keyWidth)
+        val dwelledKeys = dwelledKeys(trail, keyCenters, keyWidth)
         val trailLength = polylineLength(trail.map { it.position })
         val start = trail.first().position
         val end = trail.last().position
@@ -122,7 +123,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.last() !in lastLetters) continue
                 if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
-                    keyCenters, keyWidth, trailLength)
+                    keyCenters, keyWidth, trailLength, dwelledKeys)
                 if (score.isFinite()) scored += ScoredWord(word, score)
             }
         }
@@ -142,6 +143,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
         trailLength: Float,
+        dwelledKeys: Set<Char>,
     ): Float {
         // Apostrophe words match LETTERS ONLY: the apostrophe has no key,
         // contributes zero geometry, and stays verbatim in the committed
@@ -358,6 +360,22 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val frequencyBonus = (ln(dictionary.maxRank + 1.0) - ln(rank.toDouble())) /
             ln(dictionary.maxRank + 1.0)
 
+        // Mid-word dwell skip charge: a word that SKIPS a key the finger
+        // deliberately stopped on mid-word pays per key, undiluted — the
+        // mid-word counterpart of the start/end-key surcharges above.
+        // Those fixed "word claims an unvisited neighbor of the visited
+        // end/start key" (hello→help, go→to); this fixes the mirror
+        // class, "word skips a deliberately-visited mid-word key"
+        // (three→the: the trail stops 200-417ms on R, but 'the' (rank 1
+        // vs 157 = a constant +1.39 frequency edge) skips it and the
+        // salient-channel evidence caps out at 0.3-0.9 — measured on 15
+        // captured the/three trails, decoder-investigation Addendum 10).
+        // The salient-key channel stays at 0.3/key for crossed keys
+        // (aim noise); a ≥ MIDWORD_DWELL_MS contiguous stop is deliberate
+        // and worth more — the evidence grade the 0.6→0.3 halving lacked.
+        val letterSet = letters.toSet()
+        val midwordSkip = dwelledKeys.count { it !in letterSet } * MIDWORD_SKIP_WEIGHT
+
         return distanceCost * DISTANCE_WEIGHT +
             legCost +
             lengthPenalty * LENGTH_WEIGHT -
@@ -368,7 +386,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             unexplainedTail * TAIL_ARC_WEIGHT +
             unexplainedHead * HEAD_ARC_WEIGHT +
             endKeySurcharge +
-            startKeySurcharge
+            startKeySurcharge +
+            midwordSkip
     }
 
     /**
@@ -642,6 +661,65 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         return keys
     }
 
+    /**
+     * Keys the finger deliberately STOPPED on mid-word — the evidence source
+     * for the mid-word dwell skip charge in [score].
+     *
+     * A key qualifies when some trail point inside [DWELL_KEY_RADIUS_KEYS]
+     * of its center sits inside a contiguous stay of at least
+     * [MIDWORD_DWELL_MS] within [DWELL_STATIONARY_KEYS] of that point — the
+     * same contiguous-stay idiom as the doubling dwell in
+     * [salientKeySequence], but with a lower threshold and no salience
+     * requirement. "Contiguous" is what separates a hesitation from a slow
+     * pass: a steady crossing, however slow, never accumulates a single
+     * stay of 150ms+ inside a 0.25-key-width radius (the finger keeps
+     * leaving the radius), while a genuine stop does. Measured on the 15
+     * captured the/three trails: the intended-three trails stop 200-417ms
+     * on R; no intended-the trail stops anywhere mid-word.
+     *
+     * The first/last [DWELL_EDGE_EXCLUDE_KEYS] of trail arc are excluded:
+     * endpoint physics (touch-down settle, lift-off deceleration) produce
+     * stops that say nothing about mid-word letters, and the start/end-key
+     * surcharges already own those keys. Interior-only is what keeps the
+     * charge from double-charging the endpoints. Addendum 10.
+     */
+    private fun dwelledKeys(
+        trail: List<TimedPoint>,
+        keyCenters: Map<Char, Vec2>,
+        keyWidth: Float,
+    ): Set<Char> {
+        val n = trail.size
+        if (n < 3) return emptySet()
+        val arc = FloatArray(n)
+        for (i in 1 until n) {
+            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
+        }
+        val total = arc[n - 1]
+        val excl = DWELL_EDGE_EXCLUDE_KEYS * keyWidth
+        val attribRadius = DWELL_KEY_RADIUS_KEYS * keyWidth
+        val stayRadius = DWELL_STATIONARY_KEYS * keyWidth
+        val best = HashMap<Char, Long>()
+        for (i in 1 until n) {
+            if (arc[i] < excl || arc[i] > total - excl) continue
+            val pos = trail[i].position
+            val nearest = keyCenters.minByOrNull { it.value.distanceTo(pos) } ?: continue
+            if (nearest.value.distanceTo(pos) > attribRadius) continue
+            var dwell = 0L
+            var j = i
+            while (j > 0 && trail[j - 1].position.distanceTo(pos) <= stayRadius) {
+                dwell += trail[j].tMillis - trail[j - 1].tMillis
+                j--
+            }
+            j = i
+            while (j < n - 1 && trail[j + 1].position.distanceTo(pos) <= stayRadius) {
+                dwell += trail[j + 1].tMillis - trail[j].tMillis
+                j++
+            }
+            if (dwell > (best[nearest.key] ?: 0L)) best[nearest.key] = dwell
+        }
+        return best.filterValues { it >= MIDWORD_DWELL_MS }.keys
+    }
+
     // ------------------------------------------------------------------
     // Small math helpers
     // ------------------------------------------------------------------
@@ -689,6 +767,56 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         /** How long the finger must linger on a key for a doubled letter. */
         const val DWELL_DOUBLE_MS = 300L
+
+        /**
+         * Radius of a "contiguous stay" for the mid-word dwell evidence:
+         * the finger counts as dwelling while it keeps inside this many
+         * key-widths of the reference point. Same 0.25 as the doubling
+         * dwell's stay radius — measured on the the/three captures, a
+         * steady crossing of a key never holds a 150ms+ contiguous stay
+         * inside 0.25kw (the over#45 c-crossing stays <150ms), a genuine
+         * hesitation does (R-stops 200-417ms).
+         */
+        const val DWELL_STATIONARY_KEYS = 0.25f
+
+        /**
+         * A mid-word dwell is attributed to a key only when the stopped
+         * point is within this many key-widths of the key's center. 0.5 is
+         * the plateau middle: 0.4 loses set9#5's R stop (0.43kw off-center),
+         * 0.6 starts admitting mere crossings on adjacent keys.
+         */
+        const val DWELL_KEY_RADIUS_KEYS = 0.5f
+
+        /**
+         * First/last this many key-widths of trail arc are excluded from
+         * mid-word dwell attribution — endpoint physics (touch-down settle,
+         * lift-off deceleration) is not letter evidence, and the start/end
+         * surcharges own those keys. Insensitive over 0.5-1.0 on the
+         * captured sets; 0.75 sits mid-plateau.
+         */
+        const val DWELL_EDGE_EXCLUDE_KEYS = 0.75f
+
+        /**
+         * Contiguous stay that marks a mid-word stop as deliberate. The
+         * measured plateau is {150, 175}ms: every intended-three trail's R
+         * stop is ≥200ms, no intended-the trail reaches 150ms mid-word, and
+         * the corpus's tightest genuine crossing (set5#45 over→ocr) sits at
+         * 125-149ms — 125 breaks it, 200 leaves set9#5's 200ms R stop on
+         * the edge. 150 keeps both sides off their edges.
+         */
+        const val MIDWORD_DWELL_MS = 150L
+
+        /**
+         * Charge per deliberately-dwelled key the word skips, undiluted by
+         * any normalization — the mid-word mirror of the start/end-key
+         * surcharges. The plateau is {1.0, 1.2}: 1.0 leaves set9#5 decided
+         * by 0.006, 1.2 clears it, and higher values buy nothing on the
+         * captured sets. Zero losses over the 426-trail corpus; set9 flips
+         * 7 of 8 three-trails, set8 resolves the 10-trail lots/less class
+         * (Addendum 9's frequency dead end) via dwell evidence — 'less'
+         * skips both dwelled keys o,t and pays 2.4. Addendum 10.
+         */
+        const val MIDWORD_SKIP_WEIGHT = 1.2f
 
         /** One-letter swipes are taps; every shorter word is excluded. */
         const val MIN_WORD_LENGTH = 2

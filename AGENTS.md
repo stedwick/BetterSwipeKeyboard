@@ -79,7 +79,14 @@ deliberate: don't move one without the other), start-key surcharge
 `START_KEY_SURCHARGE_WEIGHT` 0.7 (mirror of the end surcharge, charged on
 the stock first-basin distance; NO start-side re-match exists — the first
 letter's scan owns the touch-down basin, so there is no license/charge
-tension to preserve here). Commit top word when
+tension to preserve here), mid-word dwell skip charge
+`MIDWORD_SKIP_WEIGHT` 1.2 per skipped key the finger deliberately stopped
+on mid-word (contiguous stay ≥ `MIDWORD_DWELL_MS` 150 ms within
+`DWELL_STATIONARY_KEYS` 0.25, attributed within `DWELL_KEY_RADIUS_KEYS`
+0.5, first/last `DWELL_EDGE_EXCLUDE_KEYS` 0.75 of arc excluded — endpoint
+physics is not letter evidence; three→the is its driving evidence and the
+charge is the endpoint surcharges' mid-word mirror: undiluted, outside
+every normalization). Commit top word when
 `score < MAX_COMMIT_SCORE` (1.8). Feedback flash
 (`swipe/SwipeConfidence.kt`): FAILED → RED, close runner-up (margin <
 `LOW_CONFIDENCE_MARGIN` 0.25) → YELLOW, confident → nothing.

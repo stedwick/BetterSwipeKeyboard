@@ -46,7 +46,7 @@ class SwipeDecoderCustomWordsTest {
                 p.y + (random.nextFloat() - 0.5f) * 6f,
             )
             points += TimedPoint(jittered, t)
-            t += (8 / speedFactor).toLong().coerceAtLeast(4)
+            t += (3 / speedFactor).toLong().coerceAtLeast(2)
         }
         add(waypoints.first(), 0.3f)
         for (w in 1 until waypoints.size) {
@@ -54,11 +54,12 @@ class SwipeDecoderCustomWordsTest {
             val to = waypoints[w]
             val steps = maxOf(1, (from.distanceTo(to) / 3f).toInt())
             for (s in 1..steps) {
-                // Slow near segment ends, fast in the middle (0.25 floor —
-                // see SwipeDecoderRealisticTrailTest for why turns must
-                // genuinely linger).
+                // Slow near segment ends, fast in the middle (0.15 floor,
+                // 3 ms base — see SwipeDecoderRealisticTrailTest for why
+                // turns must genuinely linger and why the base came down
+                // 8 -> 3 ms when the mid-word dwell charge landed).
                 val phase = s.toFloat() / steps
-                val speedFactor = 0.25f + 0.75f * sin(phase * Math.PI).toFloat()
+                val speedFactor = 0.15f + 0.85f * sin(phase * Math.PI).toFloat()
                 add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps), speedFactor)
             }
         }

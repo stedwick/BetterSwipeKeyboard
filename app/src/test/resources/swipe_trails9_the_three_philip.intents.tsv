@@ -1,0 +1,15 @@
+0	three	slow pass, dwell on r
+1	three	slow pass, dwell on r
+2	the	slow pass, no r visit
+3	the	slow pass, no r visit
+4	the	slow pass, no r visit
+5	three	slow pass, dwell on r
+6	three	slow pass, dwell on r
+7	three	slow pass, dwell on r
+8	three	slow pass, dwell on r
+9	the	fast pass, no r visit
+10	the	fast pass, no r visit
+11	the	fast pass, no r visit
+12	the	fast pass, no r visit
+13	three	fast pass, dwell on r
+14	three	fast pass, dwell on r
