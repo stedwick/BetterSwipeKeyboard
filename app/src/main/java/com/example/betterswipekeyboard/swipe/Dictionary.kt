@@ -16,6 +16,11 @@ class Dictionary(words: List<WordEntry>) {
 
     val maxRank: Int = words.maxOfOrNull { it.rank } ?: 1
 
+    /** Longest word length. Bounds any candidate's letter count (the
+     * apostrophe strip only shortens), so the decoder sizes its decode-local
+     * scratch buffers to it. */
+    val maxWordLength: Int = words.maxOfOrNull { it.word.length } ?: 0
+
     /** All words starting with [first], most frequent first. */
     fun startingWith(first: Char): List<WordEntry> =
         byFirstLetter[first].orEmpty()

@@ -127,6 +127,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             .keys
         if (firstLetters.isEmpty() || lastLetters.isEmpty()) return emptyList()
 
+        // Decode-LOCAL scratch (letter→center lookup + per-word buffers),
+        // replacing score()'s per-candidate allocations. Local, not a field:
+        // decode() can run concurrently with itself on one instance.
+        val scratch = DecodeScratch(dictionary.maxWordLength, keyCenters)
+
         val scored = mutableListOf<ScoredWord>()
         for (first in firstLetters) {
             for (entry in dictionary.startingWith(first)) {
@@ -135,7 +140,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.last() !in lastLetters) continue
                 if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
-                    keyCenters, keyWidth, trailLength, dwelledKeys, logMaxRank)
+                    keyWidth, trailLength, dwelledKeys, logMaxRank, scratch)
                 if (score.isFinite()) scored += ScoredWord(word, score)
             }
         }
@@ -152,11 +157,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         trail: List<TimedPoint>,
         salience: FloatArray,
         salientKeys: List<Char>,
-        keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
         trailLength: Float,
         dwelledKeys: Set<Char>,
         logMaxRank: Double,
+        scratch: DecodeScratch,
     ): Float {
         // Apostrophe words match LETTERS ONLY: the apostrophe has no key,
         // contributes zero geometry, and stays verbatim in the committed
@@ -164,7 +169,14 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // per-letter means undiluted and leaves frequency as the ONLY
         // tie-breaker between same-letter candidates (mothers/mother's).
         val letters = swipeLetters(word)
-        val keys = letters.map { keyCenters.getValue(it) }
+        val keyCount = letters.length
+        // Fill the decode-local scratch: the same key centers the old
+        // letters.map { keyCenters.getValue(it) } produced (same Vec2
+        // instances — the prefilter guarantees every letter is a key), with
+        // no per-word List and no boxed HashMap lookups. Only [0, keyCount)
+        // is valid; the scratch is reused by the next candidate.
+        val keys = scratch.keys
+        for (i in 0 until keyCount) keys[i] = scratch.centerOf[letters[i].code]!!
 
         // Term 1: ordered letter→trail alignment. The forward scan matches
         // each letter at the minimum of the FIRST approach basin (distance
@@ -176,14 +188,14 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // passing trail; a letter the trail never visits (the second M of
         // "mummy" on a straight M→Y swipe) matches far off the trail and
         // pays for it. Doubled letters still match a single pass.
-        val matchIndices = IntArray(keys.size)
+        val matchIndices = scratch.matchIndices
         // Raw per-letter match distances in key-widths (BEFORE the salience
         // multiplier) — the revisit-clamp charge below reads them.
-        val rawDistKeys = FloatArray(keys.size)
+        val rawDistKeys = scratch.rawDistKeys
         var distanceCost = 0f
         var searchFrom = 0
         var lastLetterCharge = 0f
-        for (i in keys.indices) {
+        for (i in 0 until keyCount) {
             val center = keys[i]
             var bestIdx = searchFrom
             var bestSq = sqDist(trail[searchFrom].position, center)
@@ -248,8 +260,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // re-silenced the genuine overshoots — the finger slides through
         // the return without lingering, so evidence-gating rejects exactly
         // the class it was meant to rescue.
-        if (keys.size >= 2) {
-            val lastIdx = keys.size - 1
+        if (keyCount >= 2) {
+            val lastIdx = keyCount - 1
             val lastKey = keys[lastIdx]
             val stockDist = sqrt(sqDist(trail[matchIndices[lastIdx]].position, lastKey))
             var p = min(matchIndices[lastIdx - 1] + 1, trail.size - 1)
@@ -290,7 +302,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 rawDistKeys[lastIdx] = finalDist / keyWidth
             }
         }
-        distanceCost /= keys.size
+        distanceCost /= keyCount
 
         // End-key surcharge: a word whose LAST letter matches beyond the
         // tunnel radius pays the excess distance again, undiluted. The
@@ -304,7 +316,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // grants position freedom mid-word, but the word's claim to END
         // here should cost when the trail ends off its last key.
         val lastDistKeys =
-            sqrt(sqDist(trail[matchIndices[matchIndices.size - 1]].position, keys[keys.size - 1])) / keyWidth
+            sqrt(sqDist(trail[matchIndices[keyCount - 1]].position, keys[keyCount - 1])) / keyWidth
         val endKeySurcharge = max(0f, lastDistKeys - TUNNEL_RADIUS_KEYS) * END_KEY_SURCHARGE_WEIGHT
 
         // Unexplained tail: trail arc length AFTER the last letter's
@@ -328,7 +340,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // 1.5kw slack (set-8 flip audit: +41 flips, 0 losses over 426
         // captured trails; decoder-investigation Addendum 9).
         var tailArc = 0f
-        for (p in matchIndices[matchIndices.size - 1] until trail.size - 1) {
+        for (p in matchIndices[keyCount - 1] until trail.size - 1) {
             tailArc += trail[p].position.distanceTo(trail[p + 1].position)
         }
         val unexplainedTail =
@@ -372,10 +384,10 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // Terms 2+3: per-leg line conformance and backtrack penalty. A word
         // whose trail ever leaves the key-to-key corridor by more than
         // CONFORMANCE_CULL_KEYS is rejected outright.
-        val legCost = legCosts(keys, matchIndices, trail, keyWidth) ?: return Float.POSITIVE_INFINITY
+        val legCost = legCosts(keys, keyCount, matchIndices, trail, keyWidth) ?: return Float.POSITIVE_INFINITY
 
         // Trail length should roughly match the word's ideal key-to-key path.
-        val idealLength = polylineLength(keys)
+        val idealLength = polylineLength(keys, keyCount)
         val lengthPenalty = abs(trailLength - idealLength) / (idealLength + keyWidth)
 
         // The keys under the user's deliberate turns/slowdowns should appear
@@ -394,7 +406,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // words on salient-rich trails (the Addendum-9 pocketed variant,
         // landed on set-10 evidence: threw#3, three#54 —
         // decoder-investigation Addendum 11).
-        val lcs = lcsLength(salientKeys, letters.toList())
+        val lcs = lcsLength(salientKeys, letters)
         val missedSalient = salientKeys.size - lcs
         val alignmentScore = lcs.toFloat() /
             max(letters.length, max(salientKeys.size, ALIGNMENT_MIN_DENOMINATOR))
@@ -414,8 +426,11 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // The salient-key channel stays at 0.3/key for crossed keys
         // (aim noise); a ≥ MIDWORD_DWELL_MS contiguous stop is deliberate
         // and worth more — the evidence grade the 0.6→0.3 halving lacked.
-        val letterSet = letters.toSet()
-        val midwordSkip = dwelledKeys.count { it !in letterSet } * MIDWORD_SKIP_WEIGHT
+        // Most trails have NO mid-word dwells: skip the membership
+        // structure entirely then; otherwise indexOf membership is the same
+        // char equality letters.toSet() gave, without the per-word HashSet.
+        val midwordSkip = if (dwelledKeys.isEmpty()) 0f
+        else dwelledKeys.count { letters.indexOf(it) < 0 } * MIDWORD_SKIP_WEIGHT
 
         // Revisit-clamp charge: a MID-WORD letter that matches far off the
         // trail, sandwiched between two on-trail matches, at a key the trail
@@ -437,8 +452,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // error (decoder-investigation Addendum 11; grid over all 514
         // captured records: 6 fixes, 0 losses).
         var revisitClamp = 0f
-        if (keys.size >= 3) {
-            for (i in 1 until keys.size - 1) {
+        if (keyCount >= 3) {
+            for (i in 1 until keyCount - 1) {
                 if (rawDistKeys[i] <= REVISIT_FAR_KEYS) continue
                 if (rawDistKeys[i - 1] > REVISIT_NEAR_KEYS ||
                     rawDistKeys[i + 1] > REVISIT_NEAR_KEYS
@@ -490,7 +505,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      * word's reversal leg on a straight trail is long and fully opposed.
      */
     private fun legCosts(
-        keys: List<Vec2>,
+        keys: Array<Vec2>,
+        keyCount: Int,
         matchIndices: IntArray,
         trail: List<TimedPoint>,
         keyWidth: Float,
@@ -502,7 +518,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         var conformancePoints = 0
         var backtrack = 0f
 
-        for (leg in 0 until keys.size - 1) {
+        for (leg in 0 until keyCount - 1) {
             val from = matchIndices[leg]
             val to = matchIndices[leg + 1]
             val a = keys[leg]
@@ -800,6 +816,49 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         return length
     }
 
+    /** Scratch-array variant over [0, count): identical summation order and
+     * arithmetic as the List version, so the result is bit-identical. */
+    private fun polylineLength(points: Array<Vec2>, count: Int): Float {
+        var length = 0f
+        for (i in 1 until count) length += points[i].distanceTo(points[i - 1])
+        return length
+    }
+
+    /**
+     * Decode-LOCAL reusable buffers for score()'s per-word temporaries (perf
+     * A2): one set of allocations per decode instead of per candidate word.
+     * NOT shared across decodes — decode() can run concurrently with itself
+     * on one SwipeDecoder instance (a cancelled live decode can run to
+     * completion while the final decode runs), so an instance is created
+     * inside decode() and passed down, never stored in a field.
+     */
+    private class DecodeScratch(maxWordLength: Int, keyCenters: Map<Char, Vec2>) {
+        /**
+         * Letter → key center, direct-indexed by char code: replaces the
+         * boxed `Map<Char, Vec2>.getValue` per letter per word. Every scored
+         * letter is a key (decode()'s prefilter guarantees it), so lookups
+         * never miss.
+         */
+        val centerOf: Array<Vec2?> = run {
+            val byCode = arrayOfNulls<Vec2>(keyCenters.keys.maxOf { it.code } + 1)
+            for ((letter, center) in keyCenters) byCode[letter.code] = center
+            byCode
+        }
+
+        /**
+         * Per-word key centers: score() fills [0, word length) before every
+         * use and never reads past it. Pre-filled with a placeholder so the
+         * element type stays non-null; the placeholder slots are never read.
+         */
+        val keys: Array<Vec2> = Array(maxWordLength) { Vec2(0f, 0f) }
+
+        /** Per-word letter→trail match indices; only [0, word length) valid. */
+        val matchIndices: IntArray = IntArray(maxWordLength)
+
+        /** Per-word raw match distances in key-widths; same validity range. */
+        val rawDistKeys: FloatArray = FloatArray(maxWordLength)
+    }
+
     private fun angleBetween(a: Vec2, b: Vec2): Float {
         val la = sqrt(a.x * a.x + a.y * a.y)
         val lb = sqrt(b.x * b.x + b.y * b.y)
@@ -808,12 +867,12 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         return acos(cosine)
     }
 
-    private fun lcsLength(a: List<Char>, b: List<Char>): Int {
+    private fun lcsLength(a: List<Char>, b: CharSequence): Int {
         if (a.isEmpty() || b.isEmpty()) return 0
-        val dp = IntArray(b.size + 1)
+        val dp = IntArray(b.length + 1)
         for (ca in a) {
             var diagonal = 0
-            for (j in 1..b.size) {
+            for (j in 1..b.length) {
                 val up = dp[j]
                 dp[j] = when {
                     ca == b[j - 1] -> diagonal + 1
@@ -822,7 +881,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 diagonal = up
             }
         }
-        return dp[b.size]
+        return dp[b.length]
     }
 
     private companion object {
