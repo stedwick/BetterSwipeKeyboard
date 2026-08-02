@@ -94,10 +94,10 @@ fun SetupScreen(modifier: Modifier = Modifier) {
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> micGranted = granted }
-    // The box IS the source of truth: pre-filled with the stored words, one
-    // per line; saving replaces the whole set.
+    // The box IS the source of truth: pre-filled with the stored words,
+    // comma-separated; saving replaces the whole set.
     var customWordsInput by remember {
-        mutableStateOf(wordStore.load().joinToString("\n"))
+        mutableStateOf(wordStore.load().joinToString(", "))
     }
     var savedWordCount by remember { mutableStateOf<Int?>(null) }
 
@@ -281,7 +281,7 @@ fun SetupScreen(modifier: Modifier = Modifier) {
                 // Parse, normalize and show back what was actually understood.
                 val words = parseCustomWords(customWordsInput)
                 wordStore.save(words)
-                customWordsInput = words.joinToString("\n")
+                customWordsInput = words.joinToString(", ")
                 savedWordCount = words.size
             },
         ) {
