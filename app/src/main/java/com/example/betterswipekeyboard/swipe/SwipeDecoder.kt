@@ -187,12 +187,19 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             val center = keys[i]
             var bestIdx = searchFrom
             var bestSq = sqDist(trail[searchFrom].position, center)
+            // bestDist = sqrt(bestSq), recomputed only when bestSq improves:
+            // the depart check below needs it every non-improving iteration
+            // (the hottest loop in the decoder), and bestSq changes rarely.
+            // sqrt is IEEE-exact and deterministic, so skipping redundant
+            // recomputations is bit-identical.
+            var bestDist = sqrt(bestSq)
             for (p in searchFrom + 1 until trail.size) {
                 val sq = sqDist(trail[p].position, center)
                 if (sq < bestSq) {
                     bestSq = sq
+                    bestDist = sqrt(sq)
                     bestIdx = p
-                } else if (sqrt(sq) - sqrt(bestSq) > LETTER_DEPART_KEYS * keyWidth) {
+                } else if (sqrt(sq) - bestDist > LETTER_DEPART_KEYS * keyWidth) {
                     break // departed the basin: the visit to this key is over
                 }
             }
@@ -248,16 +255,22 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             var p = min(matchIndices[lastIdx - 1] + 1, trail.size - 1)
             var basinBestSq = sqDist(trail[p].position, lastKey)
             var basinBestIdx = p
+            // Same cached-sqrt pattern as the first-basin scan above; the
+            // cache tracks EVERY basinBestSq reassignment (both the
+            // improvement branch and the basin-closed reset below).
+            var basinBestDist = sqrt(basinBestSq)
             var basinsClosed = 0
             while (p + 1 < trail.size) {
                 p++
                 val sq = sqDist(trail[p].position, lastKey)
                 if (sq < basinBestSq) {
                     basinBestSq = sq
+                    basinBestDist = sqrt(sq)
                     basinBestIdx = p
-                } else if (sqrt(sq) - sqrt(basinBestSq) > LETTER_DEPART_KEYS * keyWidth) {
+                } else if (sqrt(sq) - basinBestDist > LETTER_DEPART_KEYS * keyWidth) {
                     basinsClosed++
                     basinBestSq = sq
+                    basinBestDist = sqrt(sq)
                     basinBestIdx = p
                 }
             }
