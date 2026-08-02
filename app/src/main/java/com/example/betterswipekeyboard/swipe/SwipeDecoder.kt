@@ -100,9 +100,21 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     ): List<ScoredWord> {
         if (trail.size < 3 || keyWidth <= 0f) return emptyList()
 
-        val (salience, slowDominates) = computeSalience(trail, keyWidth)
+        // Per-decode invariants, computed once and passed down: the
+        // cumulative arc length was previously recomputed inside
+        // computeSalience/salientKeySequence/dwelledKeys (bit-identical
+        // values — same points, same summation order) and ln(maxRank + 1)
+        // twice per scored word. Both stay decode-LOCAL (never fields):
+        // decode() can run concurrently with itself on one instance.
+        val arc = FloatArray(trail.size) // cumulative arc length
+        for (i in 1 until trail.size) {
+            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
+        }
+        val logMaxRank = ln(dictionary.maxRank + 1.0)
+
+        val (salience, slowDominates) = computeSalience(trail, keyWidth, arc)
         val salientKeys = salientKeySequence(trail, salience, slowDominates, keyCenters, keyWidth)
-        val dwelledKeys = dwelledKeys(trail, keyCenters, keyWidth)
+        val dwelledKeys = dwelledKeys(trail, keyCenters, keyWidth, arc)
         val trailLength = polylineLength(trail.map { it.position })
         val start = trail.first().position
         val end = trail.last().position
@@ -123,7 +135,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.last() !in lastLetters) continue
                 if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
-                    keyCenters, keyWidth, trailLength, dwelledKeys)
+                    keyCenters, keyWidth, trailLength, dwelledKeys, logMaxRank)
                 if (score.isFinite()) scored += ScoredWord(word, score)
             }
         }
@@ -144,6 +156,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keyWidth: Float,
         trailLength: Float,
         dwelledKeys: Set<Char>,
+        logMaxRank: Double,
     ): Float {
         // Apostrophe words match LETTERS ONLY: the apostrophe has no key,
         // contributes zero geometry, and stays verbatim in the committed
@@ -373,8 +386,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val alignmentScore = lcs.toFloat() /
             max(letters.length, max(salientKeys.size, ALIGNMENT_MIN_DENOMINATOR))
 
-        val frequencyBonus = (ln(dictionary.maxRank + 1.0) - ln(rank.toDouble())) /
-            ln(dictionary.maxRank + 1.0)
+        val frequencyBonus = (logMaxRank - ln(rank.toDouble())) / logMaxRank
 
         // Mid-word dwell skip charge: a word that SKIPS a key the finger
         // deliberately stopped on mid-word pays per key, undiluted — the
@@ -551,16 +563,13 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     private fun computeSalience(
         trail: List<TimedPoint>,
         keyWidth: Float,
+        arc: FloatArray,
     ): Pair<FloatArray, BooleanArray> {
         val n = trail.size
         val salience = FloatArray(n)
         val slowDominates = BooleanArray(n)
         if (n < 3) return salience to slowDominates
 
-        val arc = FloatArray(n) // cumulative arc length
-        for (i in 1 until n) {
-            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
-        }
         val totalLength = arc[n - 1]
         val duration = max(trail.last().tMillis - trail.first().tMillis, 1L).toFloat()
         val avgSpeed = totalLength / duration
@@ -632,11 +641,6 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     ): List<Char> {
         val n = trail.size
         if (n == 0) return emptyList()
-
-        val arc = FloatArray(n)
-        for (i in 1 until n) {
-            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
-        }
 
         data class Region(val peak: Int, val from: Int, val to: Int)
 
@@ -743,13 +747,10 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         trail: List<TimedPoint>,
         keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
+        arc: FloatArray,
     ): Set<Char> {
         val n = trail.size
         if (n < 3) return emptySet()
-        val arc = FloatArray(n)
-        for (i in 1 until n) {
-            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
-        }
         val total = arc[n - 1]
         val excl = DWELL_EDGE_EXCLUDE_KEYS * keyWidth
         val attribRadius = DWELL_KEY_RADIUS_KEYS * keyWidth
