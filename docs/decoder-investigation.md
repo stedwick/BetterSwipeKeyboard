@@ -1669,3 +1669,130 @@ OUTSIDE the calibration domain (sets 1-6) — same open decision as set7.
 - **Grid cells 1.0/0.75 are probe-only**; 0.5 is real-code verified.
 - No new on-device verification: unit replay only, per the plan's
   harness-first discipline (QA build + emulator pass precede merge).
+
+# ADDENDUM 10 — three→the: the mid-word dwell skip charge (LANDED 2026-08-02)
+
+## Symptom and evidence
+
+Philip: 'three' is nearly impossible to swipe — it almost always commits
+'the'. New capture set 9 (`swipe_trails9_the_three_philip.jsonl`, 15
+trails recorded for this investigation): 8 three-intended, 7
+the-intended. On QWERTY R sits between T and E on the top row, so the
+'the' path T→H→E passes 0.6-1.0kw directly over R — 'three'
+(T→H→R→E→E) is geometrically near-superset of the same trail. The only
+real differentiators: the intended-three trails STOP on R mid-word
+(measured contiguous stays 200-417ms; the intended-the trails never stop
+anywhere mid-word) and the EE ending.
+
+## Diagnosis (verified term-by-term on the misses)
+
+Pre-fix replay: 7/8 three-trails committed 'the', 1 committed 'there'.
+'three' WINS the non-frequency contest on all 8 trails (geometry +
+alignment + surcharges favor it by 0.28-0.81) and loses the word on
+frequency alone by 0.58-1.11: 'the' is rank 1 vs 'three' rank 157 = a
+constant +1.39 prior edge, larger than any geometric separation the pair
+can produce. Example #1 pre-fix: the −2.708 vs three −2.014 — and
+three's salient alignment is a PERFECT 5/5 (`t,h,r,e,e` all salient);
+the salient channel already sees the R visit but prices it at 0.3/key,
+the crossed-key aim-noise grade set by the 0.6→0.3 halving. That price
+is right for a crossing and wrong for a 200-417ms stop: the decoder had
+no channel that grades mid-word dwell as deliberate evidence. (The
+≥300ms dwell channel exists but only DOUBLES a letter — it cannot say
+"this skipped key was visited".)
+
+## The lever (LANDED): contiguous-stay dwell evidence + per-key skip charge
+
+`dwelledKeys()` collects keys the finger deliberately stopped on
+mid-word: a contiguous stay ≥ `MIDWORD_DWELL_MS` 150ms within
+`DWELL_STATIONARY_KEYS` 0.25kw of some trail point, attributed to the
+nearest key within `DWELL_KEY_RADIUS_KEYS` 0.5kw, first/last
+`DWELL_EDGE_EXCLUDE_KEYS` 0.75 of arc excluded (endpoint physics —
+touch-down settle, lift-off deceleration — is not letter evidence; the
+start/end surcharges own those keys). A word that skips such a key pays
+`MIDWORD_SKIP_WEIGHT` 1.2 per key, undiluted, outside every
+normalization — the mid-word mirror of the start/end-key surcharges.
+
+"Contiguous" is load-bearing: a steady CROSSING, however slow, never
+holds a 150ms+ stay inside a 0.25kw radius (the finger keeps leaving the
+radius); a genuine hesitation does. Rejected variant, measured: TOTAL
+dwell (sum of all time near a key) — the synthetic-trail builders
+fake-dwell under any absolute total threshold, 5 guards failed with
+winners fruitless/supported/jumpers. The contiguous-stay idiom is the
+same one the doubling dwell uses in `salientKeySequence`.
+
+## Grid and plateau (real decoder, full corpus per cell)
+
+Measured plateau: T ∈ {150, 175}ms × w ∈ {1.0, 1.2} — zero losses over
+the 426-trail corpus, set9 14/15. The edges: T=125 breaks set5#45
+over→ocr (its c-crossing holds a contiguous 125-149ms stay — the
+corpus's tightest genuine crossing); T=200 puts set9#5's 200ms R stop on
+the edge; w=1.0 leaves set9#5 decided by 0.006; w=1.2 clears it and
+higher buys nothing. Radius 0.4 loses #5's R stop (0.43kw off-center),
+0.6 starts admitting mere crossings on adjacent keys; arc exclusion
+insensitive over 0.5-1.0, 0.75 mid-plateau. Landed: T=150, w=1.2.
+
+## Guard re-timing (builders, not decoder)
+
+The synthetic `realisticTrail` builders in `SwipeDecoderRealisticTrailTest`
+and `SwipeDecoderCustomWordsTest` faked mid-word dwells under the new
+evidence: at the 8ms base gap a mere slow crossing accumulates a
+contiguous ≥150ms stay. Re-timed to a 3ms base gap with the speed floor
+0.25→0.15 so turn dwells stay above `DWELL_DOUBLE_MS` (the floor's job,
+unchanged) while crossings fall under 150ms (the new requirement).
+Precedent: Addenda 5/6 re-timed the same builders when salience evidence
+landed. Verified: swipe/follow/jumps/hello all decode correctly under
+the re-timed builder with the lever on; no crossed-key dwells fire.
+
+## Flip audit (real decoder, all 441 captured records / 426 corpus + 15 new)
+
+- **set9 7/15 → 14/15**: the seven strongest three-trails flip
+  the→three (#0,1,5,6,7,8,13) — 'the' now pays 1.2 for skipping the
+  deliberately dwelled R. All 7 the-trails unchanged (they never stop
+  mid-word, so no charge fires).
+- **set8 69/96 → 79/96**: the lots/less class — Addendum 9's documented
+  frequency dead end ("no tail lever can touch it") — resolves on dwell
+  evidence: intended-lots trails stop on O and T mid-word, 'less' skips
+  BOTH and pays 2.4 undiluted. 9× less→lots + 1× loss→lots
+  (#75,76,77,79,80,82,83,84,90,135). The 12 residual lots misses keep
+  honest less geometry (intent rank out/#3-5). One unscored mis-swipe
+  flips swipe→super (#40), benign.
+- **Signed-off coin-flips preserved**: past/part stays 'part' at T=150,
+  quick→wick unchanged, set2#31 jumped→jumps and set5#60 has→had
+  tail-slack wins unchanged. Zero losses anywhere; sets 1-7 floors held
+  at their pre-change values (13/33/34/59/62/36/23).
+
+## Residue (documented, accepted)
+
+- **set9 #14 → 'there'** (wrong→wrong flip): 'there' CONTAINS r, so it
+  escapes the skip charge and outranks 'three' on frequency by 0.08;
+  three is #2 (−1.62 vs −1.70), carried by the alternates strip. Its R
+  stay is 159ms — 9ms over the threshold, the corpus's thinnest dwell
+  margin. No genuine 'there'-intended swipe has been captured, so the
+  there-class containment escape is measured only on this trail.
+- **lots residual 12/24**: trails whose honest geometric read IS less
+  (intent rank out or #3-5) — user-shape errors, not decoder failures
+  (the set2/set6 precedent).
+
+## Guards landed
+
+- `SwipeRealTrailAccuracyTest` set 9: fixture + intents (intents
+  inferred from the swipe geometry, confirmed by Philip) + ratchet —
+  harness-first at the pre-fix 7/15, raised to 14/15 with the fix;
+  why-comment carries the flip list and the #14 residue.
+- set8 ratchet 69→79 with the lots-class why-comment.
+- `SwipeConfidenceCalibrationTest` UNCHANGED — passed unmodified, no
+  margin crossed 0.25 (measured, not assumed).
+- Full suite 394 green.
+
+## Not verified (carried into the commit)
+
+- **No emulator/on-device run** — unit replay only, per harness-first
+  discipline (QA build + emulator pass precede merge).
+- **Thin margins at the T floor**: #14's R stay is 9ms over 150ms and
+  set5#45's c-crossing is 1-25ms under it; a future capture set with
+  faster genuine stops (or slower genuine crossings) could force T to
+  175 (measured profile above — set9 stays 14/15, set8 +8 not +10 at
+  175, so the fallback costs 2 lots flips).
+- **The 'there' containment escape** has exactly one captured instance
+  (#14, three-intended). A there/they/them capture set would tell
+  whether words CONTAINING the dwelled key need their own grade.

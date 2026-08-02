@@ -45,7 +45,7 @@ class SwipeDecoderRealisticTrailTest {
                 p.y + (random.nextFloat() - 0.5f) * 6f,
             )
             points += TimedPoint(jittered, t)
-            t += (8 / speedFactor).toLong().coerceAtLeast(4)
+            t += (3 / speedFactor).toLong().coerceAtLeast(2)
         }
         add(waypoints.first(), 0.3f)
         for (w in 1 until waypoints.size) {
@@ -53,14 +53,16 @@ class SwipeDecoderRealisticTrailTest {
             val to = waypoints[w]
             val steps = maxOf(1, (from.distanceTo(to) / 3f).toInt())
             for (s in 1..steps) {
-                // Slow near segment ends, fast in the middle. The 0.25 floor
+                // Slow near segment ends, fast in the middle. The 0.15 floor
                 // makes turns genuinely linger (a real finger slows hard to
                 // reverse direction) so deliberate-turn dwells sit above
-                // DWELL_DOUBLE_MS with margin instead of on the 300 ms
-                // knife-edge the 0.3 floor produced ("hello"'s double-L died
-                // when a 3% duration change shaved its dwell 300 -> 259).
+                // DWELL_DOUBLE_MS under the faster 3 ms base gap — the base
+                // came down 8 -> 3 ms when the mid-word dwell skip charge
+                // (Addendum 10) started reading contiguous stays: at 8 ms a
+                // mere slow crossing faked a >= MIDWORD_DWELL_MS stay, and
+                // the synthetic trails failed every crossed-key guard.
                 val phase = s.toFloat() / steps
-                val speedFactor = 0.25f + 0.75f * sin(phase * Math.PI).toFloat()
+                val speedFactor = 0.15f + 0.85f * sin(phase * Math.PI).toFloat()
                 add(Vec2(from.x + (to.x - from.x) * s / steps, from.y + (to.y - from.y) * s / steps), speedFactor)
             }
         }
