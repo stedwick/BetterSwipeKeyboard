@@ -221,6 +221,16 @@ exact procedure in `docs/agent-reference/environment.md`.
   `selectBackend`, `InputConnectionEditor` companions (`withLeadingSpace`,
   `needsSpaceAfterSwipe`). Put new behavior in such a unit and test it
   there, not in the service or Compose UI.
+- **Gold-standard swipe corpus**: `SwipeCorpusGoldTest` replays 242
+  real-hand trail records (25 stress-test sentences covering every
+  historically hard decoder class; `app/src/test/resources/
+  swipe_trails_25phrases*.jsonl/tsv`) and asserts each record's top-1
+  against committed expectations. Baseline 98.35% (238/242) with 4 known
+  misses; any decoder change that flips ANY record fails the test and
+  names it. The standing target for algorithm work: **hold or beat 98%
+  on this corpus** — update the expectations TSV only deliberately, with
+  a verified improvement, and say so in the commit; the test's 98% floor
+  prevents watering it down.
 - `app/src/androidTest/` has only the template instrumented test.
 
 ## Code style guidelines

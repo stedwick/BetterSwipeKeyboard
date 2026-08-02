@@ -7,6 +7,11 @@ decoding"); this file carries the full mechanics. Calibration
 measurements, miss autopsies and rejected levers:
 `docs/decoder-investigation.md` (the decoder's engineering log).
 
+**Accuracy gate for any decoder change**: `SwipeCorpusGoldTest` (see
+`AGENTS.md` "Testing instructions") — 242 real-hand trail records with
+per-record expected top-1s; hold or beat 98%, and update expectations
+only with a verified improvement.
+
 ## Scoring internals
 
 Three ORDERED geometric terms make the word's ideal key-to-key path
