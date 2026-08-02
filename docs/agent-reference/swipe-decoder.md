@@ -93,6 +93,33 @@ tension: the first letter's scan starts at index 0 and fully explores the
 touch-down basin, so the license/charge tension the end side documents
 has no start-side counterpart.
 
+MID-WORD keys get the same treatment from the other direction: a word
+that SKIPS a key the finger deliberately stopped on pays a dwell skip
+charge (`MIDWORD_SKIP_WEIGHT` 1.2 per skipped key, undiluted, outside
+every normalization). The evidence is a contiguous stay of ≥
+`MIDWORD_DWELL_MS` 150 ms within `DWELL_STATIONARY_KEYS` 0.25kw,
+attributed to a key within `DWELL_KEY_RADIUS_KEYS` 0.5kw, with the
+first/last `DWELL_EDGE_EXCLUDE_KEYS` 0.75 of arc excluded (endpoint
+physics is not letter evidence — the endpoint surcharges own those keys).
+Driving evidence: three→the — the T→H→E path passes 0.6-1.0kw over R, so
+"the" (rank 1 vs 157 = a constant +1.39 frequency edge) beat "three" on
+all 8 captured three-trails (7 committed "the", 1 "there") even though
+three won the non-frequency contest on every one; the only differentiator
+is the 200-417 ms stop on R, which the salient channel caps at 0.3/key
+(crossed-key aim noise grade). Measured: 15 captured the/three trails,
+zero the-trail stops mid-word; plateau T∈{150,175} ms × w∈{1.0,1.2}
+(125 breaks set5#45 over→ocr — its c-crossing stays 125-149 ms — 1.0
+leaves set9#5 decided by 0.006); zero losses over the 426-trail corpus,
+set9 7/15 → 14/15 (residue #14 flips to "there", which CONTAINS r and so
+escapes the charge; three is #2, the strip carries it), and set8's
+lots/less class — Addendum 9's documented frequency dead end — resolves
+on the same evidence ('less' skips both dwelled keys o,t and pays 2.4;
+69 → 79/96). "Contiguous" is load-bearing: a steady crossing, however
+slow, never holds a 150 ms stay inside 0.25kw, and the synthetic-trail
+builders had to be re-timed (base gap 8 → 3 ms, speed floor 0.25 → 0.15)
+because at 8 ms a mere slow crossing faked one (decoder-investigation
+Addendum 10).
+
 Two-tier feedback flash (pure classification in
 `swipe/SwipeConfidence.kt`, jQuery-highlight-style fade over ~400 ms,
 purely cosmetic): a FAILED swipe (no candidate below the cutoff, nothing
@@ -105,7 +132,9 @@ commit set2#35 was pushed past `MAX_COMMIT_SCORE` into silence), and again
 after the start-key surcharge (16→18: the two signed-off quick→wick flips
 joined the wrong pool, one of them flagged; correct-commit flags 14→9 —
 four margins widened past 0.25, the two quicks left the correct pool, one
-new flag — denominator changes throughout, not flag-rate changes)) flashes YELLOW
+new flag — denominator changes throughout, not flag-rate changes); left
+unchanged by the mid-word dwell skip charge — `SwipeConfidenceCalibrationTest`
+passed unmodified) flashes YELLOW
 (`LowConfidenceFlash`) as "maybe re-swipe"; confident commits flash
 nothing. Segment alpha in `ui/keyboard/TrailFade.kt`.
 
