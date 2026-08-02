@@ -104,18 +104,22 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // cumulative arc length was previously recomputed inside
         // computeSalience/salientKeySequence/dwelledKeys (bit-identical
         // values — same points, same summation order) and ln(maxRank + 1)
-        // twice per scored word. Both stay decode-LOCAL (never fields):
+        // twice per scored word. The flat trail copy (perf A6) is what the
+        // scoring loops index. All of it stays decode-LOCAL (never fields):
         // decode() can run concurrently with itself on one instance.
-        val arc = FloatArray(trail.size) // cumulative arc length
-        for (i in 1 until trail.size) {
-            arc[i] = arc[i - 1] + trail[i].position.distanceTo(trail[i - 1].position)
+        val flat = FlatTrail(trail)
+        val arc = FloatArray(flat.size) // cumulative arc length
+        for (i in 1 until flat.size) {
+            arc[i] = arc[i - 1] + flat.dist(i, i - 1)
         }
         val logMaxRank = ln(dictionary.maxRank + 1.0)
 
-        val (salience, slowDominates) = computeSalience(trail, keyWidth, arc)
-        val salientKeys = salientKeySequence(trail, salience, slowDominates, keyCenters, keyWidth)
-        val dwelledKeys = dwelledKeys(trail, keyCenters, keyWidth, arc)
-        val trailLength = polylineLength(trail.map { it.position })
+        val (salience, slowDominates) = computeSalience(flat, keyWidth, arc)
+        val salientKeys = salientKeySequence(flat, salience, slowDominates, keyCenters, keyWidth)
+        val dwelledKeys = dwelledKeys(flat, keyCenters, keyWidth, arc)
+        // arc's left fold over the same segment distances IS
+        // polylineLength's — same sums in the same order, bit-identical.
+        val trailLength = arc[flat.size - 1]
         val start = trail.first().position
         val end = trail.last().position
 
@@ -141,7 +145,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.length < MIN_WORD_LENGTH) continue
                 if (word.last() !in lastLetters) continue
                 if (word.any { it != '\'' && it !in keyCenters }) continue
-                val score = score(word, entry.rank, trail, salience, salientKeys,
+                val score = score(word, entry.rank, flat, salience, salientKeys,
                     keyWidth, trailLength, dwelledKeys, logMaxRank, scratch)
                 if (score.isFinite()) top.offer(word, score)
             }
@@ -156,7 +160,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     private fun score(
         word: String,
         rank: Int,
-        trail: List<TimedPoint>,
+        trail: FlatTrail,
         salience: FloatArray,
         salientKeys: List<Char>,
         keyWidth: Float,
@@ -200,7 +204,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         for (i in 0 until keyCount) {
             val center = keys[i]
             var bestIdx = searchFrom
-            var bestSq = sqDist(trail[searchFrom].position, center)
+            var bestSq = trail.sqDistTo(searchFrom, center)
             // bestDist = sqrt(bestSq), recomputed only when bestSq improves:
             // the depart check below needs it every non-improving iteration
             // (the hottest loop in the decoder), and bestSq changes rarely.
@@ -208,7 +212,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             // recomputations is bit-identical.
             var bestDist = sqrt(bestSq)
             for (p in searchFrom + 1 until trail.size) {
-                val sq = sqDist(trail[p].position, center)
+                val sq = trail.sqDistTo(p, center)
                 if (sq < bestSq) {
                     bestSq = sq
                     bestDist = sqrt(sq)
@@ -265,9 +269,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         if (keyCount >= 2) {
             val lastIdx = keyCount - 1
             val lastKey = keys[lastIdx]
-            val stockDist = sqrt(sqDist(trail[matchIndices[lastIdx]].position, lastKey))
+            val stockDist = sqrt(trail.sqDistTo(matchIndices[lastIdx], lastKey))
             var p = min(matchIndices[lastIdx - 1] + 1, trail.size - 1)
-            var basinBestSq = sqDist(trail[p].position, lastKey)
+            var basinBestSq = trail.sqDistTo(p, lastKey)
             var basinBestIdx = p
             // Same cached-sqrt pattern as the first-basin scan above; the
             // cache tracks EVERY basinBestSq reassignment (both the
@@ -276,7 +280,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             var basinsClosed = 0
             while (p + 1 < trail.size) {
                 p++
-                val sq = sqDist(trail[p].position, lastKey)
+                val sq = trail.sqDistTo(p, lastKey)
                 if (sq < basinBestSq) {
                     basinBestSq = sq
                     basinBestDist = sqrt(sq)
@@ -318,7 +322,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // grants position freedom mid-word, but the word's claim to END
         // here should cost when the trail ends off its last key.
         val lastDistKeys =
-            sqrt(sqDist(trail[matchIndices[keyCount - 1]].position, keys[keyCount - 1])) / keyWidth
+            sqrt(trail.sqDistTo(matchIndices[keyCount - 1], keys[keyCount - 1])) / keyWidth
         val endKeySurcharge = max(0f, lastDistKeys - TUNNEL_RADIUS_KEYS) * END_KEY_SURCHARGE_WEIGHT
 
         // Unexplained tail: trail arc length AFTER the last letter's
@@ -343,7 +347,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // captured trails; decoder-investigation Addendum 9).
         var tailArc = 0f
         for (p in matchIndices[keyCount - 1] until trail.size - 1) {
-            tailArc += trail[p].position.distanceTo(trail[p + 1].position)
+            tailArc += trail.dist(p, p + 1)
         }
         val unexplainedTail =
             min(max(0f, tailArc - TAIL_ARC_FREE_KEYS * keyWidth), TAIL_ARC_CAP_KEYS * keyWidth) / keyWidth
@@ -361,7 +365,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // phenomenon), so only the usual touch-down jitter is free.
         var headArc = 0f
         for (p in 0 until matchIndices[0]) {
-            headArc += trail[p].position.distanceTo(trail[p + 1].position)
+            headArc += trail.dist(p, p + 1)
         }
         val unexplainedHead =
             min(max(0f, headArc - HEAD_ARC_FREE_KEYS * keyWidth), HEAD_ARC_CAP_KEYS * keyWidth) / keyWidth
@@ -380,7 +384,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // at index 0 and fully explores the touch-down basin, so no later
         // closer basin can exist that stock matching cannot reach.
         val firstDistKeys =
-            sqrt(sqDist(trail[matchIndices[0]].position, keys[0])) / keyWidth
+            sqrt(trail.sqDistTo(matchIndices[0], keys[0])) / keyWidth
         val startKeySurcharge = max(0f, firstDistKeys - TUNNEL_RADIUS_KEYS) * START_KEY_SURCHARGE_WEIGHT
 
         // Terms 2+3: per-leg line conformance and backtrack penalty. A word
@@ -408,7 +412,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // words on salient-rich trails (the Addendum-9 pocketed variant,
         // landed on set-10 evidence: threw#3, three#54 —
         // decoder-investigation Addendum 11).
-        val lcs = lcsLength(salientKeys, letters)
+        val lcs = lcsLength(salientKeys, letters, scratch.lcsDp)
         val missedSalient = salientKeys.size - lcs
         val alignmentScore = lcs.toFloat() /
             max(letters.length, max(salientKeys.size, ALIGNMENT_MIN_DENOMINATOR))
@@ -464,7 +468,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 }
                 var earliestVisit = Float.MAX_VALUE
                 for (p in 0..matchIndices[i - 1]) {
-                    val d = trail[p].position.distanceTo(keys[i])
+                    val d = trail.distTo(p, keys[i])
                     if (d < earliestVisit) earliestVisit = d
                 }
                 if (earliestVisit <= REVISIT_VISIT_KEYS * keyWidth) {
@@ -510,7 +514,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         keys: Array<Vec2>,
         keyCount: Int,
         matchIndices: IntArray,
-        trail: List<TimedPoint>,
+        trail: FlatTrail,
         keyWidth: Float,
     ): Float? {
         val tunnel = TUNNEL_RADIUS_KEYS * keyWidth
@@ -530,7 +534,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             val legLenSq = legX * legX + legY * legY
 
             for (p in from..to) {
-                val d = pointToSegment(trail[p].position, a, b, legX, legY, legLenSq)
+                val d = pointToSegment(trail.xs[p], trail.ys[p], a, b, legX, legY, legLenSq)
                 if (d > cull) return null
                 conformanceSum += if (d <= tunnel) 0f else min(d, cap) - tunnel
                 conformancePoints++
@@ -539,8 +543,8 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             if (legLenSq > 1e-6f) {
                 val legLen = sqrt(legLenSq)
                 for (p in from until to) {
-                    val stepX = trail[p + 1].position.x - trail[p].position.x
-                    val stepY = trail[p + 1].position.y - trail[p].position.y
+                    val stepX = trail.xs[p + 1] - trail.xs[p]
+                    val stepY = trail.ys[p + 1] - trail.ys[p]
                     val stepLen = sqrt(stepX * stepX + stepY * stepY)
                     if (stepLen < 1e-6f) continue
                     val cosine = (stepX * legX + stepY * legY) / (stepLen * legLen)
@@ -554,26 +558,26 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         return conformance * CONFORMANCE_WEIGHT + (backtrack / keyWidth) * BACKTRACK_WEIGHT
     }
 
-    /** Squared distance, for argmin loops that only need ordering. */
-    private fun sqDist(a: Vec2, b: Vec2): Float {
-        val dx = a.x - b.x
-        val dy = a.y - b.y
-        return dx * dx + dy * dy
-    }
-
-    /** Distance from p to the segment a→b (b−a passed precomputed). */
+    /** Distance from (px, py) to the segment a→b (b−a passed precomputed) —
+     * the flat-trail variant of the old Vec2 overload, same arithmetic. */
     private fun pointToSegment(
-        p: Vec2,
+        px: Float,
+        py: Float,
         a: Vec2,
         b: Vec2,
         abX: Float,
         abY: Float,
         abLenSq: Float,
     ): Float {
-        if (abLenSq < 1e-6f) return p.distanceTo(a) // doubled letter: segment is a point
-        val t = (((p.x - a.x) * abX + (p.y - a.y) * abY) / abLenSq).coerceIn(0f, 1f)
-        val dx = p.x - (a.x + t * abX)
-        val dy = p.y - (a.y + t * abY)
+        if (abLenSq < 1e-6f) {
+            // doubled letter: segment is a point (p.distanceTo(a) inline)
+            val dx = px - a.x
+            val dy = py - a.y
+            return sqrt(dx * dx + dy * dy)
+        }
+        val t = (((px - a.x) * abX + (py - a.y) * abY) / abLenSq).coerceIn(0f, 1f)
+        val dx = px - (a.x + t * abX)
+        val dy = py - (a.y + t * abY)
         return sqrt(dx * dx + dy * dy)
     }
 
@@ -592,7 +596,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      * over a crossed key is just aim noise — see salientKeySequence).
      */
     private fun computeSalience(
-        trail: List<TimedPoint>,
+        trail: FlatTrail,
         keyWidth: Float,
         arc: FloatArray,
     ): Pair<FloatArray, BooleanArray> {
@@ -602,7 +606,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         if (n < 3) return salience to slowDominates
 
         val totalLength = arc[n - 1]
-        val duration = max(trail.last().tMillis - trail.first().tMillis, 1L).toFloat()
+        val duration = max(trail.tMillis[n - 1] - trail.tMillis[0], 1L).toFloat()
         val avgSpeed = totalLength / duration
         val window = CURVATURE_WINDOW_KEYS * keyWidth
 
@@ -612,11 +616,12 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             var k = i
             while (k < n - 1 && arc[k] - arc[i] < window) k++
 
-            val v1 = trail[i].position - trail[j].position
-            val v2 = trail[k].position - trail[i].position
-            val curvature = angleBetween(v1, v2) / PI.toFloat()
+            val curvature = angleBetween(
+                trail.xs[i] - trail.xs[j], trail.ys[i] - trail.ys[j],
+                trail.xs[k] - trail.xs[i], trail.ys[k] - trail.ys[i],
+            ) / PI.toFloat()
 
-            val dt = max(trail[k].tMillis - trail[j].tMillis, 1L).toFloat()
+            val dt = max(trail.tMillis[k] - trail.tMillis[j], 1L).toFloat()
             val speed = (arc[k] - arc[j]) / dt
             // Slower than the swipe's average speed is deliberate; moving at
             // average speed or faster is not. Baseline at average speed is 0.
@@ -664,7 +669,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      *   turn is deliberate at any speed.
      */
     private fun salientKeySequence(
-        trail: List<TimedPoint>,
+        trail: FlatTrail,
         salience: FloatArray,
         slowDominates: BooleanArray,
         keyCenters: Map<Char, Vec2>,
@@ -719,24 +724,24 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 region.to == n - 1 -> n - 1
                 else -> region.peak
             }
-            val position = trail[anchor].position
-            val nearest = keyCenters.minByOrNull { it.value.distanceTo(position) } ?: continue
-            if (nearest.value.distanceTo(position) > SALIENT_KEY_RADIUS * keyWidth) continue
+            // distTo reproduces key.distanceTo(anchor point) bit-identically
+            // (the differences are squared, so the sign flip washes out).
+            val nearest = keyCenters.minByOrNull { trail.distTo(anchor, it.value) } ?: continue
+            if (trail.distTo(anchor, nearest.value) > SALIENT_KEY_RADIUS * keyWidth) continue
 
             // A doubled letter requires the finger to hesitate on the key:
             // at least DWELL_DOUBLE_MS spent near the peak point. A merely
             // slow pass keeps moving and never lingers that long.
-            val peakPos = trail[region.peak].position
             val radius = STATIONARY_RADIUS_KEYS * keyWidth
             var dwell = 0L
             var p = region.peak
-            while (p > region.from && trail[p - 1].position.distanceTo(peakPos) <= radius) {
-                dwell += trail[p].tMillis - trail[p - 1].tMillis
+            while (p > region.from && trail.dist(p - 1, region.peak) <= radius) {
+                dwell += trail.tMillis[p] - trail.tMillis[p - 1]
                 p--
             }
             p = region.peak
-            while (p < region.to && trail[p + 1].position.distanceTo(peakPos) <= radius) {
-                dwell += trail[p + 1].tMillis - trail[p].tMillis
+            while (p < region.to && trail.dist(p + 1, region.peak) <= radius) {
+                dwell += trail.tMillis[p + 1] - trail.tMillis[p]
                 p++
             }
 
@@ -775,7 +780,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
      * charge from double-charging the endpoints. Addendum 10.
      */
     private fun dwelledKeys(
-        trail: List<TimedPoint>,
+        trail: FlatTrail,
         keyCenters: Map<Char, Vec2>,
         keyWidth: Float,
         arc: FloatArray,
@@ -789,18 +794,17 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val best = HashMap<Char, Long>()
         for (i in 1 until n) {
             if (arc[i] < excl || arc[i] > total - excl) continue
-            val pos = trail[i].position
-            val nearest = keyCenters.minByOrNull { it.value.distanceTo(pos) } ?: continue
-            if (nearest.value.distanceTo(pos) > attribRadius) continue
+            val nearest = keyCenters.minByOrNull { trail.distTo(i, it.value) } ?: continue
+            if (trail.distTo(i, nearest.value) > attribRadius) continue
             var dwell = 0L
             var j = i
-            while (j > 0 && trail[j - 1].position.distanceTo(pos) <= stayRadius) {
-                dwell += trail[j].tMillis - trail[j - 1].tMillis
+            while (j > 0 && trail.dist(j - 1, i) <= stayRadius) {
+                dwell += trail.tMillis[j] - trail.tMillis[j - 1]
                 j--
             }
             j = i
-            while (j < n - 1 && trail[j + 1].position.distanceTo(pos) <= stayRadius) {
-                dwell += trail[j + 1].tMillis - trail[j].tMillis
+            while (j < n - 1 && trail.dist(j + 1, i) <= stayRadius) {
+                dwell += trail.tMillis[j + 1] - trail.tMillis[j]
                 j++
             }
             if (dwell > (best[nearest.key] ?: 0L)) best[nearest.key] = dwell
@@ -812,18 +816,51 @@ class SwipeDecoder(private val dictionary: Dictionary) {
     // Small math helpers
     // ------------------------------------------------------------------
 
-    private fun polylineLength(points: List<Vec2>): Float {
-        var length = 0f
-        for (i in 1 until points.size) length += points[i].distanceTo(points[i - 1])
-        return length
-    }
-
-    /** Scratch-array variant over [0, count): identical summation order and
-     * arithmetic as the List version, so the result is bit-identical. */
+    /** Key-to-key path length over the scratch array's [0, count) prefix —
+     * the decode path's only caller (the ideal word path in score()). */
     private fun polylineLength(points: Array<Vec2>, count: Int): Float {
         var length = 0f
         for (i in 1 until count) length += points[i].distanceTo(points[i - 1])
         return length
+    }
+
+    /**
+     * The trail as flat primitive arrays (perf A6): one decode-local copy of
+     * the TimedPoint list, so the scoring inner loops index primitives
+     * instead of chasing `List<TimedPoint>` → Vec2 references on every
+     * access (bounds checks + derefs dominate on ART, PLAN §6). The arrays
+     * hold the identical floats/longs in the identical order, and the
+     * helpers below use the identical arithmetic as Vec2.distanceTo/sqDist,
+     * so every computed value is bit-identical. Decode-local (never a
+     * field): decode() can run concurrently with itself on one instance.
+     */
+    private class FlatTrail(trail: List<TimedPoint>) {
+        val size: Int = trail.size
+        val xs = FloatArray(size) { trail[it].position.x }
+        val ys = FloatArray(size) { trail[it].position.y }
+        val tMillis = LongArray(size) { trail[it].tMillis }
+
+        /** point i's `distanceTo` point j. */
+        fun dist(i: Int, j: Int): Float {
+            val dx = xs[i] - xs[j]
+            val dy = ys[i] - ys[j]
+            return sqrt(dx * dx + dy * dy)
+        }
+
+        /** point i's `distanceTo` v — also reproduces v.distanceTo(point i)
+         * bit-identically (the differences are squared, so signs wash out). */
+        fun distTo(i: Int, v: Vec2): Float {
+            val dx = xs[i] - v.x
+            val dy = ys[i] - v.y
+            return sqrt(dx * dx + dy * dy)
+        }
+
+        /** point i's `sqDist` to v. */
+        fun sqDistTo(i: Int, v: Vec2): Float {
+            val dx = xs[i] - v.x
+            val dy = ys[i] - v.y
+            return dx * dx + dy * dy
+        }
     }
 
     /**
@@ -859,19 +896,30 @@ class SwipeDecoder(private val dictionary: Dictionary) {
 
         /** Per-word raw match distances in key-widths; same validity range. */
         val rawDistKeys: FloatArray = FloatArray(maxWordLength)
+
+        /** lcsLength's DP row (word length + 1 used; the rest is never
+         * read). Re-zeroed by lcsLength per call — a reused buffer would
+         * otherwise leak the previous word's last DP row into the next
+         * word's first row (the test suite caught exactly that). */
+        val lcsDp: IntArray = IntArray(maxWordLength + 1)
     }
 
-    private fun angleBetween(a: Vec2, b: Vec2): Float {
-        val la = sqrt(a.x * a.x + a.y * a.y)
-        val lb = sqrt(b.x * b.x + b.y * b.y)
+    private fun angleBetween(ax: Float, ay: Float, bx: Float, by: Float): Float {
+        val la = sqrt(ax * ax + ay * ay)
+        val lb = sqrt(bx * bx + by * by)
         if (la < 1e-6f || lb < 1e-6f) return 0f
-        val cosine = ((a.x * b.x + a.y * b.y) / (la * lb)).coerceIn(-1f, 1f)
+        val cosine = ((ax * bx + ay * by) / (la * lb)).coerceIn(-1f, 1f)
         return acos(cosine)
     }
 
-    private fun lcsLength(a: List<Char>, b: CharSequence): Int {
+    /** DP row buffer [dp] comes from the decode-local scratch (perf: was a
+     * per-candidate IntArray — the last per-word allocation). Same DP, same
+     * values: a fresh row would be all zeros, so the reused buffer's used
+     * prefix is re-zeroed per call (O(word length) — dwarfed by the DP
+     * itself); indices past b.length are never touched. */
+    private fun lcsLength(a: List<Char>, b: CharSequence, dp: IntArray): Int {
         if (a.isEmpty() || b.isEmpty()) return 0
-        val dp = IntArray(b.length + 1)
+        dp.fill(0, 0, b.length + 1)
         for (ca in a) {
             var diagonal = 0
             for (j in 1..b.length) {
