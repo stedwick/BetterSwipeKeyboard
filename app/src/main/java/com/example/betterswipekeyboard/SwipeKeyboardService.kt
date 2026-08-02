@@ -358,6 +358,7 @@ class SwipeKeyboardService : InputMethodService(),
                 lastCommitWasSwipe = false
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
+                refreshTapStrip()
             }
             is KeyboardEffect.CommitWord -> {
                 // commitWord inserts the leading space for tap → swipe itself.
@@ -385,6 +386,7 @@ class SwipeKeyboardService : InputMethodService(),
                 editor.backspace()
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
+                refreshTapStrip()
             }
             KeyboardEffect.DeleteWordBackward -> {
                 // First backspace after a swipe: the whole word goes. The
@@ -394,6 +396,7 @@ class SwipeKeyboardService : InputMethodService(),
                 editor.deleteWordBackward()
                 textDirtySinceProofread = true
                 scheduleAutoProofread()
+                refreshTapStrip()
             }
             is KeyboardEffect.ReplaceSwipedWord -> {
                 // Strip tap: delete the just-swiped word (with its leading
@@ -462,6 +465,22 @@ class SwipeKeyboardService : InputMethodService(),
     private fun refreshEmojiSuggestions() {
         val before = editor.textBeforeCursor(maxChars = EMOJI_SUGGESTION_CHARS).orEmpty()
         viewModel.setEmojiSuggestions(emojiSuggester.suggest(before))
+    }
+
+    /**
+     * Mirrors the tap-typed word into the alternates strip from FIELD truth:
+     * the partial word before the cursor (blue), or — right after a boundary
+     * character — the word it just ended (green). Called after every
+     * tap/backspace text effect; swipe commits own the strip and skip this.
+     */
+    private fun refreshTapStrip() {
+        val before = editor.textBeforeCursor(maxChars = TAP_STRIP_CHARS).orEmpty()
+        val prefix = currentWordPrefix(before)
+        if (prefix.isNotEmpty()) {
+            viewModel.setTapStrip(live = prefix, committed = null)
+        } else {
+            viewModel.setTapStrip(live = null, committed = tappedWordBeforeBoundary(before))
+        }
     }
 
     /**
@@ -639,6 +658,9 @@ class SwipeKeyboardService : InputMethodService(),
 
         /** How much text before the cursor the emoji suggester sees. */
         const val EMOJI_SUGGESTION_CHARS = 200
+
+        /** How much text before the cursor the tap-word mirror sees. */
+        const val TAP_STRIP_CHARS = 48
     }
 }
 

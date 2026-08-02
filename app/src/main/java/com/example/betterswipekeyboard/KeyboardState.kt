@@ -103,6 +103,24 @@ data class KeyboardState(
      * commit strip).
      */
     val failedSwipe: FailedSwipe? = null,
+    /**
+     * The partial word currently being TAP-typed, mirrored VERBATIM (caps as
+     * typed, never from the dictionary) as the strip's blue center cell —
+     * display only, a tap on it does nothing. Set by the service's
+     * setTapStrip hook from the field text after every tap/backspace; null
+     * while no word is mid-tap. Mutually exclusive with [tappedWord] by
+     * reducer construction. Lifetime: cleared by the swipe reductions (a
+     * swipe owns the strip) and Enter (newline = hard boundary).
+     */
+    val tapLiveWord: String? = null,
+    /**
+     * The just-ended tap-typed word (ended by any non-word character — space,
+     * period, comma, ...), shown VERBATIM as the strip's green center cell
+     * until the next letter starts a new word. Same display-only rules and
+     * lifetime as [tapLiveWord]; a tap on it is a no-op like the swipe
+     * strip's green center.
+     */
+    val tappedWord: String? = null,
 ) {
     /** Letter labels render uppercase whenever any caps mode is active. */
     val isCaps: Boolean get() = shiftMode != ShiftMode.OFF

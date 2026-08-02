@@ -127,6 +127,11 @@ and commit the apostrophe verbatim. Custom user words merge at rank 1
   rects, taps re-dispatched in the gesture loop (never clickable
   children); the `SelectAlternate` reduction is guarded by
   `lastCommitWasSwipe` and RE-ARMS it.
+- Tap-typing mirror (display-only): two tiers BELOW the swipe tiers — the
+  word mid-tap blue (`tapLiveWord`), the just-ended tap word green
+  (`tappedWord`); VERBATIM field text, untappable cells, Enter clears.
+  Service-owned: `refreshTapStrip()` re-reads the field after every
+  tap/backspace text effect (`TapWord.kt`); swipe reductions clear it.
 - Full mechanics: `docs/agent-reference/alternates-strip.md`.
 
 ## AI proofreading — invariants

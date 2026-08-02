@@ -262,10 +262,28 @@ fun KeyboardScreen(
     // mid-gesture. All three tiers share one placement rule (centeredCells
     // in StripCells.kt), so lifting the finger only recolors the center,
     // never rearranges the row.
+    // Bottom tiers: the TAP-typing mirror (service-owned state, refreshed
+    // from field truth after every tap/backspace) — the word mid-tap in
+    // blue, then the just-ended word in green. The blue tier borrows the
+    // LiveOffers leader flag PURELY for its LiveLeaderBlue rendering: in the
+    // tap flow nothing commits on finger-up, so leaderWouldCommit = true is
+    // a color choice, not a promise. Both cells are display-only: the green
+    // center is untappable by construction, and the blue center's
+    // SelectAlternate dispatch dies on the reduction's lastCommitWasSwipe
+    // guard. The swipe tiers win above belt-and-braces — the reducer already
+    // clears the tap fields on every swipe reduction.
     val maxAlternates = alternateCountForWidth(LocalConfiguration.current.screenWidthDp.toFloat())
     val altCells = state.failedSwipe?.let { failedOfferCells(it.offers, maxAlternates) }
         ?: liveOffers?.let { liveOfferCells(it, maxAlternates) }
-        ?: stripCells(state.swipedWord, state.swipeStripOffers, state.swipeAlternates, maxAlternates)
+        // takeIf is load-bearing: stripCells returns an EMPTY list (not
+        // null) when no swipe is armed — without it the Elvis chain would
+        // stop here and the tap tiers below would be unreachable.
+        ?: stripCells(state.swipedWord, state.swipeStripOffers, state.swipeAlternates, maxAlternates).takeIf { it.isNotEmpty() }
+        ?: state.tapLiveWord?.let {
+            liveOfferCells(LiveOffers(listOf(it), leaderWouldCommit = true), maxAlternates)
+        }
+        ?: state.tappedWord?.let { stripCells(it, emptyList(), emptyList(), maxAlternates) }
+        ?: emptyList()
     val currentAltCells by rememberUpdatedState(altCells)
     val currentMaxAlternates by rememberUpdatedState(maxAlternates)
     val scope = rememberCoroutineScope()
