@@ -55,7 +55,15 @@ import org.junit.Test
  * swipes — 8 three-intended with a deliberate mid-word stop on R, 7
  * the-intended passing wide of R; intents inferred from the
  * dwell/geometry split, confirmed by Philip — the driving evidence for
- * the mid-word dwell skip charge, decoder-investigation Addendum 10).
+ * the mid-word dwell skip charge, decoder-investigation Addendum 10),
+ * and `swipe_trails10_the_elves_philip.*` (tenth capture: 70 swipes of
+ * the sentence 'the three elves threw their three trees' — 10 cycles of
+ * 7 words, alignment verified geometrically; #10 is a mistyped
+ * 'through' performance, marked `-` (confirmed by Philip); #23/#65
+ * elves touch down nearest R, #56/#63 the lift off nearest R — scored,
+ * notes in the TSV; the driving evidence for the revisit-clamp charge
+ * and the salient-floored alignment denominator, decoder-investigation
+ * Addendum 11).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -151,6 +159,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET9",
             correct >= MIN_COMMITTED_CORRECT_SET9,
+        )
+    }
+
+    @Test
+    fun `tenth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails10_the_elves_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET10",
+            correct >= MIN_COMMITTED_CORRECT_SET10,
         )
     }
 
@@ -458,7 +475,38 @@ class SwipeRealTrailAccuracyTest {
          * 'there' contains R so it escapes the charge and outranks three
          * on frequency (0.08); three is #2, carried by the alternates
          * strip. Its R stop is 159ms, 9ms over the threshold — the
-         * thin-margin trail. */
-        const val MIN_COMMITTED_CORRECT_SET9 = 14
+         * thin-margin trail.
+         *
+         * Revisit-clamp charge (decoder-investigation Addendum 11): #14
+         * resolves — 'there' clamps its R 1.13kw off-trail between its
+         * two e's and pays 1.13 undiluted, three wins by 1.05. The dwell
+         * floor stays 150; this is pure geometry. Ratchet 14 -> 15. */
+        const val MIN_COMMITTED_CORRECT_SET9 = 15
+
+        /** Tenth capture (70 swipes of 'the three elves threw their
+         * three trees' — 10 cycles of 7 words, alignment verified
+         * geometrically from start/end keys + arc lengths; #10 is a
+         * mistyped 'through', marked '-' — confirmed by Philip; #23/#65
+         * elves touch down nearest R, #56/#63 the lift off nearest R —
+         * scored, notes in the TSV) baseline at the Addendum-10 decoder:
+         * **48/70** — the 10/10, their 10/10, trees 10/10 (corner-cut
+         * trails ride frequency over tres), elves 8/10 (#23 rovers, #65
+         * rivers: touch-down off E + corner-cut L), threw 4/10 (rank
+         * 3216 = a 2.22 prior handicap vs weak W evidence), three 6/20
+         * (11x the — natural-speed R visits leave no salient/dwell
+         * trace, the 1.39 prior decides; 3x there — 'there' clamps its
+         * R 1.09-1.23kw off-trail BETWEEN two near E matches, a
+         * degenerate zigzag legCosts cannot see and the mean dilutes).
+         *
+         * Revisit-clamp charge (REVISIT_FAR_KEYS 0.8,
+         * REVISIT_CLAMP_WEIGHT 1.0 — decoder-investigation Addendum 11)
+         * + salient-floored alignment denominator: #3 the->threw,
+         * #19/#50/#54 there->three, #23 rovers->elves — ratchet starts
+         * at the post-fix 53/70. Residue: 11x class-A three (R slows
+         * 17-134ms are real but unpriceable — the 60-150ms sub-band is
+         * a measured dead end: pizzas/excellent silences + elves#58),
+         * threw #24 (there->three wrong->wrong churn), #38/#59/#66
+         * (honest weak-W reads), elves #65 (l never visited). */
+        const val MIN_COMMITTED_CORRECT_SET10 = 53
     }
 }

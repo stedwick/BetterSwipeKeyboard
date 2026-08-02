@@ -1,0 +1,70 @@
+0	the	sentence cycle, moderate pace
+1	three	sentence cycle
+2	elves	sentence cycle
+3	threw	sentence cycle
+4	their	sentence cycle
+5	three	sentence cycle (2nd three of the sentence)
+6	trees	sentence cycle
+7	the	sentence cycle
+8	three	sentence cycle
+9	elves	sentence cycle
+10	-	mis-swipe: trace performs 'through' (t,g,r,t,u,o,i,u,g,h; 17.6kw arc vs ideal 8.3; threw conformance-culled on it) — mistype confirmed by Philip, unscored
+11	their	sentence cycle
+12	three	sentence cycle
+13	trees	sentence cycle
+14	the	sentence cycle
+15	three	sentence cycle
+16	elves	sentence cycle
+17	threw	sentence cycle
+18	their	sentence cycle
+19	three	sentence cycle
+20	trees	sentence cycle
+21	the	sentence cycle
+22	three	sentence cycle
+23	elves	FLAG: touch-down nearest key is r (1.14kw off e center)
+24	threw	sentence cycle
+25	their	sentence cycle
+26	three	sentence cycle
+27	trees	sentence cycle
+28	the	sentence cycle
+29	three	sentence cycle
+30	elves	sentence cycle
+31	threw	sentence cycle
+32	their	sentence cycle
+33	three	sentence cycle
+34	trees	sentence cycle
+35	the	sentence cycle
+36	three	sentence cycle
+37	elves	sentence cycle
+38	threw	sentence cycle
+39	their	sentence cycle
+40	three	sentence cycle
+41	trees	sentence cycle
+42	the	slow deliberate cycle starts (durations 1.2-3.2s)
+43	three	slow deliberate
+44	elves	slow deliberate
+45	threw	slow deliberate (2.06s)
+46	their	slow deliberate
+47	three	slow deliberate
+48	trees	slow deliberate
+49	the	slow deliberate
+50	three	slow deliberate (1.99s)
+51	elves	slow deliberate
+52	threw	slow deliberate (3.18s — slowest record)
+53	their	slow deliberate
+54	three	slow deliberate (2.90s)
+55	trees	slow deliberate
+56	the	FLAG: fast cycle; ends on r not e (early lift-off over r)
+57	three	fast cycle (352-826ms)
+58	elves	fast cycle
+59	threw	fast cycle
+60	their	fast cycle
+61	three	fast cycle
+62	trees	fast cycle
+63	the	FLAG: fast cycle; ends on r not e (early lift-off over r)
+64	three	fast cycle
+65	elves	FLAG: fast cycle; touch-down nearest key is r (1.14kw off e center)
+66	threw	FLAG: fast cycle; ends on e not w (undershoot?)
+67	their	fast cycle
+68	three	fast cycle
+69	trees	fast cycle

@@ -120,6 +120,34 @@ builders had to be re-timed (base gap 8 → 3 ms, speed floor 0.25 → 0.15)
 because at 8 ms a mere slow crossing faked one (decoder-investigation
 Addendum 10).
 
+The REVISIT-CLAMP charge patches the degenerate-leg hole the ordered
+scan creates: when consecutive letters clamp to one trail region
+('there' on a three trail matches its r 1.09-1.23kw off-trail BETWEEN
+its two e's at the trail end), the zigzag spans zero trail arc, so
+legCosts prices nothing and the per-letter mean dilutes the miss to
+~0.2. A mid-word letter matching > `REVISIT_FAR_KEYS` 0.8kw off-trail,
+sandwiched between two ≤ `REVISIT_NEAR_KEYS` 0.5kw matches, at a key
+the trail VISITED earlier (≤ `REVISIT_VISIT_KEYS` 0.5kw before the
+predecessor's match), pays its match distance ×
+`REVISIT_CLAMP_WEIGHT` 1.0 again, undiluted. The visit gate is the
+honesty check — a corner-cut letter the trail never approaches
+('trees'' h at ~1.9kw on the straight t→e→s slide) is not a "revisit"
+and pays only the mean; mid-word letters only, the endpoints have
+their own surcharges. Driving evidence: the set-10 there-clamp class
+(#19/#50/#54 three→there, #24 threw→there) plus set9#14 — the
+Addendum-10 signed-off residue the dwell charge structurally couldn't
+touch ('there' CONTAINS r). Measured grid over all 514 captured
+records: 6 fixes + 1 wrong-to-wrong, 0 previously-correct losses;
+FAR 1.0 loses the rovers fix (0.98kw clamp) for no benefit. Option D's
+narrowed variant was rejected in Addendum 1 for touching no live
+error — the there-clamp class is that live error. Same landing: the
+LCS alignment denominator floors at max(wordLen, salientCount, 3) —
+the Addendum-9 pocketed variant (NOT Addendum-2's rejected
+salient-only floor; wordLen stays the parsimony brake), demoting
+short words that under-explain measured salients ('the' explains 3 of
+[t,h,r,e,e] on a three trail). Set 9 → 15/15, set 10 lands at 53/69
+(decoder-investigation Addendum 11).
+
 Two-tier feedback flash (pure classification in
 `swipe/SwipeConfidence.kt`, jQuery-highlight-style fade over ~400 ms,
 purely cosmetic): a FAILED swipe (no candidate below the cutoff, nothing

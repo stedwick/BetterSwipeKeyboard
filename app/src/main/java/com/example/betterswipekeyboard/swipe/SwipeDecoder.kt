@@ -164,6 +164,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // "mummy" on a straight M→Y swipe) matches far off the trail and
         // pays for it. Doubled letters still match a single pass.
         val matchIndices = IntArray(keys.size)
+        // Raw per-letter match distances in key-widths (BEFORE the salience
+        // multiplier) — the revisit-clamp charge below reads them.
+        val rawDistKeys = FloatArray(keys.size)
         var distanceCost = 0f
         var searchFrom = 0
         var lastLetterCharge = 0f
@@ -181,6 +184,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 }
             }
             matchIndices[i] = bestIdx
+            rawDistKeys[i] = sqrt(bestSq) / keyWidth
             // Endpoint salience is hardcoded (see computeSalience), not
             // measured, so it must not amplify the distance cost of a
             // letter matching the trail's first/last point: real lift-offs
@@ -257,6 +261,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                     else 1f + SALIENCE_WEIGHT * salience[basinBestIdx]
                 distanceCost += finalDist / keyWidth * rebasinSalienceMultiplier - lastLetterCharge
                 matchIndices[lastIdx] = basinBestIdx
+                rawDistKeys[lastIdx] = finalDist / keyWidth
             }
         }
         distanceCost /= keys.size
@@ -352,10 +357,21 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // word can explain at most two deliberate points, so it must not get
         // a perfect score for free: the denominator floor removes the
         // structural lcs/length = 1.0 advantage that once let abbreviations
-        // like "ak" beat real words on straight trails.
+        // like "ak" beat real words on straight trails. The denominator is
+        // ALSO floored by the salient count: a short word that under-explains
+        // MEASURED salients ('the' explains 3 of [t,h,r,e,e] on a three
+        // trail) must not score a perfect 1.0 either. Addendum 2 rejected
+        // the salient-ONLY floor — it untied same-LCS words regardless of
+        // length and unleashed long-word impostors (foxx>fox, ther>the) —
+        // but keeping wordLen in the max preserves that parsimony brake:
+        // long words still self-normalize. This floor only demotes short
+        // words on salient-rich trails (the Addendum-9 pocketed variant,
+        // landed on set-10 evidence: threw#3, three#54 —
+        // decoder-investigation Addendum 11).
         val lcs = lcsLength(salientKeys, letters.toList())
         val missedSalient = salientKeys.size - lcs
-        val alignmentScore = lcs.toFloat() / max(letters.length, ALIGNMENT_MIN_DENOMINATOR)
+        val alignmentScore = lcs.toFloat() /
+            max(letters.length, max(salientKeys.size, ALIGNMENT_MIN_DENOMINATOR))
 
         val frequencyBonus = (ln(dictionary.maxRank + 1.0) - ln(rank.toDouble())) /
             ln(dictionary.maxRank + 1.0)
@@ -376,6 +392,45 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val letterSet = letters.toSet()
         val midwordSkip = dwelledKeys.count { it !in letterSet } * MIDWORD_SKIP_WEIGHT
 
+        // Revisit-clamp charge: a MID-WORD letter that matches far off the
+        // trail, sandwiched between two on-trail matches, at a key the trail
+        // VISITED earlier, pays its match distance again, undiluted. This
+        // patches the degenerate-leg hole: when consecutive letters clamp to
+        // the same trail region ("there" on a three trail matches its r
+        // 1.09-1.23kw off-trail BETWEEN its two e's at the trail end), the
+        // e→r→e zigzag spans zero trail arc, so legCosts prices nothing and
+        // the per-letter mean dilutes the miss to ~0.2 — while the word's
+        // claim "the finger went BACK to r" is exactly what the ordered scan
+        // forbade the trail to show. The visit gate is the honesty check:
+        // only a key the trail genuinely passed earlier (≤ REVISIT_VISIT_KEYS
+        // before the predecessor's match) can be "revisited" — a corner-cut
+        // letter the trail never approaches ("trees"' h on a straight
+        // t→e→s slide, ~1.9kw off) is NOT a revisit and pays only the mean.
+        // Mid-word letters only: the endpoints have their own surcharges.
+        // Option D's narrowed variant was rejected in Addendum 1 for
+        // touching no live error; the set-10 there-clamp class is that live
+        // error (decoder-investigation Addendum 11; grid over all 514
+        // captured records: 6 fixes, 0 losses).
+        var revisitClamp = 0f
+        if (keys.size >= 3) {
+            for (i in 1 until keys.size - 1) {
+                if (rawDistKeys[i] <= REVISIT_FAR_KEYS) continue
+                if (rawDistKeys[i - 1] > REVISIT_NEAR_KEYS ||
+                    rawDistKeys[i + 1] > REVISIT_NEAR_KEYS
+                ) {
+                    continue
+                }
+                var earliestVisit = Float.MAX_VALUE
+                for (p in 0..matchIndices[i - 1]) {
+                    val d = trail[p].position.distanceTo(keys[i])
+                    if (d < earliestVisit) earliestVisit = d
+                }
+                if (earliestVisit <= REVISIT_VISIT_KEYS * keyWidth) {
+                    revisitClamp += rawDistKeys[i]
+                }
+            }
+        }
+
         return distanceCost * DISTANCE_WEIGHT +
             legCost +
             lengthPenalty * LENGTH_WEIGHT -
@@ -387,6 +442,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
             unexplainedHead * HEAD_ARC_WEIGHT +
             endKeySurcharge +
             startKeySurcharge +
+            revisitClamp * REVISIT_CLAMP_WEIGHT +
             midwordSkip
     }
 
@@ -817,6 +873,44 @@ class SwipeDecoder(private val dictionary: Dictionary) {
          * skips both dwelled keys o,t and pays 2.4. Addendum 10.
          */
         const val MIDWORD_SKIP_WEIGHT = 1.2f
+
+        /**
+         * A mid-word letter matching beyond this many key-widths off the
+         * trail is a clamp candidate for the revisit-clamp charge. 0.8
+         * catches the set-10 clamped re-visits ('there's r at 1.09-1.23kw,
+         * rovers' r at 0.98kw); 1.0 loses the rovers fix for no benefit
+         * (measured grid cell M5). Coincides with REBASIN_RADIUS_KEYS —
+         * a post-hoc resonance, labeled as such.
+         */
+        const val REVISIT_FAR_KEYS = 0.8f
+
+        /**
+         * Weight of the revisit-clamp charge (raw key-widths, undiluted by
+         * any normalization) — the degenerate-leg patch: consecutive
+         * letters clamped to one trail region give legCosts zero arc to
+         * price, so the clamped letter pays its match distance AGAIN here.
+         * Measured grid over all 514 captured records at FAR 0.8 / w 1.0:
+         * 6 fixes (set9#14 + set10 #3/#19/#23/#50/#54), 1 wrong-to-wrong,
+         * 0 previously-correct losses. Addendum 11.
+         */
+        const val REVISIT_CLAMP_WEIGHT = 1.0f
+
+        /**
+         * A revisit-clamp fires only when both neighbors of the far match
+         * match within this many key-widths — the sandwich pattern (the
+         * word performs a zigzag the trail never showed). = TUNNEL_RADIUS_KEYS:
+         * the existing on-trail boundary, not a free parameter.
+         */
+        const val REVISIT_NEAR_KEYS = 0.5f
+
+        /**
+         * …and only when the far-matched key was genuinely VISITED earlier:
+         * the trail must have come within this many key-widths of it before
+         * the predecessor's match. Exempts corner-cut letters the trail
+         * never approaches ("trees"' h at ~1.9kw) — a never-visited key is
+         * not a "revisit". = TUNNEL_RADIUS_KEYS, same boundary.
+         */
+        const val REVISIT_VISIT_KEYS = 0.5f
 
         /** One-letter swipes are taps; every shorter word is excluded. */
         const val MIN_WORD_LENGTH = 2

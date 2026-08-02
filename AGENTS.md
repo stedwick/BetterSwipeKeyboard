@@ -86,7 +86,19 @@ on mid-word (contiguous stay ≥ `MIDWORD_DWELL_MS` 150 ms within
 0.5, first/last `DWELL_EDGE_EXCLUDE_KEYS` 0.75 of arc excluded — endpoint
 physics is not letter evidence; three→the is its driving evidence and the
 charge is the endpoint surcharges' mid-word mirror: undiluted, outside
-every normalization). Commit top word when
+every normalization), revisit-clamp charge `REVISIT_CLAMP_WEIGHT` 1.0 (a
+mid-word letter matching > `REVISIT_FAR_KEYS` 0.8kw off-trail, sandwiched
+between two ≤ `REVISIT_NEAR_KEYS` 0.5 matches, at a key the trail visited
+≤ `REVISIT_VISIT_KEYS` 0.5 earlier, pays its match distance again,
+undiluted — patches the degenerate-leg hole: a clamped zigzag like
+'there''s r between its two e's spans zero trail arc, so legCosts prices
+nothing and the mean dilutes the miss; the visit gate exempts never-
+visited corner-cuts like trees' h). The LCS alignment denominator floors
+at 3 (`ALIGNMENT_MIN_DENOMINATOR`), at the word's letter count, AND at
+the salient count (a short word under-explaining measured salients must
+not score a perfect 1.0; wordLen stays in the max as the parsimony
+brake — Addendum-2's impostor flood was the salient-ONLY floor).
+Commit top word when
 `score < MAX_COMMIT_SCORE` (1.8). Feedback flash
 (`swipe/SwipeConfidence.kt`): FAILED → RED, close runner-up (margin <
 `LOW_CONFIDENCE_MARGIN` 0.25) → YELLOW, confident → nothing.
@@ -102,7 +114,8 @@ Tuning rules learned the hard way (the test suite guards these):
   is the last letter's gated lift-off re-match.
 - **No trail-length gates.** Straight-trail ties ("ak" vs "ask") are
   decided by frequency + per-letter length bonus. The LCS denominator
-  floors at 3 (`ALIGNMENT_MIN_DENOMINATOR`).
+  floors at `max(wordLen, salientCount, ALIGNMENT_MIN_DENOMINATOR 3)` —
+  never the salient-only variant (Addendum-2's impostor flood).
 - Geometric costs are per-letter/per-point MEANS (FUTO's γ-exponent
   normalization does not apply), plus `LENGTH_BONUS_PER_LETTER` 0.02.
 - Constants marked "tuning starting point" come from SHARK2, FUTO, Sivek
