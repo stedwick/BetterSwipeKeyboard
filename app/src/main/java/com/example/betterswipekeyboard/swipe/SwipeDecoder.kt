@@ -132,7 +132,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         // decode() can run concurrently with itself on one instance.
         val scratch = DecodeScratch(dictionary.maxWordLength, keyCenters)
 
-        val scored = mutableListOf<ScoredWord>()
+        // Bounded top-N selection (see TopN's KDoc for the exact
+        // sortedBy+take semantics) — no per-candidate ScoredWord, no sort.
+        val top = TopN(topN)
         for (first in firstLetters) {
             for (entry in dictionary.startingWith(first)) {
                 val word = entry.word
@@ -141,10 +143,10 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, trail, salience, salientKeys,
                     keyWidth, trailLength, dwelledKeys, logMaxRank, scratch)
-                if (score.isFinite()) scored += ScoredWord(word, score)
+                if (score.isFinite()) top.offer(word, score)
             }
         }
-        return scored.sortedBy { it.score }.take(topN)
+        return top.results()
     }
 
     // ------------------------------------------------------------------
