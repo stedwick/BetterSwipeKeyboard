@@ -92,6 +92,15 @@ const val MAX_COMMIT_SCORE = 1.8f
  */
 class SwipeDecoder(private val dictionary: Dictionary) {
 
+    /**
+     * Decode counters for the perf harness (A5's prune-rate gate), counted
+     * in score(). NOT concurrency-safe (decode() can self-overlap on one
+     * instance) and never read in production — only the single-threaded
+     * harness resets/reads them around individual decodes.
+     */
+    internal var scoredCandidates = 0
+    internal var prunedCandidates = 0
+
     fun decode(
         trail: List<TimedPoint>,
         keyCenters: Map<Char, Vec2>,
@@ -146,7 +155,7 @@ class SwipeDecoder(private val dictionary: Dictionary) {
                 if (word.last() !in lastLetters) continue
                 if (word.any { it != '\'' && it !in keyCenters }) continue
                 val score = score(word, entry.rank, flat, salience, salientKeys,
-                    keyWidth, trailLength, dwelledKeys, logMaxRank, scratch)
+                    keyWidth, trailLength, dwelledKeys, logMaxRank, scratch, top.cutoff())
                 if (score.isFinite()) top.offer(word, score)
             }
         }
@@ -168,7 +177,9 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         dwelledKeys: Set<Char>,
         logMaxRank: Double,
         scratch: DecodeScratch,
+        pruneCutoff: Float,
     ): Float {
+        scoredCandidates++
         // Apostrophe words match LETTERS ONLY: the apostrophe has no key,
         // contributes zero geometry, and stays verbatim in the committed
         // word. Using the letter count everywhere (not word.length) keeps
@@ -310,6 +321,32 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         }
         distanceCost /= keyCount
 
+        val frequencyBonus = (logMaxRank - ln(rank.toDouble())) / logMaxRank
+
+        // Admissible prune (perf A5): skip legCosts/LCS/arc sums when the
+        // word provably cannot enter the top N. The bound below is a TRUE
+        // lower bound on this word's final score, verified term by term:
+        // every dropped term is >= 0 (legCost, lengthPenalty*0.3,
+        // missedSalient*0.3, tail/head arcs, both key surcharges, revisit
+        // clamp, midword skip); alignmentScore <= 1 caps the alignment bonus
+        // at ALIGNMENT_WEIGHT; the frequency (0 < bonus <= 1) and per-letter
+        // bonuses are the word's exact values. The fold mirrors the score's
+        // own operation order minus the non-negative terms — float rounding
+        // is monotone, so removing x >= 0 from (acc + x) - y never raises
+        // the result. A full top-N slate admits only scores STRICTLY below
+        // its cutoff (ties never displace), so a word whose lower bound
+        // exceeds the cutoff can never enter; == never prunes. An unfilled
+        // slate passes NaN: nothing to prune against yet.
+        if (!pruneCutoff.isNaN()) {
+            val lowerBound = distanceCost * DISTANCE_WEIGHT - ALIGNMENT_WEIGHT -
+                frequencyBonus.toFloat() * FREQUENCY_WEIGHT -
+                keyCount * LENGTH_BONUS_PER_LETTER
+            if (lowerBound > pruneCutoff) {
+                prunedCandidates++
+                return Float.POSITIVE_INFINITY
+            }
+        }
+
         // End-key surcharge: a word whose LAST letter matches beyond the
         // tunnel radius pays the excess distance again, undiluted. The
         // per-letter mean above shrugs an unvisited NEIGHBOR of the visited
@@ -416,8 +453,6 @@ class SwipeDecoder(private val dictionary: Dictionary) {
         val missedSalient = salientKeys.size - lcs
         val alignmentScore = lcs.toFloat() /
             max(letters.length, max(salientKeys.size, ALIGNMENT_MIN_DENOMINATOR))
-
-        val frequencyBonus = (logMaxRank - ln(rank.toDouble())) / logMaxRank
 
         // Mid-word dwell skip charge: a word that SKIPS a key the finger
         // deliberately stopped on mid-word pays per key, undiluted — the

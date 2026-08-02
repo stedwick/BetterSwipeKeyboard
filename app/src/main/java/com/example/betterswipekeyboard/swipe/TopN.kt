@@ -47,4 +47,13 @@ internal class TopN(n: Int) {
     /** The kept candidates, best first — the order sortedBy+take produced. */
     fun results(): List<ScoredWord> =
         (0 until size).map { ScoredWord(words[it]!!, scores[it]) }
+
+    /**
+     * Current Nth-best score — the cutoff for SwipeDecoder's admissible
+     * prune (perf A5) — or NaN while fewer than N candidates were offered:
+     * an unfilled slate admits every finite candidate, so there is nothing
+     * to prune against. A candidate enters a full slate only with a score
+     * STRICTLY below this (ties never displace).
+     */
+    fun cutoff(): Float = if (size < words.size) Float.NaN else scores[words.size - 1]
 }
