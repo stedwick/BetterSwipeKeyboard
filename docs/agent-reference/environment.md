@@ -32,6 +32,28 @@ environment facts; they rarely change.
 
 ## adb/emulator workflow
 
+- `adb` is NOT on PATH in fresh shells: it lives at
+  `$sdk.dir/platform-tools/adb` (`~/Library/Android/sdk/platform-tools/adb`);
+  the emulator binary is `~/Library/Android/sdk/emulator/emulator`
+  (`-avd Medium_Phone_API_36.0`). Never pipe the emulator's stdout
+  through `head` — SIGPIPE kills it on its next write; redirect to a
+  log file instead.
+- A fresh emulator boot shows a BLACK SCREEN — the device is simply
+  asleep (`dumpsys power` → `mWakefulness=Asleep`). Verified wake
+  procedure (cold-boot proven: `sys.boot_completed=1` + Asleep + black
+  screencap → Awake + home screen after these):
+  `adb shell input keyevent KEYCODE_WAKEUP` (screen on), then
+  `adb shell input keyevent 82` (MENU — dismisses the keyguard when one
+  is shown), then `adb shell input keyevent KEYCODE_BACK` (82 on the
+  already-unlocked launcher opens its wallpaper/home-settings menu;
+  BACK closes it and is a no-op otherwise). Verify with
+  `adb exec-out screencap -p > /tmp/x.png`.
+- `adb emu kill` is a HARD power-off: it once left PackageManager with
+  the keyboard's package installed but its service declaration lost
+  (`ime set` answers "Unknown input method";
+  `cmd package query-services -a android.view.InputMethod` lists only
+  GBoard). Recovery: `./gradlew installDebug` again, then `ime enable` +
+  `ime set`. Prefer the emulator UI's power button for shutdown.
 - The emulator's IME falls back to GBoard after reinstalls/uimode
   changes/force-stops. Re-run `adb shell ime set
   com.example.betterswipekeyboard/.SwipeKeyboardService`.
