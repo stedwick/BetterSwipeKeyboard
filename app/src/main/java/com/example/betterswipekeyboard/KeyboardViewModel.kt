@@ -81,6 +81,9 @@ class KeyboardViewModel : ViewModel() {
                     typedTapStreak = 0,
                     proofreadAuto = it.proofreadAuto || it.proofreadSuspendedByTaps,
                     proofreadSuspendedByTaps = false,
+                    // A swipe owns the strip: the tap mirror goes.
+                    tapLiveWord = null,
+                    tappedWord = null,
                 )
             }
             KeyboardEffect.CommitWord(
@@ -106,6 +109,8 @@ class KeyboardViewModel : ViewModel() {
                         swipedWord = action.word,
                         swipeAlternates = it.swipeAlternates - action.word,
                         swipeStripOffers = it.swipeStripOffers - action.word,
+                        tapLiveWord = null,
+                        tappedWord = null,
                     )
                 }
                 KeyboardEffect.ReplaceSwipedWord(action.word)
@@ -127,6 +132,8 @@ class KeyboardViewModel : ViewModel() {
                     swipedWord = null,
                     swipeAlternates = emptyList(),
                     swipeStripOffers = emptyList(),
+                    tapLiveWord = null,
+                    tappedWord = null,
                 )
             }
             null
@@ -145,6 +152,10 @@ class KeyboardViewModel : ViewModel() {
 
         KeyboardAction.Enter -> {
             clearSwipeFlag()
+            // A newline is a hard boundary for the tap mirror too. Cleared
+            // here, not in clearSwipeFlag: no text-effect hook re-reads the
+            // field after PerformEnter, so a stale word would linger.
+            _state.update { it.copy(tapLiveWord = null, tappedWord = null) }
             KeyboardEffect.PerformEnter
         }
 
@@ -152,6 +163,9 @@ class KeyboardViewModel : ViewModel() {
         // shifted letter.
         is KeyboardAction.MoveCursor -> {
             clearSwipeFlag()
+            // The word before the new cursor position is unknown here and no
+            // field read follows a cursor move — a stale mirror would lie.
+            _state.update { it.copy(tapLiveWord = null, tappedWord = null) }
             KeyboardEffect.MoveCursor(action.steps)
         }
 
@@ -194,6 +208,8 @@ class KeyboardViewModel : ViewModel() {
                     swipeAlternates = emptyList(),
                     swipeStripOffers = emptyList(),
                     failedSwipe = null,
+                    tapLiveWord = null,
+                    tappedWord = null,
                     layout = action.layout,
                 )
             }
@@ -249,6 +265,8 @@ class KeyboardViewModel : ViewModel() {
                     swipeAlternates = emptyList(),
                     swipeStripOffers = emptyList(),
                     failedSwipe = null,
+                    tapLiveWord = null,
+                    tappedWord = null,
                     layout = LayoutId.LETTERS,
                 )
             }
@@ -290,10 +308,12 @@ class KeyboardViewModel : ViewModel() {
             // The partial transcript is only meaningful while listening.
             // Dictation ends the swipe context (it bypasses the reducer, so
             // no input action ever clears the strip), so the alternates go.
+            // The tap mirror goes too: dictation replaces whatever was
+            // mid-tap, and no field read re-arms it from here.
             if (state == VoiceState.LISTENING) {
-                it.copy(voice = state, swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
+                it.copy(voice = state, swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null, tapLiveWord = null, tappedWord = null)
             } else {
-                it.copy(voice = state, voicePartial = "", swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
+                it.copy(voice = state, voicePartial = "", swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null, tapLiveWord = null, tappedWord = null)
             }
         }
     }
@@ -309,14 +329,24 @@ class KeyboardViewModel : ViewModel() {
     }
 
     /**
+     * Called by the service after every tap/backspace text effect with the
+     * tap-strip words read from the FIELD text: exactly one of [live] (the
+     * word mid-tap → blue center) and [committed] (the just-ended word →
+     * green center) non-null, both null clears the tap strip.
+     */
+    fun setTapStrip(live: String?, committed: String?) {
+        _state.update { it.copy(tapLiveWord = live, tappedWord = committed) }
+    }
+
+    /**
      * Called by the service on a fresh field start: the strip's words belong
      * to the previous field's text, so they must not be offered (or worse,
      * replace text) in the new one.
      */
     fun clearSwipeAlternates() {
         _state.update {
-            if (it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.swipeStripOffers.isNotEmpty() || it.failedSwipe != null) {
-                it.copy(swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null)
+            if (it.swipedWord != null || it.swipeAlternates.isNotEmpty() || it.swipeStripOffers.isNotEmpty() || it.failedSwipe != null || it.tapLiveWord != null || it.tappedWord != null) {
+                it.copy(swipedWord = null, swipeAlternates = emptyList(), swipeStripOffers = emptyList(), failedSwipe = null, tapLiveWord = null, tappedWord = null)
             } else {
                 it
             }

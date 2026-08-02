@@ -114,3 +114,33 @@ invariants; this file carries the geometry and the full mechanics.
   path, so a canceled swipe's last suggestions stay tappable — WITHOUT
   the blue (`failedOfferCells` never sets `isLiveLeader`: after finger-up
   nothing auto-commits, so the mark would lie).
+
+## Tap-typing word mirror
+
+- Two tiers BELOW the swipe tiers in `altCells` (KeyboardScreen.kt; swipe
+  wins belt-and-braces — the reducer clears the tap fields on every swipe
+  reduction): `state.tapLiveWord` renders as a lone blue center via
+  `liveOfferCells(LiveOffers(listOf(it), leaderWouldCommit = true))` — the
+  leader flag is borrowed PURELY for the `LiveLeaderBlue` rendering, nothing
+  commits on finger-up in the tap flow — and `state.tappedWord` as a lone
+  green center via `stripCells(it, emptyList(), emptyList(), …)`. No flanks,
+  ever.
+- Field truth, not reducer memory: pure extractors in `TapWord.kt`
+  (package root) — `currentWordPrefix` (trailing run of Unicode letters +
+  `'`) and `tappedWordBeforeBoundary` (the word behind a trailing boundary
+  run, never crossing `\n`). The service's `refreshTapStrip()` reads
+  `textBeforeCursor(TAP_STRIP_CHARS = 48)` and calls
+  `viewModel.setTapStrip(live, committed)` (exactly one non-null; both null
+  clears) at the END of the CommitText / DeleteBackward / DeleteWordBackward
+  effect branches ONLY — never after PasteText (verbatim) or swipe commits
+  (swipe owns the strip). The InsertText/Backspace REDUCTIONS deliberately
+  don't touch the tap fields (the hook overwrites from field truth anyway);
+  `clearSwipeFlag` must not either (it runs mid-reduction, before the field
+  read — and fires for DeleteClip, which changes no text).
+- Display-only invariants: VERBATIM field text (caps as typed, no
+  mirrorCaps, no dictionary, no completions). Cells are untappable: the
+  green center by construction (`isCenter`), the blue center because its
+  `SelectAlternate` dispatch dies on the reduction's `lastCommitWasSwipe`
+  guard. Enter clears in the reduction (newline = hard boundary, no field
+  read follows PerformEnter); MoveCursor, SwitchLayout, PasteClip,
+  setVoiceState and clearSwipeAlternates (field start) clear too.

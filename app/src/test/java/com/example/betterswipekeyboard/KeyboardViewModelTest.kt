@@ -709,4 +709,99 @@ class KeyboardViewModelTest {
         assertEquals(listOf("Keyword"), vm.state.value.swipeAlternates)
         assertEquals(ShiftMode.OFF, vm.state.value.shiftMode)
     }
+
+    @Test
+    fun `set tap strip sets the blue live word`() {
+        val vm = viewModel()
+        vm.setTapStrip(live = "hel", committed = null)
+        assertEquals("hel", vm.state.value.tapLiveWord)
+        assertNull(vm.state.value.tappedWord)
+    }
+
+    @Test
+    fun `set tap strip sets the green ended word`() {
+        val vm = viewModel()
+        vm.setTapStrip(live = null, committed = "hello")
+        assertNull(vm.state.value.tapLiveWord)
+        assertEquals("hello", vm.state.value.tappedWord)
+    }
+
+    @Test
+    fun `set tap strip overwrites both fields and clears on both null`() {
+        val vm = viewModel()
+        vm.setTapStrip(live = null, committed = "hello")
+        vm.setTapStrip(live = "wor", committed = null)
+        assertEquals("wor", vm.state.value.tapLiveWord)
+        assertNull(vm.state.value.tappedWord)
+        vm.setTapStrip(live = null, committed = null)
+        assertNull(vm.state.value.tapLiveWord)
+        assertNull(vm.state.value.tappedWord)
+    }
+
+    @Test
+    fun `insert text and backspace leave the tap strip to the service hook`() {
+        // The reductions deliberately do NOT touch the tap fields: the
+        // service's refreshTapStrip overwrites them from field truth after
+        // every text effect, so clearing here would be redundant work.
+        val vm = viewModel()
+        vm.setTapStrip(live = "hel", committed = null)
+        vm.onAction(KeyboardAction.InsertText("l"))
+        assertEquals("hel", vm.state.value.tapLiveWord)
+        vm.onAction(KeyboardAction.Backspace)
+        assertEquals("hel", vm.state.value.tapLiveWord)
+    }
+
+    @Test
+    fun `input actions that clear the swipe strip also clear the tap strip`() {
+        val clearingActions = listOf(
+            KeyboardAction.Enter,
+            KeyboardAction.MoveCursor(-1),
+            KeyboardAction.SwitchLayout(LayoutId.SYMBOLS),
+            KeyboardAction.PasteClip("clip"),
+        )
+        for (action in clearingActions) {
+            val vm = viewModel()
+            vm.setTapStrip(live = "hel", committed = null)
+            vm.onAction(action)
+            assertNull("after $action", vm.state.value.tapLiveWord)
+            assertNull("after $action", vm.state.value.tappedWord)
+        }
+    }
+
+    @Test
+    fun `swipe reductions take the strip over from the tap mirror`() {
+        val committed = viewModel()
+        committed.setTapStrip(live = "hel", committed = null)
+        committed.onAction(KeyboardAction.CommitWord("hello"))
+        assertNull(committed.state.value.tapLiveWord)
+        assertNull(committed.state.value.tappedWord)
+
+        val failed = viewModel()
+        failed.setTapStrip(live = "hel", committed = null)
+        failed.onAction(KeyboardAction.OfferFailedSwipe(listOf("keyboard"), "k·e·y"))
+        assertNull(failed.state.value.tapLiveWord)
+        assertNull(failed.state.value.tappedWord)
+
+        val swapped = viewModel()
+        swapped.onAction(KeyboardAction.CommitWord("hello", alternates = listOf("hell")))
+        swapped.setTapStrip(live = "hel", committed = null)
+        swapped.onAction(KeyboardAction.SelectAlternate("hell"))
+        assertNull(swapped.state.value.tapLiveWord)
+        assertNull(swapped.state.value.tappedWord)
+    }
+
+    @Test
+    fun `voice transitions and field starts clear the tap strip`() {
+        val vm = viewModel()
+        vm.setTapStrip(live = null, committed = "hello")
+        vm.setVoiceState(VoiceState.LISTENING)
+        assertNull(vm.state.value.tapLiveWord)
+        assertNull(vm.state.value.tappedWord)
+
+        val fieldStart = viewModel()
+        fieldStart.setTapStrip(live = "hel", committed = null)
+        fieldStart.clearSwipeAlternates()
+        assertNull(fieldStart.state.value.tapLiveWord)
+        assertNull(fieldStart.state.value.tappedWord)
+    }
 }

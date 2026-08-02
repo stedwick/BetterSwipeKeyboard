@@ -12,7 +12,10 @@ package com.example.betterswipekeyboard.ui.keyboard
  * [isLiveLeader]: the LIVE strip's center slot when its word WOULD commit if
  * the finger lifted now — rendered light blue, never green (green is
  * reserved for the committed word). A live center that would not commit is
- * plain: same position, no color promise.
+ * plain: same position, no color promise. The TAP-typing mirror borrows
+ * this mark purely for the blue rendering (KeyboardScreen passes
+ * leaderWouldCommit = true for the word mid-tap; nothing commits on
+ * finger-up there — the blue cell is a mirror, not a leader).
  * [isPlaceholder]: a dropped band-mismatch flank (see [stripCells]) —
  * invisible, reserves its slot so the surviving words never move, and is
  * never tappable.
@@ -33,6 +36,8 @@ data class StripCell(
  * The flag is live-gesture-only: it never enters KeyboardState (a persisted
  * failed swipe's offers render without the leader mark, because after
  * finger-up nothing would auto-commit anymore and the mark would lie).
+ * The tap-typing mirror (KeyboardScreen) wraps its single word in LiveOffers
+ * too, borrowing the leader mark for the blue color only.
  */
 data class LiveOffers(val words: List<String>, val leaderWouldCommit: Boolean)
 

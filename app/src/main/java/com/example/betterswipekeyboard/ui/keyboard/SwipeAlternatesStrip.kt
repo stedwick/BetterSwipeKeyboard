@@ -41,11 +41,13 @@ val AlternatesStripHeight = 40.dp
 private val CommittedWordGreen = Color(0xFF30D158)
 
 /**
- * Light blue of the LIVE strip's center cell while swiping: the word that
- * WOULD commit if the finger lifted now ([StripCell.isLiveLeader]). The iOS
- * system blue (also the light theme's trail color) reads on both keyboard
- * backgrounds like [CommittedWordGreen]; on finger-up the same cell turns
- * green — same position, same weight, only the color changes.
+ * Light blue of a LIVE center cell: the word that WOULD commit if the
+ * finger lifted now while swiping ([StripCell.isLiveLeader]), and — reusing
+ * the same mark — the word currently being TAP-typed (the tap mirror's blue;
+ * display-only, nothing commits on finger-up there). The iOS system blue
+ * (also the light theme's trail color) reads on both keyboard backgrounds
+ * like [CommittedWordGreen]; on swipe finger-up the same cell turns green —
+ * same position, same weight, only the color changes.
  */
 private val LiveLeaderBlue = Color(0xFF0A84FF)
 
@@ -56,7 +58,9 @@ private val LiveLeaderBlue = Color(0xFF0A84FF)
  * just-committed word and moves it into the center. WHILE swiping, the same
  * layout shows the live decode's top-1 in the center — light blue when it
  * would commit on finger-up, plain otherwise — so lifting the finger only
- * recolors the center, never rearranges the row. Always visible (space
+ * recolors the center, never rearranges the row. Below the swipe tiers, the
+ * tap-typing mirror shows the word mid-tap in blue, then the just-ended tap
+ * word in green (display-only, untappable). Always visible (space
  * reserved, Gboard-style); while empty it shows a gray italic placeholder so
  * the row explains itself.
  *
