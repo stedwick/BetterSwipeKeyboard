@@ -56,8 +56,12 @@ without decelerating — emits no key at all, so a drift endpoint's nearest
 key ("dough"'s h, "we're"'s r) can't charge the intended word a missed
 salient it never earned (touch-down keeps its anchor unconditionally:
 the finger starts at rest on an aimed key); and words whose first letter
-matches mid-trail pay an unexplained-head charge mirroring the tail term
-(0.5kw free — touch-down aim is much better than lift-off aim).
+matches mid-trail pay an unexplained-head charge mirroring the
+unexplained-tail term — both free slacks are 0.5kw of arc (the tail's
+was 1.5 until the joker/movies fix re-scoped it to lift-off jitter/drift
+only: genuine overshoot-AND-return is owned by the last-letter re-match
+above, overshoot without return pays up to ~1.0; touch-down aim is much
+better than lift-off aim).
 
 The LAST letter also pays an end-key surcharge
 (`END_KEY_SURCHARGE_WEIGHT` 0.5): its match distance beyond the tunnel
