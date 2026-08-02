@@ -1796,3 +1796,136 @@ the re-timed builder with the lever on; no crossed-key dwells fire.
 - **The 'there' containment escape** has exactly one captured instance
   (#14, three-intended). A there/they/them capture set would tell
   whether words CONTAINING the dwelled key need their own grade.
+
+# ADDENDUM 11 — the-elves sentence: revisit-clamp + salient-floored alignment denominator (LANDED 2026-08-02)
+
+## Symptom and evidence
+
+New capture set 10 (`swipe_trails10_the_elves_philip.jsonl`, 70 trails):
+Philip swiped 'the three elves threw their three trees' 10 times. The
+sentence stacks the hard top-row words: three (Addendum 10's fix),
+elves, threw, their, trees. Intent alignment: 70 = 10 × the 7-word
+cycle, verified geometrically (every record's start/end key + arc
+length matches its cycle slot; 5 records flagged in the TSV). Baseline
+at the Addendum-10 decoder: **48/70** — the 10/10, their 10/10, trees
+10/10 (corner-cutters: a straight t→e row slide then s, h never
+visited; frequency 2053 vs tres 26486 carries it), elves 8/10, threw
+4/10, three 6/20.
+
+## Miss autopsies (probe per-term breakdowns on file)
+
+- **Class A — three→the, 11 trails (#8,12,15,22,33,36,40,57,61,64,68):
+  frequency prior vs ZERO usable evidence.** At natural sentence speed
+  the R visit leaves no salient trace (salients [t,h,e] on 9 of 11), so
+  three's alignment caps at 3/5=0.6 while 'the' scores a perfect 1.0 —
+  three loses 1.39 (prior) + ~0.3 (alignment cap), matching the
+  measured gaps 0.98-1.73. The R slowdowns physically exist (contiguous
+  stays 17-134ms, turns 21-63°, minDist 0.06-0.37kw vs 0.34-1.00kw on
+  the-trails) but sit below every evidence bar the decoder has.
+- **Class B — three→there, 3 trails (#19,50,54) + threw#24: the
+  degenerate-clamp zigzag is free.** 'there' (rank 55, +0.29 prior)
+  clamps its r 1.09-1.23kw off-trail BETWEEN two near e matches at the
+  trail end; the e→r→e zigzag spans zero trail arc, so legCosts prices
+  nothing (Addendum 1's degenerate-leg hole) and the mean dilutes the
+  miss to ~0.23. three WINS geometry by 0.1-0.2 on all three and loses
+  on frequency.
+- **Class C — threw→the/there/three, 5 trails + #10: rank 3216 = a
+  2.22 handicap.** Wins (#17,31,45,52) need a crisp W reversal
+  (93-178°); #3 ends on W without one (the's tail only 0.49), #24 is
+  class B, #38/#59/#66 are honest weak-W reads (residue), #10's trace
+  literally performs 'through' (t,g,r,t,u,o,i,u,g,h; threw is
+  conformance-culled on it) — mistype, confirmed by Philip, marked '-'.
+- **Class D — elves→rovers/rivers, 2 trails: touch-down off E +
+  corner-cut L.** #23: touch-down 1.03kw from E (rovers starts on R
+  free) — but rovers clamps its own r 0.98kw off-trail (class-B
+  mechanism, fixable). #65: touch-down 0.84kw off E AND l never visited
+  (1.90kw — e→v corner cut); rivers is the honest read (residue,
+  set-2/6 precedent).
+
+## The levers (LANDED)
+
+**L1 — revisit-clamp charge** (`REVISIT_FAR_KEYS` 0.8,
+`REVISIT_CLAMP_WEIGHT` 1.0, `REVISIT_NEAR_KEYS` 0.5,
+`REVISIT_VISIT_KEYS` 0.5): a mid-word letter matching >0.8kw off-trail,
+sandwiched between two ≤0.5kw matches, at a key the trail VISITED
+earlier (≤0.5kw before the predecessor's match), pays its match
+distance again, undiluted. The visit gate exempts never-visited
+corner-cuts (trees' h) — a never-visited key is not a "revisit".
+Option D's narrowed variant (Addendum 1) was rejected for touching no
+live error; the there-clamp class is that live error. Also resolves
+**set9#14** — the Addendum-10 signed-off residue the dwell charge
+structurally couldn't touch ('there' CONTAINS r, so it never paid the
+skip charge; it pays the clamp instead, three wins by 1.05).
+
+**L2 — alignment denominator** `max(wordLen, 3)` → `max(wordLen,
+salientCount, 3)`: the Addendum-9 pocketed variant, landed. NOT
+Addendum-2's rejected salient-only floor — wordLen stays in the max as
+the parsimony brake (foxx/ther/britten still self-normalize). Demotes
+short words that under-explain measured salients ('the' explains 3 of
+[t,h,r,e,e] on a three trail): 1 standalone flip (set10#3 the→threw,
+margin 0.024 — thin), and tips #54 ('the' 1.0→0.75, three wins by
+0.125).
+
+## Flip audit (real decoder, all 514 captured records — probe-parity gate)
+
+Exactly 7 flips, 6 fixes + 1 wrong-to-wrong, **0 previously-correct
+losses** (ProbeParityTest asserts the set verbatim):
+- s9#14 there→three FIX (set9 14→**15/15**)
+- s10#3 the→threw FIX
+- s10#19 there→three FIX
+- s10#23 rovers→elves FIX
+- s10#24 there→three wrong→wrong (intent threw — accepted churn: three
+  is the geometrically honest read, threw stays on the strip)
+- s10#50 there→three FIX
+- s10#54 there→three FIX
+
+Set 10: 48/70 → **53/69 scored** (#10 mistype unscored). Per word:
+the/their/trees 10/10, elves 9/10, threw 5/9, three 9/20. Sets 1-8
+completely untouched. Signed-off states verified unmoved: past/part
+(s4#35), quick→wick, set2#31/set5#60, over#45 (margin −0.84,
+revisit=0, midSkip=0), trees #6/#69 (margins −0.67, revisit=0),
+set9's OK trails. Grid cells also measured: FAR 1.0 (loses #23, 52/69,
+0 losses — the conservative fallback); L1 alone (51, set9 15); L2
+alone (49).
+
+## Newly measured dead end
+
+- **Sub-dwell band [60,150ms) skip charge, turn-gated.** The band
+  exists physically on class-A three trails (R stays 17-134ms) and
+  set5#45's c-crossing (125-149ms, 26° turn) forces a 30° gate. At
+  T60/θ30/w1.2 the band fires on real trails with genuine slow-turns at
+  skipped keys: s2#26 pizzas→silence, s3#2 excellent→silence (pushed
+  past MAX_COMMIT_SCORE), s10#58 elves→rivers — for ~1 class-A fix
+  (#61). θ20 also breaks over#45 (26>20); ungated breaks it too (+
+  water→washer, and→amd, joker→holder, movies→mobile). **The 60-150ms
+  contiguous-stay band is noise on real trails** — class-A three stays
+  residue. Handles: the alternates strip (three is #2 on most class-A
+  trails), custom words, proofreader.
+
+## Residue (documented, accepted)
+
+- Class-A three, 11 trails (above).
+- threw #24 (ww churn), #38 (honest the-shape + W flick), #59 (W
+  slide-through 0.44kw), #66 (ends 0.96kw from W — user undershoot).
+- elves #65 (l never visited; rivers is the honest read).
+
+## Guards landed
+
+- `SwipeRealTrailAccuracyTest` set 10: fixtures + intents (sentence-
+  cycle provenance verified geometrically; #10 '-' per Philip) +
+  ratchet `MIN_COMMITTED_CORRECT_SET10 = 53`, harness-first at 48/69.
+- set9 ratchet 14→15 (#14 resolved by the revisit-clamp, not the dwell
+  floor — MIDWORD_DWELL_MS stays 150).
+- `SwipeConfidenceCalibrationTest` UNCHANGED — passed unmodified.
+- Full suite 402 green; probe parity asserts production == the measured
+  M4 cell on all 514 records and the 7-flip set verbatim.
+
+## Not verified (carried into the commit)
+
+- **No emulator/on-device run** — unit replay only, per harness-first
+  discipline (QA build + emulator pass precede merge).
+- **#3's threw flip is 0.024-thin**; #23's elves commits at 1.52
+  (rovers 1.79 — both sub-1.8, top-1 decides). Both ride on real but
+  small margins; a future capture could revisit them.
+- **FAR 0.8's coincidence with REBASIN_RADIUS_KEYS is post-hoc** — the
+  value is grid-measured (1.0 loses #23), not derived.
