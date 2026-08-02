@@ -8,8 +8,9 @@ import com.example.betterswipekeyboard.swipe.parseCustomWords
  * (same file as [ApiKeyStore]). Acceptable for a personal app.
  *
  * Format: one joined string — the normalized words joined with "\n". Not a
- * StringSet: a set loses order, and a newline-joined string round-trips
- * directly into the setup screen's multi-line text box.
+ * StringSet: a set loses order. The setup screen displays the words
+ * comma-separated (it re-joins [load] itself), so the storage separator is
+ * just an internal detail that [parseCustomWords] splits back apart.
  */
 class CustomWordStore(context: Context) {
 
