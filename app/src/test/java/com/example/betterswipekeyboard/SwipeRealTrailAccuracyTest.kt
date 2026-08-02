@@ -44,7 +44,13 @@ import org.junit.Test
  * its T at trail index 0 with a 0.73-1.16kw miss that the per-letter
  * mean halves and the unexplained-head term cannot see (head arc = 0),
  * so its frequency prior (rank 2 vs go's 96 = a constant +1.06)
- * overruled go's genuinely better geometry in 6 of 10 attempts).
+ * overruled go's genuinely better geometry in 6 of 10 attempts), and
+ * `swipe_trails8_joker_lots_movies_philip.*` (eighth capture: the
+ * joker/lots/movies paragraph — 36 joker + 24 lots + 16 movies scored
+ * swipes — plus the sentence 'i'm joker and watch lots of movies' five
+ * times; #0-40 are a→s / a→d / s→e warm-up calibration drags with no
+ * known intent, marked `-`; #57-59/#109/#141 are mis-swipes whose
+ * honest geometric read IS a different word, marked `-` — see SET8).
  *
  * This is a RATCHET: the MIN_COMMITTED_CORRECT constants are the best
  * committed-correct counts achieved so far per set; bump them every time
@@ -122,6 +128,15 @@ class SwipeRealTrailAccuracyTest {
         assertTrue(
             "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET7",
             correct >= MIN_COMMITTED_CORRECT_SET7,
+        )
+    }
+
+    @Test
+    fun `eighth capture keeps its committed-correct count`() {
+        val correct = replay("swipe_trails8_joker_lots_movies_philip")
+        assertTrue(
+            "ratchet: committed-correct dropped below $MIN_COMMITTED_CORRECT_SET8",
+            correct >= MIN_COMMITTED_CORRECT_SET8,
         )
     }
 
@@ -350,5 +365,27 @@ class SwipeRealTrailAccuracyTest {
          * (the hello#11 precedent). The cost is the set4/set5 quick
          * flips (see their comments). */
         const val MIN_COMMITTED_CORRECT_SET7 = 23
+
+        /** Eighth capture (joker/lots/movies paragraph + five passes of
+         * 'i'm joker and watch lots of movies', 142 records, 96 scored)
+         * baseline at the 1.5-tail-slack decoder: 30/96 = joker 3/36,
+         * lots 2/24, movies 5/16, i'm/and/watch/of 20/20. #0-40 (a→s /
+         * a→d / s→e warm-up calibration drags, intent unknown) and
+         * #57-59/#109/#141 are excluded ('-'): those five are mis-swipes
+         * whose honest geometric read IS a different word (joe/jobs —
+         * the trail never comes within 1.03kw of K on #57-59; the trail
+         * ends ON e on #141, so 'movie' is the honest read) — user-shape
+         * errors, not decoder failures (the set2/set6 precedent); scoring
+         * them would bake five permanent misses into the denominator.
+         * This is the driving evidence for TAIL_ARC_FREE_KEYS 1.5 -> 0.5
+         * (decoder-investigation Addendum 9): joke/joe/movie park their
+         * last letter one key early and the e→r (~1.07kw) / e→s (~1.05kw)
+         * hop rides free inside the 1.5kw slack; at 0.5 it pays ~0.55
+         * undiluted. The joker losses split into the five excluded
+         * mis-swipes, thin-frequency joe/joke wins, and one pruned
+         * lastGate; the lots losses are frequency-shaped ('less' ends on
+         * the trail's end key — tail arc 0, no tail lever can touch it,
+         * Addendum 9's documented dead end). */
+        const val MIN_COMMITTED_CORRECT_SET8 = 30
     }
 }
