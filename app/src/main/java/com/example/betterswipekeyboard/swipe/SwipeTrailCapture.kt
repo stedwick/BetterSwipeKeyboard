@@ -12,7 +12,7 @@ import java.io.File
  * (works on emulator and device, no root):
  *
  * ```
- * adb pull /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl
+ * adb pull /sdcard/Android/data/com.philpdx.keyboard/files/swipe_trails.jsonl
  * ```
  *
  * The log lives in external app-specific storage (`getExternalFilesDir`)
