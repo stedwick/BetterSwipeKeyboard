@@ -56,8 +56,23 @@ environment facts; they rarely change.
   `ime set`. Prefer the emulator UI's power button for shutdown.
 - The emulator's IME falls back to GBoard after reinstalls/uimode
   changes/force-stops. Re-run `adb shell ime set
-  com.philpdx.keyboard/.SwipeKeyboardService` (the component name follows
-  the applicationId, not the code package).
+  com.philpdx.keyboard/com.example.betterswipekeyboard.SwipeKeyboardService`
+  (the package slot follows the applicationId, but the class name must
+  be the FULL code-package class —
+  `com.philpdx.keyboard/.SwipeKeyboardService` expands the dot against
+  the applicationId and fails with "Unknown input method").
+- Emulator stuck on a GRAY screen with adb showing `offline` and QEMU
+  near-zero CPU right after "Loading snapshot 'default_boot'": the
+  boot snapshot is corrupt. Kill the QEMU process and relaunch with
+  `-no-snapshot-load` (cold boot); verified fix 2026-08.
+- `am instrument` KILLS the target app's foreground activity when the
+  session starts (and again when it ends) — injected gestures must
+  re-open the target screen in a startup-delay gap, or they land on
+  the home screen.
+- Mid-swipe store screenshots: `SwipePoseInjector` (androidTest,
+  debug-only) injects a scripted curved trail via UiAutomation and
+  parks the finger (`-e path 'x,y;...' -e delayMs -e moveMs -e holdMs
+  -e postMs`). Recipe + compositor scripts: `store-assets/`
 - After emulator boot, dismiss the "System UI isn't responding" dialog
   (tap Wait) before driving the UI.
 - `~/Library/Android/sdk` has `cmdline-tools`. AVDs:
