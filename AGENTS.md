@@ -194,16 +194,25 @@ installed). Via the wrapper:
 ```bash
 ./gradlew assembleDebug          # build the APK
 ./gradlew installDebug           # install on a connected device/emulator
+./gradlew bundleRelease          # Play Store AAB → app/build/outputs/bundle/release/
 ./gradlew testDebugUnitTest      # local unit tests (JVM)
 ./gradlew connectedDebugAndroidTest  # instrumented tests (needs device/emulator)
 ./gradlew lint                   # Android lint
 ```
 
+The Play identity is `applicationId = "com.philpdx.keyboard"` (the code
+package/namespace stays `com.example.betterswipekeyboard`). Release
+builds sign automatically when `~/.gradle/gradle.properties` sets
+`uploadStoreFile` (path to the keystore, which lives outside the repo,
+e.g. `~/upload-keystore.jks`), `uploadStorePassword`, and
+`uploadKeyPassword`; without them the release AAB stays unsigned.
+
 After installing, enable the keyboard in system settings and select it as
 the active IME (the setup screen has buttons for both). The emulator's
 IME keeps falling back to GBoard — re-run `adb shell ime set
-com.example.betterswipekeyboard/.SwipeKeyboardService` (more:
-`docs/agent-reference/environment.md`). A fresh emulator boot shows a
+com.philpdx.keyboard/.SwipeKeyboardService` (the component name follows
+the applicationId; more: `docs/agent-reference/environment.md`). A fresh
+emulator boot shows a
 BLACK SCREEN (the device is simply asleep): wake it with
 `adb shell input keyevent KEYCODE_WAKEUP` + `82` + `KEYCODE_BACK` —
 exact procedure in `docs/agent-reference/environment.md`.

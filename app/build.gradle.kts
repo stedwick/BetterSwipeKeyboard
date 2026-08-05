@@ -3,6 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Optional Play upload signing. Set these in ~/.gradle/gradle.properties
+// (NEVER in this repo — the keystore and passwords must not be committed):
+//   uploadStoreFile=/Users/philip/upload-keystore.jks
+//   uploadStorePassword=...
+//   uploadKeyPassword=...
+// Without them the release build simply stays unsigned (local/CI use).
+val uploadStoreFile = providers.gradleProperty("uploadStoreFile").orNull?.let(::file)
+val uploadSigningAvailable = uploadStoreFile != null && uploadStoreFile.exists()
+
 android {
     namespace = "com.example.betterswipekeyboard"
     compileSdk {
@@ -12,7 +21,10 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.betterswipekeyboard"
+        // The Play Store identity of the app — permanent once uploaded.
+        // (namespace stays com.example.betterswipekeyboard; it's only the
+        // code package and doesn't affect the store listing.)
+        applicationId = "com.philpdx.keyboard"
         minSdk = 35
         targetSdk = 36
         versionCode = 1
@@ -21,8 +33,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (uploadSigningAvailable) {
+            create("release") {
+                storeFile = uploadStoreFile
+                storePassword = providers.gradleProperty("uploadStorePassword").get()
+                keyAlias = providers.gradleProperty("uploadKeyAlias").orNull ?: "upload"
+                keyPassword = providers.gradleProperty("uploadKeyPassword").get()
+            }
+        }
+    }
     buildTypes {
         release {
+            if (uploadSigningAvailable) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }

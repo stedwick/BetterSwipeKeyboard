@@ -17,4 +17,9 @@ local.properties
 # Proofread eval API key (tools/eval/) — never commit it.
 tools/eval/.env
 
+# Play upload keystore — never commit it (lives in ~/).
+*.jks
+*.keystore
+.kotlin/
+
 __pycache__/

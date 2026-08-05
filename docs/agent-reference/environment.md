@@ -56,7 +56,8 @@ environment facts; they rarely change.
   `ime set`. Prefer the emulator UI's power button for shutdown.
 - The emulator's IME falls back to GBoard after reinstalls/uimode
   changes/force-stops. Re-run `adb shell ime set
-  com.example.betterswipekeyboard/.SwipeKeyboardService`.
+  com.philpdx.keyboard/.SwipeKeyboardService` (the component name follows
+  the applicationId, not the code package).
 - After emulator boot, dismiss the "System UI isn't responding" dialog
   (tap Wait) before driving the UI.
 - `~/Library/Android/sdk` has `cmdline-tools`. AVDs:
@@ -73,6 +74,6 @@ environment facts; they rarely change.
 - Debug builds can record swipe trails: toggle "Record swipe trails" in
   the setup screen (debug-only, off by default, local only —
   `swipe/SwipeTrailCapture.kt`), then `adb pull
-  /sdcard/Android/data/com.example.betterswipekeyboard/files/swipe_trails.jsonl`
+  /sdcard/Android/data/com.philpdx.keyboard/files/swipe_trails.jsonl`
   (external storage — platform-tools 37 removed `adb run-as`). Each line
   is one swipe: key geometry, timed trail points, decoder top-5.
