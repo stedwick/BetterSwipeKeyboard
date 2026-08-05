@@ -1,0 +1,19 @@
+A keyboard that keeps up with you. Swipe to type, dictate with your voice, and let on-device AI fix your sentences — without your text leaving the phone by default.
+
+The swipe decoder was built from scratch for this keyboard. Drag your finger across the letters and it matches the shape of your trail against the dictionary to find the word you meant, not just the letters you touched. A strip above the keys is always there to help: while you swipe it shows the current guess in blue, and when you lift your finger the committed word turns green. Wrong word? Tap an alternate in the strip to swap it in — no deleting, no retyping. If a swipe doesn't match anything confidently, the strip offers plain suggestions instead of guessing for you. The first backspace after a swipe deletes the whole word at once, so fixing a mistake takes a single tap. And dragging sideways on the space bar moves the cursor through your text, which beats poking at it with your fingertip.
+
+- Swipe typing with a custom decoder, tuned on real hand-drawn trails
+- Always-visible alternates strip: live guess in blue, committed word in green, tap to swap; failed swipes offer suggestions instead of committing the wrong word
+- First backspace after a swipe removes the whole word
+- Space-bar drag for precise cursor control
+- Voice input: tap the mic and dictate using the phone's built-in speech recognizer, followed by a voice-tuned AI cleanup pass
+- AI proofreading: two seconds after you stop typing, the current sentence is quietly fixed — grammar, spelling, punctuation
+- Clipboard panel for recent clips, kept in memory only and never saved to storage
+- Emoji panel with fast offline keyword search
+- Free, no accounts, nothing to sign up for
+
+Privacy is the point. A keyboard sees everything you type, so this one is built to keep that to itself. Proofreading runs on-device with Gemini Nano whenever your phone supports it. If you choose to add your own OpenRouter API key instead, requests are restricted to zero-data-retention providers with data collection explicitly denied — and the app tells you honestly in the interface when text would leave the device. Voice dictation goes through the phone's built-in speech recognizer; the microphone permission is only ever requested in the setup app, never out of the blue. The clipboard history never leaves memory and never leaves the device, and clips the system marks as sensitive are dropped the moment they arrive instead of being stored.
+
+Free to use. No accounts, no cloud by default, and no surprises about where your words go.
+---
+Characters: 2570
